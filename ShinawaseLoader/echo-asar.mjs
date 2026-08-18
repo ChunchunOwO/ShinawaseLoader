@@ -33,7 +33,12 @@ const bridge = `${marker}
   app.whenReady().then(() => {
     if (globalThis.__shinawaseLoaderProcess) return;
     const node = process.env.ECHO_NODE_PATH || path.join(loaderRoot, process.platform === 'win32' ? 'node.exe' : 'node');
-    const child = childProcess.spawn(node, [script, 'attach', '--port', port, '--debug-port', debugPort], {
+    const loaderArgs = [script, 'attach', '--port', port, '--debug-port', debugPort];
+    const command = showConsole && process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : node;
+    const args = showConsole && process.platform === 'win32'
+      ? ['/d', '/k', [node, ...loaderArgs].map((value) => '"' + value.replaceAll('"', '\\"') + '"').join(' ')]
+      : loaderArgs;
+    const child = childProcess.spawn(command, args, {
       cwd: installRoot,
       env: { ...process.env, ECHO_WORKSPACE_ROOT: installRoot, ECHO_MOD_HOME: loaderRoot, ECHO_MODS_HOME: path.join(installRoot, 'Mods') },
       windowsHide: !showConsole,
@@ -42,7 +47,12 @@ const bridge = `${marker}
     globalThis.__shinawaseLoaderProcess = child;
     child.once('exit', () => { globalThis.__shinawaseLoaderProcess = null; });
   }).catch(() => {});
-  app.once('will-quit', () => globalThis.__shinawaseLoaderProcess?.kill());
+  app.once('will-quit', () => {
+    const child = globalThis.__shinawaseLoaderProcess;
+    if (!child) return;
+    if (process.platform === 'win32' && child.pid) childProcess.spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'taskkill', '/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+    else child.kill();
+  });
 })();
 `;
 

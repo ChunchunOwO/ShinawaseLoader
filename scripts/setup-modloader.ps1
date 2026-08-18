@@ -102,7 +102,8 @@ function Copy-Loader($source, $echoRoot, $versionInfo) {
   if (-not (Test-Path -LiteralPath $config)) { Copy-Item (Join-Path $source 'loader.config.json') $config }
   & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Host
   & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $echoRoot | Out-Host
-  & icacls.exe $loaderRoot $modsRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
+  & icacls.exe $loaderRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
+  & icacls.exe $modsRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
   Write-Host "Installed ShinawaseLoader $($versionInfo.version) in $loaderRoot" -ForegroundColor Green
   Write-Host "Mods folder: $modsRoot" -ForegroundColor Cyan
 }
