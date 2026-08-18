@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="ECHO Together">
+  <rect width="96" height="96" rx="20" fill="#0f172a"/>
+  <circle cx="34" cy="48" r="17" fill="#38bdf8"/>
+  <circle cx="62" cy="48" r="17" fill="#f59e0b" opacity=".95"/>
+  <path d="M29 48h38M34 34v28M62 34v28" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+</svg>

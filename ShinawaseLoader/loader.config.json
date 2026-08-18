@@ -1,0 +1,7 @@
+{
+  "autoStart": true,
+  "enableWebConsole": false,
+  "showConsole": false,
+  "port": 17862,
+  "debugPort": 9229
+}

@@ -1,0 +1,10 @@
+{
+  "id": "com.example.echo-mod",
+  "name": "Example ECHO Mod",
+  "version": "1.0.0",
+  "minEchoVersion": "26.8.15",
+  "description": "A minimal external ECHOSteam mod.",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "config": "config.json"
+}

@@ -1,0 +1,24 @@
+[Unit]
+Description=ECHO Together relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yuki
+WorkingDirectory=/home/yuki/echo-together
+Environment=PYTHONUNBUFFERED=1
+Environment=ECHO_TOGETHER_PORT=8791
+Environment=ECHO_TOGETHER_MEDIA_DIR=/home/yuki/echo-together/media
+ExecStart=/usr/bin/python3 /home/yuki/echo-together/server.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/yuki/echo-together/media
+MemoryMax=512M
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target
