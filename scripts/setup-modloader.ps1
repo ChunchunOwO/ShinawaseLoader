@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
   [ValidateSet('install', 'update', 'uninstall', 'check', 'menu')]
   [string]$Action = 'menu',
@@ -11,7 +11,12 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalSource = Join-Path $ProjectRoot 'ShinawaseLoader'
 $Repo = 'https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main'
 $Archive = 'https://github.com/ChunchunOwO/ShinawaseLoader/archive/refs/heads/main.zip'
-$DefaultEchoRoot = Join-Path $ProjectRoot '..\ECHOSteam-main\dist\win-unpacked'
+$InstalledEchoRoot = 'C:\Program Files\ECHO'
+$DefaultEchoRoot = if (Test-Path -LiteralPath (Join-Path $InstalledEchoRoot 'ECHO.exe')) {
+  $InstalledEchoRoot
+} else {
+  Join-Path $ProjectRoot '..\ECHOSteam-main\dist\win-unpacked'
+}
 $Logo = @'
   ____  _     _
  / ___|| |__ (_)_ __   __ ___      ____ _ ___  ___
@@ -27,6 +32,25 @@ $Logo = @'
 function Read-Version($path) {
   if (-not (Test-Path -LiteralPath $path)) { return $null }
   try { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json).version } catch { return $null }
+}
+
+function Ensure-Administrator {
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+  if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { return }
+
+  $forward = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+  $forward += @('-Action', $Action)
+  if ($EchoRoot) { $forward += @('-EchoRoot', ('"' + $EchoRoot.Replace('"', '\"') + '"')) }
+  if ($Force) { $forward += '-Force' }
+  try {
+    $child = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Verb RunAs -ArgumentList $forward -Wait -PassThru
+    if ($null -eq $child.ExitCode) { exit 0 }
+    exit $child.ExitCode
+  } catch {
+    Write-Error 'Administrator permission is required to install or remove ShinawaseLoader.'
+    exit 1
+  }
 }
 
 function Resolve-EchoRoot {
@@ -71,12 +95,15 @@ function Copy-Loader($source, $echoRoot, $versionInfo) {
     Remove-Item -LiteralPath (Join-Path $loaderRoot $_) -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $echoRoot $_) -ErrorAction SilentlyContinue
   }
-  Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log') } |
+  Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'loader.config.json') } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $loaderRoot $_.Name) -Recurse -Force }
   $node = Download-Node $loaderRoot $versionInfo
   $config = Join-Path $loaderRoot 'loader.config.json'
   if (-not (Test-Path -LiteralPath $config)) { Copy-Item (Join-Path $source 'loader.config.json') $config }
   & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Host
+  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $echoRoot | Out-Host
+  & icacls.exe $loaderRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
+  & icacls.exe $modsRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
   Write-Host "Installed ShinawaseLoader $($versionInfo.version) in $loaderRoot" -ForegroundColor Green
   Write-Host "Mods folder: $modsRoot" -ForegroundColor Cyan
 }
@@ -98,22 +125,36 @@ function Download-RemoteSource {
   try { return Join-Path $source.FullName 'ShinawaseLoader' } finally { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue }
 }
 
+Ensure-Administrator
+
 Write-Host $Logo -ForegroundColor Cyan
 Write-Host 'ShinawaseLoader v0.0.1Beta' -ForegroundColor White
 Write-Host ''
 if ($Action -eq 'menu') {
-  $defaultTarget = [IO.Path]::GetFullPath($DefaultEchoRoot)
-  $selectedRoot = Read-Host "ECHO directory (Enter for $defaultTarget)"
-  if ($selectedRoot.Trim()) { $EchoRoot = $selectedRoot.Trim() }
   $targetEcho = Resolve-EchoRoot
-  Write-Host "ShinawaseLoader setup" -ForegroundColor Cyan
-  Write-Host "ECHO: $targetEcho"
-  Write-Host "1. Install"
-  Write-Host "2. Update"
-  Write-Host "3. Uninstall loader (keeps Mods)"
-  Write-Host "4. Check versions"
-  Write-Host "5. Exit"
-  switch (Read-Host 'Select') { '1' { $Action = 'install' } '2' { $Action = 'update' } '3' { $Action = 'uninstall' } '4' { $Action = 'check' } default { exit 0 } }
+  while ($true) {
+    Write-Host "ShinawaseLoader setup" -ForegroundColor Cyan
+    Write-Host "ECHO: $targetEcho"
+    Write-Host "1. Install"
+    Write-Host "2. Update"
+    Write-Host "3. Uninstall loader (keeps Mods)"
+    Write-Host "4. Check versions"
+    Write-Host "5. Change ECHO directory"
+    Write-Host "6. Exit"
+    switch (Read-Host 'Select') {
+      '1' { $Action = 'install'; break }
+      '2' { $Action = 'update'; break }
+      '3' { $Action = 'uninstall'; break }
+      '4' { $Action = 'check'; break }
+      '5' {
+        $selectedRoot = Read-Host 'New ECHO directory'
+        if ($selectedRoot.Trim()) { $EchoRoot = $selectedRoot.Trim(); $targetEcho = Resolve-EchoRoot }
+        continue
+      }
+      default { exit 0 }
+    }
+    break
+  }
 }
 $targetEcho = Resolve-EchoRoot
 
@@ -122,6 +163,13 @@ $loaderRoot = Join-Path $targetEcho 'ShinawaseLoader'
 switch ($Action) {
   'check' { Get-Status $targetEcho | Format-List; exit 0 }
   'uninstall' {
+    $asarScript = Join-Path $loaderRoot 'echo-asar.mjs'
+    $nodePath = Join-Path $loaderRoot 'node.exe'
+    if ((Test-Path -LiteralPath $asarScript) -and (Test-Path -LiteralPath $nodePath)) {
+      $restoreArgs = @($asarScript, 'restore', $targetEcho)
+      if ($Force) { $restoreArgs += '--force' }
+      & $nodePath @restoreArgs | Out-Host
+    }
     Stop-Loader $loaderRoot
     if (Test-Path -LiteralPath $loaderRoot) { Remove-Item -LiteralPath $loaderRoot -Recurse -Force }
     Write-Host "Loader removed. Mods were kept at $(Join-Path $targetEcho 'Mods')." -ForegroundColor Green
