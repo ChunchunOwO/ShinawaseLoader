@@ -1,0 +1,8 @@
+{
+  "serverUrl": "https://echo.shiinasuki.com/echo-together",
+  "displayName": "ECHO User",
+  "syncIntervalMs": 250,
+  "maxMembers": 2,
+  "opusEnabled": true,
+  "autoSync": true
+}
