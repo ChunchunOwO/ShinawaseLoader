@@ -1,0 +1,10 @@
+# ShinawaseLoader external plugin template
+
+1. Copy this folder and update `echo.plugin.json`.
+2. Put renderer startup code in `plugin.js`.
+3. Package it with `pack-mod.bat <folder> <output.echo> --zip`.
+4. Drop the package into the game's `Plugins` folder or import it from the Loader page.
+
+Plugins are stored in `Plugins/installed/<plugin-id>`. The script receives the same `echoExternalMod` SDK as Mods and can use `echoExternalMod.echo` to call ECHO's public renderer API without changing `app.asar`.
+
+Return a cleanup function for every DOM node, event listener, timer, or sidebar page that the plugin creates.

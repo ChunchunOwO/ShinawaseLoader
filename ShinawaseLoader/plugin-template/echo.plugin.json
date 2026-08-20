@@ -1,0 +1,8 @@
+{
+  "id": "com.example.echo-plugin",
+  "name": "Example ECHO Plugin",
+  "version": "1.0.0",
+  "description": "A minimal external ShinawaseLoader plugin.",
+  "entry": "plugin.js",
+  "config": "config.json"
+}

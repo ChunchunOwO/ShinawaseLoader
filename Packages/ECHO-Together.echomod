@@ -1,7 +1,7 @@
 {
   "type": "echo-external-mod",
   "version": 1,
-  "exportedAt": "2026-08-18T12:44:47.931Z",
+  "exportedAt": "2026-08-19T13:08:48.835Z",
   "manifest": {
     "id": "echo.listen-together",
     "name": "ECHO Together",
@@ -10,7 +10,8 @@
     "description": "Share local music with friends through a Together room. The mod is injected by the external ECHO Mod Loader.",
     "icon": "icon.svg",
     "entry": "mod.js",
-    "config": "config.json"
+    "config": "config.json",
+    "configSchema": "config.schema.json"
   },
   "files": [
     {
@@ -18,8 +19,8 @@
       "content": "{\n  \"serverUrl\": \"https://echo.shiinasuki.com/echo-together\",\n  \"displayName\": \"ECHO User\",\n  \"syncIntervalMs\": 250,\n  \"maxMembers\": 2,\n  \"opusEnabled\": true,\n  \"autoSync\": true\n}\n"
     },
     {
-      "path": "echo.mod.json",
-      "content": "{\n  \"id\": \"echo.listen-together\",\n  \"name\": \"ECHO Together\",\n  \"version\": \"2.0.0\",\n  \"minEchoVersion\": \"26.8.15\",\n  \"description\": \"Share local music with friends through a Together room. The mod is injected by the external ECHO Mod Loader.\",\n  \"icon\": \"icon.svg\",\n  \"entry\": \"mod.js\",\n  \"config\": \"config.json\"\n}\n"
+      "path": "config.schema.json",
+      "content": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"serverUrl\": { \"type\": \"string\", \"title\": \"Server URL\" },\n    \"displayName\": { \"type\": \"string\", \"title\": \"Display name\" },\n    \"syncIntervalMs\": { \"type\": \"integer\", \"title\": \"Sync interval (ms)\", \"minimum\": 100, \"maximum\": 5000 },\n    \"maxMembers\": { \"type\": \"integer\", \"title\": \"Maximum members\", \"minimum\": 2, \"maximum\": 8 },\n    \"opusEnabled\": { \"type\": \"boolean\", \"title\": \"Opus compression\" },\n    \"autoSync\": { \"type\": \"boolean\", \"title\": \"Automatic sync\" }\n  }\n}\n"
     },
     {
       "path": "icon.svg",

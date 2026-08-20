@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 build/
 dist/
+release/
 ShinawaseLoader/loader-state.json
 ShinawaseLoader/loader-debug.log
 ShinawaseLoader/node.exe

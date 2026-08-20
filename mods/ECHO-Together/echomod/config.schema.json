@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "serverUrl": { "type": "string", "title": "Server URL" },
+    "displayName": { "type": "string", "title": "Display name" },
+    "syncIntervalMs": { "type": "integer", "title": "Sync interval (ms)", "minimum": 100, "maximum": 5000 },
+    "maxMembers": { "type": "integer", "title": "Maximum members", "minimum": 2, "maximum": 8 },
+    "opusEnabled": { "type": "boolean", "title": "Opus compression" },
+    "autoSync": { "type": "boolean", "title": "Automatic sync" }
+  }
+}

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, rmSync, copyFileSync, renameSync, watch } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, rmSync, copyFileSync, renameSync, watch } from 'node:fs';
 import { createServer } from 'node:http';
 import { basename, dirname, extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { isZip, readZip } from './echomod-archive.mjs';
 
 const c = {
   reset: '\x1b[0m',
@@ -29,26 +30,37 @@ const printLogo = () => console.log(`${c.bCyan}  ____  _     _
  \___ \| '_ \| | '_ \ / _\` \ \ /\ / / _\` / __|/ _ \
   ___) | | | | | | | | (_| |\ V  V / (_| \__ \  __/
  |____/|_| |_|_|_| |_|\__,_| \_/\_/ \__,_|___/\___|
-${c.reset}${c.bold}${c.white}ShinawaseLoader v0.0.1Beta${c.reset}\n`);
+${c.reset}${c.bold}${c.white}ShinawaseLoader v${loaderVersion}${c.reset}\n`);
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.1.0';
+const loaderVersion = '1.3.1';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
-const modsRoot = resolve(process.env.ECHO_MODS_HOME || join(root, '..', 'Mods'));
+const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));
+const modsRoot = resolve(process.env.ECHO_MODS_HOME || join(gameRoot, 'Mods'));
+const pluginsRoot = resolve(process.env.ECHO_PLUGINS_HOME || join(gameRoot, 'Plugins'));
+const logsRoot = resolve(process.env.ECHO_LOGS_HOME || join(root, 'Logs'));
 const statePath = join(root, 'loader-state.json');
 const loaderConfigPath = join(root, 'loader.config.json');
 const installedRoot = join(modsRoot, 'installed');
+const installedPluginsRoot = join(pluginsRoot, 'installed');
 const dropRoot = modsRoot;
 const processedRoot = join(modsRoot, '.processed');
+const processedPluginsRoot = join(pluginsRoot, '.processed');
 const defaultPort = Number(process.env.ECHO_MOD_PORT || 17862);
 const defaultDebugPort = Number(process.env.ECHO_MOD_DEBUG_PORT || 9229);
 const togetherRelayPort = Number(process.env.ECHO_TOGETHER_RELAY_PORT || 47891);
+const togetherModId = 'echo.listen-together';
 const packageTypes = new Set(['echo-external-mod', 'echo-plugin-package', 'echo-next-plugin-package']);
-const logFilePath = join(root, 'loader-debug.log');
+const packageExtensions = new Set(['.echomod', '.echo']);
+const maxPackageBytes = 128 * 1024 * 1024;
+const logFilePath = join(logsRoot, 'loader.log');
+const errorLogPath = join(logsRoot, 'errors.log');
+const logRanks = { DEBUG: 10, INFO: 20, WARN: 30, ERROR: 40 };
+let configuredLogLevel = 'INFO';
 
 const readJson = (file, fallback) => {
-  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; }
+  try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/u, '')); } catch { return fallback; }
 };
 const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true });
@@ -60,18 +72,32 @@ const formatLogValue = (value) => {
   try { return JSON.stringify(value); } catch { return String(value); }
 };
 const log = (level, message, ...values) => {
-  const line = `[${new Date().toISOString()}] [${level}] ${message}${values.length ? ` ${values.map(formatLogValue).join(' ')}` : ''}`;
-  try { appendFileSync(logFilePath, `${line}\n`, 'utf8'); } catch {}
-  const method = level === 'ERROR' ? console.error : level === 'WARN' ? console.warn : console.log;
+  const normalizedLevel = String(level || 'INFO').toUpperCase();
+  const severity = normalizedLevel.endsWith(':ERROR') ? 'ERROR' : normalizedLevel.endsWith(':WARN') ? 'WARN' : normalizedLevel.endsWith(':DEBUG') ? 'DEBUG' : normalizedLevel.endsWith(':INFO') || normalizedLevel.endsWith(':LOG') ? 'INFO' : normalizedLevel;
+  if ((logRanks[severity] || logRanks.INFO) < (logRanks[configuredLogLevel] || logRanks.INFO)) return;
+  const line = `[${new Date().toISOString()}] [${normalizedLevel}] ${message}${values.length ? ` ${values.map(formatLogValue).join(' ')}` : ''}`;
+  try {
+    mkdirSync(logsRoot, { recursive: true });
+    appendFileSync(logFilePath, `${line}\n`, 'utf8');
+    if (severity === 'ERROR') appendFileSync(errorLogPath, `${line}\n`, 'utf8');
+  } catch {}
+  const method = severity === 'ERROR' ? console.error : severity === 'WARN' ? console.warn : console.log;
   method(line);
 };
 
 const loaderConfig = readJson(loaderConfigPath, {
-  autoStart: true,
+  autoStart: false,
+  autoStartMode: 'manual',
   enableWebConsole: false,
   showConsole: false,
   port: 17862,
   debugPort: 9229,
+  loadMode: 'external-cdp',
+  safeMode: false,
+  debugMode: false,
+  injectIntervalMs: 5000,
+  startupDelayMs: 500,
+  logLevel: 'info',
 });
 
 const args = process.argv.slice(2);
@@ -80,146 +106,296 @@ const option = (name, fallback = null) => {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
 };
+const hasFlag = (...names) => names.some((name) => args.includes(name));
+const clamp = (value, min, max, fallback) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+};
 
-const enableWebConsole = args.includes('--web-console') || String(process.env.ECHO_ENABLE_WEB_CONSOLE || '').toLowerCase() === 'true' || loaderConfig.enableWebConsole === true;
+const loadModeValue = String(option('--load-mode', option('--mode', process.env.ECHO_MOD_LOAD_MODE || loaderConfig.loadMode || 'external-cdp'))).toLowerCase();
+const loadMode = new Set(['external-cdp', 'attach-only', 'disabled']).has(loadModeValue) ? loadModeValue : 'external-cdp';
+const autoStartModeValue = String(loaderConfig.autoStartMode || (loaderConfig.autoStart === true ? 'app-asar-bridge' : 'manual')).toLowerCase();
+const autoStartMode = new Set(['manual', 'app-asar-bridge']).has(autoStartModeValue) ? autoStartModeValue : 'manual';
+const autoStart = loaderConfig.autoStart === true && autoStartMode === 'app-asar-bridge';
+const safeMode = hasFlag('--safe-mode', '--no-mods') || String(process.env.ECHO_MOD_SAFE_MODE || '').toLowerCase() === 'true' || loaderConfig.safeMode === true;
+const debugMode = hasFlag('--debug', '--debug-mode') || String(process.env.ECHO_MOD_DEBUG || '').toLowerCase() === 'true' || loaderConfig.debugMode === true;
+const injectIntervalMs = clamp(option('--inject-interval', process.env.ECHO_MOD_INJECT_INTERVAL || loaderConfig.injectIntervalMs), 1000, 60000, 5000);
+const startupDelayMs = clamp(option('--startup-delay', process.env.ECHO_MOD_STARTUP_DELAY || loaderConfig.startupDelayMs), 0, 30000, 500);
+const requestedLogLevel = String(option('--log-level', process.env.ECHO_MOD_LOG_LEVEL || loaderConfig.logLevel || (debugMode ? 'debug' : 'info'))).toUpperCase();
+configuredLogLevel = Object.hasOwn(logRanks, requestedLogLevel) ? requestedLogLevel : (debugMode ? 'DEBUG' : 'INFO');
+const enableWebConsole = hasFlag('--web-console') || debugMode || String(process.env.ECHO_ENABLE_WEB_CONSOLE || '').toLowerCase() === 'true' || loaderConfig.enableWebConsole === true;
 const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.port || defaultPort));
 const debugPort = Number(option('--debug-port', process.env.ECHO_MOD_DEBUG_PORT || loaderConfig.debugPort || defaultDebugPort));
 const echoExe = option('--echo', null);
 
 mkdirSync(installedRoot, { recursive: true });
+mkdirSync(installedPluginsRoot, { recursive: true });
 mkdirSync(dropRoot, { recursive: true });
 mkdirSync(processedRoot, { recursive: true });
+mkdirSync(pluginsRoot, { recursive: true });
+mkdirSync(processedPluginsRoot, { recursive: true });
+mkdirSync(logsRoot, { recursive: true });
 
-const readState = () => readJson(statePath, { version: 1, mods: {} });
+const readState = () => {
+  const state = readJson(statePath, { version: 2, mods: {} });
+  return { version: 2, mods: {}, ...state, mods: state?.mods && typeof state.mods === 'object' ? state.mods : {} };
+};
 const saveState = (state) => writeJson(statePath, state);
 const safeId = (id) => typeof id === 'string' && /^[a-z0-9][a-z0-9._-]{1,63}$/iu.test(id);
 const safeRelative = (value) => {
   if (typeof value !== 'string' || !value || value.includes('\0')) throw new Error('invalid_mod_file');
   const clean = normalize(value).replaceAll('\\', '/');
-  if (clean.startsWith('../') || clean === '..' || clean.startsWith('/') || /^[a-z]:/iu.test(clean)) throw new Error('invalid_mod_file');
+  if (clean === '.' || clean.startsWith('../') || clean === '..' || clean.startsWith('/') || /^[a-z]:/iu.test(clean)) throw new Error('invalid_mod_file');
   return clean;
 };
-const installedDirectory = (id) => join(installedRoot, id);
-const readManifest = (id) => readJson(join(installedDirectory(id), 'echo.mod.json'), null);
-const configPath = (id, manifest = readManifest(id)) => join(installedDirectory(id), safeRelative(manifest?.config || 'config.json'));
+const packageKind = (type) => type === 'echo-plugin-package' || type === 'echo-next-plugin-package' ? 'plugin' : 'mod';
+const installedDirectory = (id, kind = 'mod') => join(kind === 'plugin' ? installedPluginsRoot : installedRoot, id);
+const manifestNames = ['echo.mod.json', 'echo.plugin.json', 'manifest.json'];
+const findPackage = (id, preferredKind = null) => {
+  if (!safeId(id)) return null;
+  const kinds = preferredKind === 'plugin' ? ['plugin', 'mod'] : preferredKind === 'mod' ? ['mod', 'plugin'] : ['mod', 'plugin'];
+  for (const kind of kinds) {
+    const directory = installedDirectory(id, kind);
+    for (const manifestName of manifestNames) {
+      const path = join(directory, manifestName);
+      const manifest = readJson(path, null);
+      if (manifest) return { id, kind, directory, manifest, manifestName };
+    }
+  }
+  return null;
+};
+const readManifest = (id, kind = null) => findPackage(id, kind)?.manifest || null;
+const configPath = (id, manifest = null) => {
+  const record = findPackage(id);
+  if (!record || !manifest) throw new Error('mod_not_installed');
+  return join(record.directory, safeRelative(manifest.config || 'config.json'));
+};
 const readModConfig = (id) => {
-  const manifest = readManifest(id);
+  const record = findPackage(id);
+  const manifest = record?.manifest;
   if (!manifest) throw new Error('mod_not_installed');
   return readJson(configPath(id, manifest), {});
 };
+const readModConfigSchema = (id, manifest = readManifest(id)) => {
+  if (!manifest?.configSchema) return null;
+  if (typeof manifest.configSchema === 'object') return manifest.configSchema;
+  if (typeof manifest.configSchema !== 'string') return null;
+  const record = findPackage(id);
+  return record ? readJson(join(record.directory, safeRelative(manifest.configSchema)), null) : null;
+};
 const writeModConfig = (id, config) => {
-  const manifest = readManifest(id);
+  const record = findPackage(id);
+  const manifest = record?.manifest;
   if (!manifest) throw new Error('mod_not_installed');
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('mod_config_object_required');
   writeJson(configPath(id, manifest), config);
 };
-const readFiles = (id) => {
-  const dir = installedDirectory(id);
-  const files = {};
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || entry.name === 'echo.mod.json') continue;
-    files[entry.name] = readFileSync(join(dir, entry.name), 'utf8');
-  }
-  return files;
-};
 const iconDataUrl = (id, manifest) => {
   if (!manifest?.icon) return null;
-  const iconPath = join(installedDirectory(id), safeRelative(manifest.icon));
+  const record = findPackage(id);
+  if (!record) return null;
+  const iconPath = join(record.directory, safeRelative(manifest.icon));
   if (!existsSync(iconPath) || extname(iconPath).toLowerCase() !== '.svg') return null;
   return `data:image/svg+xml;base64,${readFileSync(iconPath).toString('base64')}`;
 };
 const modSummaries = () => {
   const state = readState();
   return Object.keys(state.mods).sort().flatMap((id) => {
-    const manifest = readManifest(id);
-    if (!manifest) return [];
+    const entry = state.mods[id] || {};
+    const record = findPackage(id, entry.kind);
+    if (!record) return [];
+    const manifest = record.manifest;
     return [{
       id,
+      kind: record.kind,
+      folder: record.kind === 'plugin' ? 'Plugins' : 'Mods',
       name: manifest.name || id,
       version: manifest.version || '1.0.0',
       description: manifest.description || '',
       iconDataUrl: iconDataUrl(id, manifest),
       configFile: manifest.config || 'config.json',
+      configSchema: readModConfigSchema(id, manifest),
       enabled: state.mods[id].enabled === true,
-      directory: installedDirectory(id),
+      directory: record.directory,
     }];
   });
 };
 
+const mimeTypes = new Map([
+  ['.js', 'text/javascript; charset=utf-8'], ['.mjs', 'text/javascript; charset=utf-8'], ['.cjs', 'text/javascript; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'], ['.htm', 'text/html; charset=utf-8'], ['.css', 'text/css; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'], ['.txt', 'text/plain; charset=utf-8'], ['.md', 'text/markdown; charset=utf-8'],
+  ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.gif', 'image/gif'], ['.webp', 'image/webp'],
+  ['.ico', 'image/x-icon'], ['.wasm', 'application/wasm'], ['.woff', 'font/woff'], ['.woff2', 'font/woff2'], ['.dll', 'application/octet-stream'],
+]);
+const modFile = (id, fileName) => {
+  if (!safeId(id)) throw new Error('invalid_mod_id');
+  const record = findPackage(id);
+  if (!record) throw new Error('mod_not_installed');
+  const base = resolve(record.directory);
+  const target = resolve(base, safeRelative(fileName));
+  if (relative(base, target).startsWith('..')) throw new Error('invalid_mod_file');
+  const metadata = lstatSync(target, { throwIfNoEntry: false });
+  if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error('mod_file_missing');
+  return { target, contentType: mimeTypes.get(extname(target).toLowerCase()) || 'application/octet-stream' };
+};
+
+const packageFile = (path, data) => ({ path: safeRelative(path), data: Buffer.isBuffer(data) ? data : Buffer.from(data) });
+const packagePayloadFromDirectory = (directory) => {
+  const manifestName = ['echo.mod.json', 'echo.plugin.json', 'manifest.json'].find((name) => existsSync(join(directory, name)));
+  if (!manifestName) throw new Error('mod_manifest_missing');
+  const manifest = readJson(join(directory, manifestName), null);
+  if (!manifest) throw new Error('mod_manifest_invalid');
+  const files = [];
+  const visit = (current, prefix = '') => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const filePath = join(current, entry.name);
+      const packagePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) visit(filePath, packagePath);
+      else if (entry.isFile() && packagePath !== manifestName) files.push(packageFile(packagePath, readFileSync(filePath)));
+    }
+  };
+  visit(directory);
+  return { type: manifestName === 'echo.plugin.json' ? 'echo-plugin-package' : 'echo-external-mod', manifest, manifestFile: manifestName, files };
+};
+const packagePayloadFromZip = (source) => {
+  const entries = readZip(readFileSync(source), { maxBytes: maxPackageBytes });
+  const byPath = new Map(entries.map((entry) => [entry.path.replaceAll('\\', '/').toLowerCase(), entry]));
+  const manifestEntry = ['echo.mod.json', 'echo.plugin.json', 'manifest.json', 'echo.workshop.json'].map((name) => byPath.get(name)).find(Boolean);
+  if (!manifestEntry) throw new Error('mod_manifest_missing');
+  let manifest = JSON.parse(manifestEntry.data.toString('utf8'));
+  let type = manifestEntry.path.toLowerCase().endsWith('plugin.json') ? 'echo-plugin-package' : 'echo-external-mod';
+  if (manifestEntry.path.toLowerCase().endsWith('workshop.json') && manifest.content?.entry) {
+    const nested = byPath.get(String(manifest.content.entry).toLowerCase());
+    if (nested) {
+      const packageValue = JSON.parse(nested.data.toString('utf8'));
+      manifest = packageValue.manifest || manifest;
+      type = packageValue.type || type;
+    }
+  }
+  return { type, manifest, manifestFile: manifestEntry.path, files: entries.filter((entry) => entry.path !== manifestEntry.path).map((entry) => packageFile(entry.path, entry.data)) };
+};
+const readPackagePayload = (source) => {
+  const resolved = resolve(source);
+  if (statSync(resolved).isDirectory()) return packagePayloadFromDirectory(resolved);
+  const bytes = readFileSync(resolved);
+  if (bytes.length > maxPackageBytes) throw new Error('echomod_too_large');
+  if (isZip(bytes)) return packagePayloadFromZip(resolved);
+  const payload = JSON.parse(bytes.toString('utf8'));
+  return { ...payload, files: (Array.isArray(payload.files) ? payload.files : []).map((file) => packageFile(file.path, file.encoding === 'base64' ? Buffer.from(String(file.content || ''), 'base64') : String(file.content ?? ''))) };
+};
 const importPackage = (source) => {
-  const payload = readJson(resolve(source), null);
+  const payload = readPackagePayload(source);
   if (!payload || !packageTypes.has(payload.type) || !payload.manifest || !safeId(payload.manifest.id)) throw new Error('invalid_echomod_package');
-  const manifest = { ...payload.manifest, entry: payload.manifest.entry || 'mod.js' };
+  const kind = packageKind(payload.type);
+  const manifest = { ...payload.manifest, entry: payload.manifest.entry || payload.manifest.main || (kind === 'plugin' ? 'plugin.js' : 'mod.js') };
   const files = Array.isArray(payload.files) ? payload.files : [];
-  const target = installedDirectory(manifest.id);
+  const target = installedDirectory(manifest.id, kind);
+  const seenPaths = new Set();
   const validatedFiles = files.map((file) => {
     const path = safeRelative(file?.path);
-    if (typeof file.content !== 'string') throw new Error('invalid_mod_file_content');
+    const pathKey = process.platform === 'win32' ? path.toLowerCase() : path;
+    if (seenPaths.has(pathKey)) throw new Error('duplicate_mod_file');
+    seenPaths.add(pathKey);
+    const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(String(file.content ?? ''));
+    if (data.length > maxPackageBytes) throw new Error('mod_file_too_large');
     const targetFile = join(target, path);
     if (relative(target, targetFile).startsWith('..')) throw new Error('invalid_mod_file');
-    return { path, content: file.content };
+    return { path, data };
   });
   const entryPath = safeRelative(manifest.entry);
   if (!validatedFiles.some((file) => file.path === entryPath)) throw new Error('mod_entry_missing');
-  rmSync(target, { recursive: true, force: true });
+  rmSync(installedDirectory(manifest.id, 'mod'), { recursive: true, force: true });
+  rmSync(installedDirectory(manifest.id, 'plugin'), { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
-  writeJson(join(target, 'echo.mod.json'), manifest);
+  writeJson(join(target, kind === 'plugin' ? 'echo.plugin.json' : 'echo.mod.json'), manifest);
   for (const file of validatedFiles) {
     const path = file.path;
     const targetFile = join(target, path);
     mkdirSync(dirname(targetFile), { recursive: true });
-    writeFileSync(targetFile, file.content, 'utf8');
+    writeFileSync(targetFile, file.data);
   }
   const state = readState();
-  state.mods[manifest.id] = { enabled: state.mods[manifest.id]?.enabled === true, importedAt: new Date().toISOString() };
+  const previous = state.mods[manifest.id] || {};
+  state.mods[manifest.id] = { ...previous, kind, enabled: previous.enabled === true, importedAt: new Date().toISOString() };
   saveState(state);
-  log('INFO', `installed mod ${manifest.id} v${manifest.version || '1.0.0'}`);
+  if (manifest.id === togetherModId) void syncTogetherRelay();
+  log('INFO', `installed ${kind} ${manifest.id} v${manifest.version || '1.0.0'}`);
   return manifest;
 };
 
 const removeMod = (id) => {
   if (!safeId(id)) throw new Error('invalid_mod_id');
   const state = readState();
-  rmSync(installedDirectory(id), { recursive: true, force: true });
+  rmSync(installedDirectory(id, 'mod'), { recursive: true, force: true });
+  rmSync(installedDirectory(id, 'plugin'), { recursive: true, force: true });
   delete state.mods[id];
   saveState(state);
-  log('INFO', `uninstalled mod ${id}`);
+  if (id === togetherModId) void syncTogetherRelay();
+  log('INFO', `uninstalled package ${id}`);
 };
 const setEnabled = (id, enabled) => {
-  if (!safeId(id) || !readManifest(id)) throw new Error('mod_not_installed');
+  if (!safeId(id) || !findPackage(id)) throw new Error('mod_not_installed');
   const state = readState();
-  state.mods[id] = { ...(state.mods[id] || {}), enabled };
+  const record = findPackage(id);
+  state.mods[id] = { ...(state.mods[id] || {}), kind: record?.kind || 'mod', enabled };
   saveState(state);
+  if (id === togetherModId) void syncTogetherRelay();
   log('INFO', `${enabled ? 'enabled' : 'disabled'} mod ${id}`);
 };
 
-let dropWatcher = null;
-let dropTimer = null;
-const processDropFile = (fileName) => {
-  if (!fileName || extname(fileName).toLowerCase() !== '.echomod') return;
-  const source = join(dropRoot, fileName);
+const dropLocations = [
+  { kind: 'mod', root: modsRoot, processedRoot },
+  { kind: 'plugin', root: pluginsRoot, processedRoot: processedPluginsRoot },
+];
+const dropWatchers = [];
+const dropTimers = [];
+const pendingDrops = new Set();
+const waitForStableFile = async (source) => {
+  let previous = -1;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (!existsSync(source)) throw new Error('drop_file_missing');
+    const size = statSync(source).size;
+    if (size > 0 && size === previous) return;
+    previous = size;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+  throw new Error('drop_file_still_changing');
+};
+const processDropFile = async (location, fileName) => {
+  const pendingKey = `${location.kind}:${fileName}`;
+  if (!fileName || !packageExtensions.has(extname(fileName).toLowerCase()) || pendingDrops.has(pendingKey)) return;
+  const source = join(location.root, fileName);
   if (!existsSync(source) || !statSync(source).isFile()) return;
+  pendingDrops.add(pendingKey);
   try {
+    await waitForStableFile(source);
     const manifest = importPackage(source);
-    const archived = join(processedRoot, `${Date.now()}-${basename(fileName)}`);
+    const archived = join(location.processedRoot, `${Date.now()}-${basename(fileName)}`);
     renameSync(source, archived);
-    log('INFO', `auto-imported ${manifest.id} from ${basename(fileName)}`);
-    void injectEnabled().catch((error) => log('WARN', `reinject after auto-import failed: ${error.message}`));
+    log('INFO', `auto-imported ${manifest.id} from ${location.kind}/${basename(fileName)}`);
+    void requestInjection('auto-import').catch((error) => log('WARN', `reinject after auto-import failed: ${error.message}`));
   } catch (error) {
-    log('WARN', `auto-import skipped ${basename(fileName)}: ${error instanceof Error ? error.message : String(error)}`);
+    log('WARN', `auto-import skipped ${location.kind}/${basename(fileName)}: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    pendingDrops.delete(pendingKey);
   }
 };
-const scanDropRoot = () => {
-  for (const entry of readdirSync(dropRoot, { withFileTypes: true })) {
-    if (entry.isFile() && extname(entry.name).toLowerCase() === '.echomod') processDropFile(entry.name);
+const scanDropRoot = (location) => {
+  let entries = [];
+  try { entries = readdirSync(location.root, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    if (entry.isFile() && packageExtensions.has(extname(entry.name).toLowerCase())) void processDropFile(location, entry.name);
   }
 };
 const startDropWatcher = () => {
-  if (dropWatcher) return;
-  try { dropWatcher = watch(dropRoot, (_event, fileName) => processDropFile(String(fileName || ''))); } catch (error) { log('WARN', `drop watcher unavailable: ${error.message}`); }
-  dropTimer = setInterval(scanDropRoot, 2000);
-  scanDropRoot();
-  log('INFO', `watching ${dropRoot} for .echomod files`);
+  if (dropWatchers.length) return;
+  for (const location of dropLocations) {
+    try { dropWatchers.push(watch(location.root, (_event, fileName) => void processDropFile(location, String(fileName || '')))); } catch (error) { log('WARN', `drop watcher unavailable for ${location.kind}: ${error.message}`); }
+    dropTimers.push(setInterval(() => scanDropRoot(location), 2000));
+    scanDropRoot(location);
+    log('INFO', `watching ${location.root} for .echomod/.echo files`);
+  }
 };
 
 let echoProcess = null;
@@ -246,7 +422,9 @@ const cdpEvaluate = async (webSocketUrl, expression) => {
   });
   try {
     await call('Runtime.enable', {});
-    return await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+    const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+    if (result?.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'echo_renderer_evaluation_failed');
+    return result;
   } finally { socket.close(); }
 };
 const cdpTargets = async () => {
@@ -264,12 +442,19 @@ const externalContext = (id, manifest) => ({
 
 const injectLoaderUi = async (target) => {
   const expression = `(() => {
-    if (window.__echoExternalLoaderUi?.version === 3) return 'already';
+    if (window.__echoExternalLoaderUi?.version >= 6) return 'already';
     window.__echoExternalLoaderUi?.dispose?.();
     const base = 'http://127.0.0.1:${port}';
     let panel = null;
     let configModal = null;
     let activeNav = null;
+    let activeSidebar = null;
+    let loaderGroup = null;
+    let loaderNav = null;
+    let loaderButton = null;
+    const sidebarEntries = new Map();
+    const sidebarButtons = new Map();
+    const sidebarPages = new Map();
 
     const css = document.createElement('style');
     css.id = 'echo-loader-ui-style';
@@ -491,6 +676,21 @@ const injectLoaderUi = async (target) => {
       .echo-modal-body textarea:focus { border-color: var(--theme-accent-solid-bg, #4b55e8); }
       .echo-modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
 
+      .echo-config-editor { display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 2px; }
+      .echo-config-section { border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.1)); border-radius: var(--radius-md, 8px); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+      .echo-config-section > legend { padding: 0 5px; color: var(--theme-heading-text, inherit); font-size: 12px; font-weight: 650; }
+      .echo-config-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      .echo-config-label { color: var(--theme-heading-text, inherit); font-size: 12px; font-weight: 550; }
+      .echo-config-help { color: var(--theme-muted-text, #616977); font-size: 11px; line-height: 1.35; }
+      .echo-config-input, .echo-config-json { width: 100%; border: 1px solid var(--theme-field-border, rgba(0, 0, 0, 0.14)); border-radius: var(--radius-sm, 6px); padding: 8px 9px; background: var(--theme-field-bg, rgba(255, 255, 255, 0.82)); color: var(--theme-page-text, inherit); font: 12px inherit; outline: none; }
+      .echo-config-input:focus, .echo-config-json:focus { border-color: var(--theme-accent-solid-bg, #4b55e8); }
+      .echo-config-json { min-height: 78px; resize: vertical; font-family: var(--font-mono, ui-monospace, Consolas, monospace); }
+      .echo-config-toggle { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+      .echo-config-toggle input { width: 17px; height: 17px; accent-color: var(--theme-accent-solid-bg, #4b55e8); }
+      .echo-config-error { color: var(--theme-danger-text, #ff6961); font-size: 11px; white-space: pre-wrap; }
+      .echo-external-mod-page { grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; overflow: auto; padding: clamp(20px, 3vw, 36px); background: var(--theme-page-bg, var(--color-bg, #f4f5f7)); color: var(--theme-page-text, var(--color-text, #292e37)); }
+      .echo-external-mod-page[hidden] { display: none !important; }
+
       .echo-toast {
         position: fixed; right: 28px; bottom: 28px; z-index: 2147483647;
         background: var(--theme-panel-bg-strong, var(--color-bg-elevated, #1e293b));
@@ -528,25 +728,188 @@ const injectLoaderUi = async (target) => {
       return val;
     };
 
+    const hideNativeSurfaces = () => document.querySelectorAll('.page-surface').forEach((surface) => {
+      surface.dataset.echoExternalHidden = 'true';
+      surface.style.setProperty('display', 'none', 'important');
+    });
+    const restoreNativeSurfaces = () => document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => {
+      delete surface.dataset.echoExternalHidden;
+      surface.style.removeProperty('display');
+    });
+    const closeSidebarPage = () => {
+      sidebarPages.forEach((page) => { page.hidden = true; });
+      activeSidebar = null;
+      restoreNativeSurfaces();
+      sidebarButtons.forEach((button) => { button.setAttribute('aria-current', 'false'); button.dataset.active = 'false'; });
+      if (loaderButton) { loaderButton.setAttribute('aria-current', 'false'); loaderButton.dataset.active = 'false'; }
+    };
+    // Native ECHO routes own the main surface; release any external Mod page first.
+    const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:route', 'app:navigate:lyrics-back'];
+    const onNativeRoute = () => closeSidebarPage();
+    nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNativeRoute));
     const setPanelVisible = (visible) => {
       if (!panel) return;
-      panel.hidden = !visible;
-      document.querySelectorAll('.page-surface').forEach((surface) => {
-        if (surface === panel) return;
-        if (visible) {
-          surface.dataset.echoExternalHidden = 'true';
-          surface.style.setProperty('display', 'none', 'important');
-        } else if (surface.dataset.echoExternalHidden === 'true') {
-          delete surface.dataset.echoExternalHidden;
-          surface.style.removeProperty('display');
-        }
-      });
+      if (visible) {
+        closeSidebarPage();
+        panel.hidden = false;
+        hideNativeSurfaces();
+      } else {
+        panel.hidden = true;
+        if (!activeSidebar) restoreNativeSurfaces();
+      }
       if (activeNav) {
         activeNav.dataset.active = String(visible);
         activeNav.setAttribute('aria-current', visible ? 'page' : 'false');
       }
     };
     const hidePanel = () => setPanelVisible(false);
+
+    const ensureLoaderGroup = () => {
+      const groups = document.querySelector('.sidebar-groups') || document.querySelector('.sidebar-group[data-group="preferences"]')?.parentElement;
+      if (!groups) return null;
+      let group = groups.querySelector('[data-echo-external-loader-group]');
+      if (!group) {
+        group = document.createElement('section');
+        group.className = 'sidebar-group sidebar-group--utility';
+        group.dataset.group = 'shinawase-loader';
+        group.dataset.echoExternalLoaderGroup = 'true';
+        const heading = document.createElement('h2');
+        heading.className = 'sidebar-group-label';
+        heading.textContent = 'ShinawaseLoader';
+        const nav = document.createElement('nav');
+        nav.className = 'nav-list utility-nav';
+        nav.setAttribute('aria-label', 'ShinawaseLoader');
+        group.append(heading, nav);
+        groups.append(group);
+      }
+      loaderGroup = group;
+      loaderNav = group.querySelector('.utility-nav') || group.querySelector('.nav-list');
+      return loaderNav;
+    };
+    const ensureLoaderButton = (nav) => {
+      if (!nav) return null;
+      let button = nav.querySelector('[data-echo-external-mods]');
+      if (!button) {
+        button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'nav-item';
+        button.setAttribute('aria-label', 'Mod 管理');
+        button.title = 'ShinawaseLoader Mod 管理';
+        button.dataset.echoExternalMods = 'true';
+        button.dataset.echoExternalOwned = 'true';
+        const icon = document.createElement('span');
+        icon.className = 'nav-icon-shell';
+        icon.textContent = '◆';
+        const label = document.createElement('span');
+        label.className = 'nav-item-label';
+        label.textContent = 'Mod 管理';
+        button.append(icon, label);
+      }
+      if (button.dataset.echoExternalBound !== 'true') {
+        button.dataset.echoExternalBound = 'true';
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          activeNav = button;
+          void open();
+        }, true);
+      }
+      if (button.parentElement !== nav || button !== nav.firstElementChild) nav.prepend(button);
+      loaderButton = button;
+      return button;
+    };
+    const sidebarNav = () => ensureLoaderGroup();
+    const mountSidebarPage = (entry) => {
+      let page = sidebarPages.get(entry.id);
+      if (!page) {
+        page = document.createElement('section');
+        page.className = 'echo-external-mod-page';
+        page.hidden = true;
+        page.dataset.echoExternalPage = entry.id;
+        (document.querySelector('.app-shell') || document.body).append(page);
+        sidebarPages.set(entry.id, page);
+      }
+      closeSidebarPage();
+      if (panel) panel.hidden = true;
+      hideNativeSurfaces();
+      page.hidden = false;
+      activeSidebar = entry.id;
+      sidebarButtons.forEach((button, id) => { const active = id === entry.id; button.setAttribute('aria-current', active ? 'page' : 'false'); button.dataset.active = String(active); });
+      if (loaderButton) { loaderButton.setAttribute('aria-current', 'false'); loaderButton.dataset.active = 'false'; }
+      if (entry.mounted) return;
+      try {
+        if (typeof entry.render === 'function') entry.cleanup = entry.render(page, entry.context || {});
+        else if (typeof entry.html === 'string') page.innerHTML = entry.html;
+        entry.mounted = true;
+      } catch (error) {
+        page.textContent = 'Mod page failed to load: ' + (error?.message || error);
+        toast('Mod page failed to load', 'error');
+      }
+    };
+    const removeSidebar = (id) => {
+      const entry = sidebarEntries.get(id);
+      if (entry) { try { entry.cleanup?.(); } catch {} }
+      sidebarEntries.delete(id);
+      sidebarButtons.get(id)?.remove();
+      sidebarButtons.delete(id);
+      sidebarPages.get(id)?.remove();
+      sidebarPages.delete(id);
+      if (activeSidebar === id) { activeSidebar = null; restoreNativeSurfaces(); }
+    };
+    const renderSidebarButtons = () => {
+      const nav = sidebarNav();
+      if (!nav) return false;
+      ensureLoaderButton(nav);
+      for (const [id, button] of sidebarButtons) if (!sidebarEntries.has(id)) { button.remove(); sidebarButtons.delete(id); }
+      const entries = [...sidebarEntries.values()].sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
+      let anchor = loaderButton?.nextElementSibling || null;
+      for (const entry of entries) {
+        let button = sidebarButtons.get(entry.id);
+        if (!button || !button.isConnected) {
+          button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'nav-item echo-external-mod-sidebar';
+          button.dataset.echoExternalSidebar = entry.id;
+          button.title = entry.label;
+          button.setAttribute('aria-label', entry.label);
+          const icon = document.createElement('span');
+          icon.className = 'nav-item-icon';
+          icon.textContent = entry.icon || '◆';
+          const label = document.createElement('span');
+          label.className = 'nav-item-label';
+          label.textContent = entry.label;
+          button.append(icon, label);
+          button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            mountSidebarPage(entry);
+          }, true);
+          sidebarButtons.set(entry.id, button);
+        }
+        if (button.parentElement !== nav || button !== anchor) nav.insertBefore(button, anchor);
+        anchor = button.nextElementSibling;
+      }
+      return true;
+    };
+    const registerSidebar = (modId, options = {}, context = {}) => {
+      const value = options && typeof options === 'object' ? options : {};
+      const pageId = modId + ':' + String(value.id || 'main');
+      removeSidebar(pageId);
+      const entry = {
+        id: pageId,
+        label: String(value.label || value.title || modId),
+        icon: String(value.icon || '◆').slice(0, 4),
+        order: Number.isFinite(Number(value.order)) ? Number(value.order) : 50,
+        render: typeof value.render === 'function' ? value.render : null,
+        html: typeof value.html === 'string' ? value.html : null,
+        context,
+        mounted: false,
+        cleanup: null,
+      };
+      sidebarEntries.set(pageId, entry);
+      renderSidebarButtons();
+      return () => { if (sidebarEntries.get(pageId) === entry) removeSidebar(pageId); };
+    };
 
     let allMods = [];
     let currentFilter = 'all';
@@ -584,7 +947,7 @@ const injectLoaderUi = async (target) => {
             <div class="echo-mod-info">
               <div class="echo-mod-header-row">
                 <div class="echo-mod-title" title="\${esc(m.name)}">\${esc(m.name)}</div>
-                <span class="echo-mod-version">v\${esc(m.version)}</span>
+                <span class="echo-mod-version" title="\${esc(m.folder || 'Mods')}">\${m.kind === 'plugin' ? 'Plugin' : 'Mod'} · v\${esc(m.version)}</span>
               </div>
               <div class="echo-mod-id" title="\${esc(m.id)}">\${esc(m.id)}</div>
             </div>
@@ -617,62 +980,142 @@ const injectLoaderUi = async (target) => {
       }
     };
 
+    const copyValue = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    const labelFor = (key) => String(key).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase());
+    const configType = (value, spec = {}) => spec.type || (Array.isArray(value) ? 'array' : value === null ? 'string' : typeof value);
+    const configProperties = (spec, value) => spec?.properties || (value && typeof value === 'object' && !Array.isArray(value) ? {} : null);
+    const configDefaults = (value, spec = {}) => {
+      if (Object.prototype.hasOwnProperty.call(spec, 'default')) return copyValue(spec.default);
+      const properties = configProperties(spec, value);
+      if (!properties) return copyValue(value);
+      const output = {};
+      for (const key of new Set([...Object.keys(value || {}), ...Object.keys(properties)])) output[key] = configDefaults(value?.[key], properties[key] || {});
+      return output;
+    };
+    const renderConfigEditor = (value, schema) => {
+      const root = document.createElement('div');
+      root.className = 'echo-config-editor';
+      const controls = [];
+      const build = (parent, key, current, spec = {}, path = []) => {
+        const type = configType(current, spec);
+        const properties = configProperties(spec, current);
+        if (type === 'object' && properties) {
+          const section = document.createElement('fieldset');
+          section.className = 'echo-config-section';
+          const legend = document.createElement('legend');
+          legend.textContent = spec.title || labelFor(key);
+          section.append(legend);
+          if (spec.description) { const help = document.createElement('div'); help.className = 'echo-config-help'; help.textContent = spec.description; section.append(help); }
+          for (const child of new Set([...Object.keys(current || {}), ...Object.keys(properties)])) build(section, child, current?.[child], properties[child] || {}, [...path, child]);
+          parent.append(section);
+          return;
+        }
+        const field = document.createElement('label');
+        field.className = 'echo-config-field';
+        const title = document.createElement('span');
+        title.className = 'echo-config-label';
+        title.textContent = spec.title || labelFor(key);
+        field.append(title);
+        let input;
+        if (type === 'boolean') {
+          const row = document.createElement('span');
+          row.className = 'echo-config-toggle';
+          input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = current === true;
+          row.append(input);
+          field.append(row);
+        } else if (Array.isArray(spec.enum)) {
+          input = document.createElement('select');
+          input.className = 'echo-config-input';
+          for (const option of spec.enum) { const node = document.createElement('option'); node.value = String(option); node.textContent = String(option); node.selected = option === current; input.append(node); }
+          field.append(input);
+        } else if (type === 'number' || type === 'integer') {
+          input = document.createElement('input');
+          input.type = 'number';
+          input.step = type === 'integer' ? '1' : 'any';
+          if (spec.minimum !== undefined) input.min = String(spec.minimum);
+          if (spec.maximum !== undefined) input.max = String(spec.maximum);
+          input.value = current === undefined || current === null ? '' : String(current);
+          input.className = 'echo-config-input';
+          field.append(input);
+        } else if (type === 'string' && String(current ?? '').length <= 120 && spec.format !== 'textarea') {
+          input = document.createElement('input');
+          input.type = spec.format === 'password' ? 'password' : 'text';
+          input.value = current === undefined || current === null ? '' : String(current);
+          input.className = 'echo-config-input';
+          field.append(input);
+        } else if (type === 'string') {
+          input = document.createElement('textarea');
+          input.value = current === undefined || current === null ? '' : String(current);
+          input.className = 'echo-config-json';
+          field.append(input);
+        } else {
+          input = document.createElement('textarea');
+          input.value = JSON.stringify(current ?? (type === 'array' ? [] : {}), null, 2);
+          input.className = 'echo-config-json';
+          field.append(input);
+        }
+        if (spec.description) { const help = document.createElement('span'); help.className = 'echo-config-help'; help.textContent = spec.description; field.append(help); }
+        controls.push({ input, type, path, complex: type === 'array' || type === 'object' });
+        parent.append(field);
+      };
+      const rootSpec = schema && typeof schema === 'object' ? schema : {};
+      const properties = configProperties(rootSpec, value);
+      if (properties) for (const key of new Set([...Object.keys(value || {}), ...Object.keys(properties)])) build(root, key, value?.[key], properties[key] || {}, [key]);
+      else build(root, 'value', value, rootSpec, []);
+      const collect = () => {
+        let output = copyValue(value);
+        const setAt = (path, next) => {
+          if (!path.length) { output = next; return; }
+          if (!output || typeof output !== 'object' || Array.isArray(output)) output = {};
+          let cursor = output;
+          path.slice(0, -1).forEach((part) => { if (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) cursor[part] = {}; cursor = cursor[part]; });
+          cursor[path[path.length - 1]] = next;
+        };
+        for (const control of controls) {
+          let next;
+          if (control.type === 'boolean') next = control.input.checked;
+          else if (control.type === 'number' || control.type === 'integer') { if (control.input.value.trim() === '') throw new Error('Number is required'); next = Number(control.input.value); if (!Number.isFinite(next)) throw new Error('Invalid number'); if (control.type === 'integer' && !Number.isInteger(next)) throw new Error('Integer is required'); }
+          else if (control.complex) { try { next = JSON.parse(control.input.value || (control.type === 'array' ? '[]' : '{}')); } catch (error) { throw new Error('Invalid JSON: ' + error.message); } }
+          else next = control.input.value;
+          setAt(control.path, next);
+        }
+        return output;
+      };
+      return { root, collect };
+    };
     const openConfigModal = async (modId, modName) => {
       if (configModal) configModal.remove();
+      configModal = document.createElement('div');
+      configModal.className = 'echo-modal-overlay';
+      configModal.innerHTML = '<div class="echo-modal-card"><div class="echo-modal-header"><div class="echo-modal-title" data-config-title></div><button class="echo-btn" data-modal-close aria-label="Close">Close</button></div><div class="echo-modal-body"><div data-config-host class="echo-config-editor">Loading configuration...</div><div class="echo-config-error" data-config-error></div></div><div class="echo-modal-footer"><button class="echo-btn" data-modal-reset>Reset</button><button class="echo-btn" data-modal-close>Cancel</button><button class="echo-btn primary" data-modal-save>Save</button></div></div>';
+      document.body.append(configModal);
+      configModal.querySelector('[data-config-title]').textContent = 'Mod config · ' + modName + ' (' + modId + ')';
+      const close = () => { configModal?.remove(); configModal = null; };
+      configModal.querySelectorAll('[data-modal-close]').forEach((button) => { button.onclick = close; });
+      const host = configModal.querySelector('[data-config-host]');
+      const errorBox = configModal.querySelector('[data-config-error]');
+      let response;
+      let editor;
+      let initial;
+      const mount = (value) => { editor = renderConfigEditor(value, response?.schema || response?.manifest?.configSchema || {}); host.replaceChildren(editor.root); errorBox.textContent = ''; };
       try {
-        const res = await api('/api/mod/' + encodeURIComponent(modId) + '/config');
-        const rawJson = JSON.stringify(res.config || {}, null, 2);
-        configModal = document.createElement('div');
-        configModal.className = 'echo-modal-overlay';
-        configModal.innerHTML = \`
-          <div class="echo-modal-card">
-            <div class="echo-modal-header">
-              <div class="echo-modal-title">模组配置 · \${esc(modName)} <span style="font-size:11px;color:var(--theme-subtle-text, #858d9a)">(\${esc(modId)})</span></div>
-              <button class="echo-btn" data-modal-close aria-label="关闭">关闭</button>
-            </div>
-            <div class="echo-modal-body">
-              <textarea data-config-json>\${esc(rawJson)}</textarea>
-              <div style="font-size:11px;color:var(--theme-muted-text, #858d9a)">支持标准的 JSON 格式配置项，保存后自动对运行中模组生效。</div>
-            </div>
-            <div class="echo-modal-footer">
-              <button class="echo-btn" data-modal-format>格式化</button>
-              <button class="echo-btn" data-modal-close>取消</button>
-              <button class="echo-btn primary" data-modal-save>保存配置</button>
-            </div>
-          </div>
-        \`;
-        document.body.append(configModal);
-
-        configModal.querySelector('[data-modal-close]').onclick = () => { configModal.remove(); configModal = null; };
-        configModal.querySelector('[data-modal-format]').onclick = () => {
-          try {
-            const parsed = JSON.parse(configModal.querySelector('[data-config-json]').value);
-            configModal.querySelector('[data-config-json]').value = JSON.stringify(parsed, null, 2);
-          } catch (e) {
-            toast('JSON 格式错误: ' + e.message, 'error');
-          }
-        };
+        response = await api('/api/mod/' + encodeURIComponent(modId) + '/config');
+        initial = configDefaults(response.config || {}, response.schema || {});
+        mount(initial);
+        configModal.querySelector('[data-modal-reset]').onclick = () => mount(configDefaults(initial, response.schema || {}));
         configModal.querySelector('[data-modal-save]').onclick = async () => {
           try {
-            const parsed = JSON.parse(configModal.querySelector('[data-config-json]').value);
-            await api('/api/mod/' + encodeURIComponent(modId) + '/config', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ config: parsed }),
-            });
-            toast('配置已成功保存！', 'success');
-            configModal.remove();
-            configModal = null;
+            const parsed = editor.collect();
+            await api('/api/mod/' + encodeURIComponent(modId) + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: parsed }) });
+            toast('Configuration saved', 'success');
+            close();
             refresh();
-          } catch (e) {
-            toast('保存失败: ' + e.message, 'error');
-          }
+          } catch (error) { errorBox.textContent = error.message || String(error); }
         };
-      } catch (err) {
-        toast(err.message, 'error');
-      }
+      } catch (error) { host.textContent = 'Unable to load configuration'; errorBox.textContent = error.message || String(error); }
     };
-
     const processFileImport = async (file) => {
       if (!file) return;
       toast('正在导入模组 ' + file.name + '...', 'info');
@@ -707,7 +1150,7 @@ const injectLoaderUi = async (target) => {
             <div class="echo-search-box">
               <input type="text" placeholder="搜索模组..." data-search>
             </div>
-            <input type="file" accept=".echomod,application/json" data-file style="display:none">
+        <input type="file" accept=".echomod,.echo,application/json,application/zip" data-file style="display:none">
             <button class="echo-btn primary" data-action="import-btn">导入模组</button>
             <button class="echo-btn" data-action="reinject-btn" title="重新注入已启用的模组">重新加载</button>
             <button class="echo-btn" data-action="close" title="关闭面板">关闭</button>
@@ -715,7 +1158,7 @@ const injectLoaderUi = async (target) => {
         </div>
 
         <div class="echo-dropzone" data-dropzone>
-          <span>拖放 <b>.echomod</b> 文件到此直接安装，或点击选择文件</span>
+          <span>拖放 <b>.echomod</b> / <b>.echo</b> 文件到此直接安装，或点击选择文件</span>
         </div>
 
         <div class="echo-filter-row">
@@ -811,57 +1254,42 @@ const injectLoaderUi = async (target) => {
     };
 
     const ensure = () => {
-      const nav = document.querySelector('.sidebar-group[data-group="preferences"] .utility-nav') || document.querySelector('.utility-nav');
+      const nav = ensureLoaderGroup();
       if (!nav) return false;
-      let button = nav.querySelector('[data-echo-external-mods]');
-      if (!button) {
-        button = Array.from(nav.querySelectorAll('button.nav-item')).find((item) => /^(mods|sh[in]?awase\s*mods)$/iu.test((item.getAttribute('aria-label') || item.textContent || '').trim())) || null;
-      }
-      if (!button) {
-        button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'nav-item';
-        button.setAttribute('aria-label', 'Mods');
-        button.title = 'ShinawaseLoader Mods';
-        button.dataset.echoExternalMods = 'true';
-        button.dataset.echoExternalOwned = 'true';
-        button.innerHTML = '<span class="nav-item-label">Mods</span>';
-        const settings = Array.from(nav.querySelectorAll('button.nav-item')).find((item) => /设置|settings/i.test(item.getAttribute('aria-label') || item.textContent || ''));
-        settings?.after(button) || nav.append(button);
-      }
-      button.dataset.echoExternalMods = 'true';
-      if (button.dataset.echoExternalBound !== 'true') {
-        button.dataset.echoExternalBound = 'true';
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          activeNav = button;
-          void open();
-        }, true);
-      }
-      if (!activeNav) activeNav = button;
+      const button = ensureLoaderButton(nav);
+      if (!activeNav || !activeNav.isConnected) activeNav = button;
+      renderSidebarButtons();
       return true;
     };
 
     const observer = new MutationObserver(ensure);
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('click', (event) => {
-      if (!panel || panel.hidden) return;
       const navItem = event.target?.closest?.('.nav-item');
-      if (navItem && navItem !== activeNav) hidePanel();
+      if (!navItem) return;
+      if (navItem.dataset.echoExternalSidebar) return;
+      if (navItem !== activeNav) { hidePanel(); closeSidebarPage(); }
     }, true);
     ensure();
 
     window.__echoExternalLoaderUi = {
-      version: 3,
+      version: 6,
+      registerSidebar,
+      unregisterSidebar: removeSidebar,
       dispose: () => {
         observer.disconnect();
+        nativeRouteEvents.forEach((eventName) => window.removeEventListener(eventName, onNativeRoute));
         panel?.remove();
         configModal?.remove();
         css.remove();
-        const ownNav = document.querySelector('[data-echo-external-mods][data-echo-external-owned]');
-        ownNav?.remove();
-        document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => { surface.style.removeProperty('display'); delete surface.dataset.echoExternalHidden; });
+        sidebarEntries.forEach((entry) => { try { entry.cleanup?.(); } catch {} });
+        sidebarButtons.forEach((button) => button.remove());
+        sidebarPages.forEach((page) => page.remove());
+        sidebarEntries.clear();
+        sidebarButtons.clear();
+        sidebarPages.clear();
+        document.querySelector('[data-echo-external-loader-group]')?.remove();
+        restoreNativeSurfaces();
         delete window.__echoExternalLoaderUi;
         delete window.__echoModToast;
       },
@@ -914,11 +1342,59 @@ const injectIntoTarget = async (target, id, manifest, source) => {
       if (!r.ok) throw new Error(value?.error || text || 'external_mod_request_failed');
       return value;
     };
+    const assetUrl = (filePath) => ctx.baseUrl + '/api/mod/' + encodeURIComponent(id) + '/file/' + encodeURIComponent(String(filePath || '').replaceAll('\\\\', '/'));
+    const loadAsset = async (filePath, options = {}) => {
+      const response = await fetch(assetUrl(filePath));
+      if (!response.ok) throw new Error('mod_asset_http_' + response.status);
+      return options.binary === true ? response.arrayBuffer() : response.text();
+    };
+    const publicEchoPath = (path) => {
+      const parts = String(path || '').split('.').filter(Boolean);
+      if (!parts.length || parts.some((part) => !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(part) || ['__proto__', 'constructor', 'prototype'].includes(part))) throw new Error('echo_sdk_path_invalid');
+      let owner = window.echo;
+      let value = window.echo;
+      for (const part of parts) { owner = value; value = value?.[part]; }
+      return { owner, value };
+    };
+    const sdk = {
+      version: 1,
+      mode: 'external-cdp',
+      getEcho() { return window.echo; },
+      list(path = '') {
+        const value = path ? publicEchoPath(path).value : window.echo;
+        return value && (typeof value === 'object' || typeof value === 'function') ? Object.keys(value).sort() : [];
+      },
+      get(path) { return publicEchoPath(path).value; },
+      call(path, ...callArgs) {
+        const target = publicEchoPath(path);
+        if (typeof target.value !== 'function') throw new Error('echo_sdk_method_not_found');
+        return target.value.apply(target.owner, callArgs);
+      },
+      async status() { return request('/api/status', { method: 'GET' }); },
+    };
+    const sidebarDisposers = [];
+    const sidebar = {
+      register(options = {}) {
+        const register = window.__echoExternalLoaderUi?.registerSidebar;
+        if (typeof register !== 'function') throw new Error('loader_ui_not_ready');
+        const dispose = register(id, options, { id, manifest: ctx.manifest, config: ctx.config, assetUrl, loadAsset, toast: (message) => bridge.toast(message), echo: window.echo });
+        if (typeof dispose === 'function') sidebarDisposers.push(dispose);
+        return () => {
+          const index = sidebarDisposers.indexOf(dispose);
+          if (index >= 0) sidebarDisposers.splice(index, 1);
+          dispose?.();
+        };
+      },
+    };
     const bridge = {
       ...ctx,
+      sdk,
       settings,
       fetchJson: (url, options = {}) => request('/api/proxy', { body: { url, ...options } }),
       uploadFile: (input) => request('/api/upload', { body: input }),
+      assetUrl,
+      loadAsset,
+      sidebar,
       toast: (message) => {
         if (typeof window.__echoModToast === 'function') window.__echoModToast(message, 'info');
         else {
@@ -939,39 +1415,93 @@ const injectIntoTarget = async (target, id, manifest, source) => {
     }]));
     bridge.console = modConsole;
     bridge.log = modConsole.log;
-    let dispose;
+    let returnedDispose;
     try {
-      dispose = await (async function(echoExternalMod, console) { ${source}\n })(bridge, modConsole);
+      returnedDispose = await (async function(echoExternalMod, console) { ${source}\n })(bridge, modConsole);
     } catch (error) {
       console.error('[ECHO external mod]', id, error);
       throw error;
     }
-    window.__echoExternalMods[id] = { source, signature, dispose: typeof dispose === 'function' ? dispose : undefined };
+    const dispose = () => {
+      try { if (typeof returnedDispose === 'function') returnedDispose(); } finally {
+        while (sidebarDisposers.length) sidebarDisposers.pop()?.();
+      }
+    };
+    window.__echoExternalMods[id] = { source, signature, dispose };
     return { status: 'injected', id };
   })()`;
   return cdpEvaluate(target.webSocketDebuggerUrl, expression);
 };
 
+const modEntrySource = (id, manifest, entry) => {
+  const source = readFileSync(entry, 'utf8');
+  const extension = extname(entry).toLowerCase();
+  if (manifest.entryType === 'html' || extension === '.html' || extension === '.htm') {
+    return `echoExternalMod.sidebar.register({ label: ${JSON.stringify(manifest.name || id)}, order: ${Number(manifest.sidebarOrder) || 50}, html: ${JSON.stringify(source)} });`;
+  }
+  if (manifest.entryType === 'css' || extension === '.css') {
+    return `const style = document.createElement('style'); style.dataset.echoExternalMod = ${JSON.stringify(id)}; style.textContent = ${JSON.stringify(source)}; document.head.append(style); return () => style.remove();`;
+  }
+  return source;
+};
+const injectionPlan = (id, stateEntry) => {
+  const record = findPackage(id, stateEntry?.kind);
+  const manifest = record?.manifest;
+  if (!record || !manifest) return null;
+  const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
+  if (!existsSync(entry)) return null;
+  const source = modEntrySource(id, manifest, entry);
+  return { id, manifest, source, signature: `${source}\n${JSON.stringify(externalContext(id, manifest))}` };
+};
+const targetInjectionState = async (target) => {
+  const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(() => ({
+    uiVersion: Number(window.__echoExternalLoaderUi?.version || 0),
+    mods: Object.fromEntries(Object.entries(window.__echoExternalMods || {}).map(([id, value]) => [id, String(value?.signature || '')]))
+  }))()`);
+  return result?.result?.value || { uiVersion: 0, mods: {} };
+};
+
 const injectEnabled = async () => {
+  if (safeMode || loadMode === 'disabled') return 0;
   const targets = await cdpTargets();
   const state = readState();
-  const active = Object.entries(state.mods).filter(([, value]) => value.enabled === true);
+  const active = Object.entries(state.mods).filter(([, value]) => value?.enabled === true);
+  const plans = active.map(([id, value]) => injectionPlan(id, value)).filter(Boolean);
   if (targets.length !== lastInjectedTargetCount) {
     lastInjectedTargetCount = targets.length;
-    log('INFO', `ECHO targets=${targets.length}, enabledMods=${active.length}`);
+    log('INFO', `ECHO targets=${targets.length}, enabledPackages=${plans.length}`);
   }
   for (const target of targets) {
-    await injectLoaderUi(target).catch(() => undefined);
-    for (const [id] of active) {
-      const manifest = readManifest(id);
-      if (!manifest) continue;
-      const entry = join(installedDirectory(id), safeRelative(manifest.entry || 'mod.js'));
-      if (!existsSync(entry)) continue;
-       await injectIntoTarget(target, id, manifest, readFileSync(entry, 'utf8')).catch((error) => log('WARN', `inject ${id}: ${error.message}`));
+    const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, mods: {} }));
+    const uiReloaded = targetState.uiVersion < 5;
+    if (uiReloaded) await injectLoaderUi(target).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
+    for (const plan of plans) {
+      if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
+      await injectIntoTarget(target, plan.id, plan.manifest, plan.source).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
     }
   }
   lastTargets = new Set(targets.map((target) => target.id));
   return targets.length;
+};
+let injectionPromise = null;
+let injectionQueued = false;
+const requestInjection = (reason = 'manual') => {
+  if (safeMode || loadMode === 'disabled') {
+    log('DEBUG', `injection skipped (${reason})`);
+    return Promise.resolve(0);
+  }
+  if (injectionPromise) {
+    injectionQueued = true;
+    return injectionPromise;
+  }
+  injectionPromise = injectEnabled().finally(() => {
+    injectionPromise = null;
+    if (injectionQueued) {
+      injectionQueued = false;
+      void requestInjection('queued').catch((error) => log('WARN', 'queued injection failed', error));
+    }
+  });
+  return injectionPromise;
 };
 
 let togetherUploadProgress = { active: false, loaded: 0, total: 0, stage: 'idle', quality: 'opus' };
@@ -982,6 +1512,17 @@ const rendererValue = async (expression) => {
   const result = await cdpEvaluate(target.webSocketDebuggerUrl, expression);
   if (result?.exceptionDetails) throw new Error(result.exceptionDetails.text || 'echo_renderer_evaluation_failed');
   return result?.result?.value;
+};
+const rendererSdkInfo = async () => rendererValue(`(() => {
+  const echo = window.echo || {};
+  return Object.fromEntries(Object.keys(echo).sort().map((key) => {
+    const value = echo[key];
+    return [key, typeof value === 'object' && value ? Object.keys(value).sort() : typeof value];
+  }));
+})()`);
+const sdkStatus = async () => {
+  try { return { connected: true, namespaces: await rendererSdkInfo() }; }
+  catch (error) { return { connected: false, error: error instanceof Error ? error.message : String(error) }; }
 };
 const playbackStatus = async () => {
   const status = await rendererValue('(async()=>await window.echo?.playback?.getStatus?.())()');
@@ -1054,9 +1595,15 @@ const publishTogetherTrack = async (payload) => {
   }
 };
 let togetherRelayServer = null;
+let togetherRelaySync = Promise.resolve();
+let relayLifecycleActive = false;
+const isTogetherEnabled = () => {
+  const state = readState();
+  return state.mods[togetherModId]?.enabled === true && Boolean(findPackage(togetherModId, state.mods[togetherModId]?.kind));
+};
 const startTogetherRelay = () => {
-  if (togetherRelayServer) return;
-  togetherRelayServer = createServer(async (request, response) => {
+  if (togetherRelayServer) return Promise.resolve();
+  const relay = createServer(async (request, response) => {
     const relayUrl = new URL(request.url || '/', `http://127.0.0.1:${togetherRelayPort}`);
     if (request.method === 'OPTIONS') { response.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' }); return response.end(); }
     try {
@@ -1069,26 +1616,116 @@ const startTogetherRelay = () => {
       return jsonResponse(response, 404, { error: 'not_found' });
     } catch (error) { return jsonResponse(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
   });
-  togetherRelayServer.on('error', (error) => console.warn(`Together relay: ${error.message}`));
-  togetherRelayServer.listen(togetherRelayPort, '127.0.0.1');
+  togetherRelayServer = relay;
+  return new Promise((resolvePromise, reject) => {
+    const startupError = (error) => {
+      if (togetherRelayServer === relay) togetherRelayServer = null;
+      reject(error);
+    };
+    relay.once('error', startupError);
+    relay.listen(togetherRelayPort, '127.0.0.1', () => {
+      relay.off('error', startupError);
+      relay.on('error', (error) => log('WARN', `Together relay: ${error.message}`));
+      resolvePromise();
+    });
+  });
+};
+const stopTogetherRelay = () => new Promise((resolvePromise) => {
+  const relay = togetherRelayServer;
+  togetherRelayServer = null;
+  if (!relay) return resolvePromise();
+  relay.closeAllConnections?.();
+  relay.close((error) => {
+    if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') log('WARN', `Together relay stop: ${error.message}`);
+    resolvePromise();
+  });
+});
+const syncTogetherRelay = () => {
+  if (!relayLifecycleActive) return Promise.resolve();
+  togetherRelaySync = togetherRelaySync.catch(() => undefined).then(async () => {
+    if (isTogetherEnabled()) await startTogetherRelay();
+    else await stopTogetherRelay();
+  }).catch((error) => log('WARN', `Together relay: ${error.message}`));
+  return togetherRelaySync;
 };
 const startWatch = () => {
+  if (safeMode || loadMode === 'disabled') {
+    log('INFO', `Mod injection disabled (${safeMode ? 'safe-mode' : 'load-mode'})`);
+    return;
+  }
   if (watchTimer) return;
-  watchTimer = setInterval(() => void injectEnabled().catch(() => undefined), 2500);
-  void injectEnabled().catch(() => undefined);
-  log('INFO', `watching ECHO CDP on ${debugPort}`);
+  watchTimer = setInterval(() => void requestInjection('interval').catch((error) => log('WARN', 'interval injection failed', error)), injectIntervalMs);
+  const inject = () => void requestInjection('initial').catch((error) => log('WARN', 'initial injection failed', error));
+  if (startupDelayMs) setTimeout(inject, startupDelayMs);
+  else inject();
+  log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
-const findEcho = () => echoExe || process.env.ECHO_EXE || [
-  join(process.cwd(), 'dist', 'installed', 'ECHO', 'ECHO.exe'),
-  join(process.cwd(), 'dist', 'win-unpacked', 'ECHO.exe'),
-  join(process.cwd(), '..', 'ECHOSteam-main', 'dist', 'win-unpacked', 'ECHO.exe'),
-].find(existsSync);
+const echoFileName = (name) => /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
+const echoCandidateRoots = () => {
+  const roots = new Set([
+    process.cwd(), workspaceRoot, dirname(root),
+    process.env.ECHO_ROOT, process.env.ECHO_INSTALL_ROOT,
+    process.env.ProgramFiles ? join(process.env.ProgramFiles, 'ECHO') : null,
+    process.env.ProgramFiles ? join(process.env.ProgramFiles, 'Steam', 'steamapps', 'common') : null,
+    process.env['ProgramFiles(x86)'] ? join(process.env['ProgramFiles(x86)'], 'Steam', 'steamapps', 'common') : null,
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Programs') : null,
+  ]);
+  const vdfRoots = [
+    process.env['ProgramFiles(x86)'] && join(process.env['ProgramFiles(x86)'], 'Steam', 'steamapps', 'libraryfolders.vdf'),
+    process.env.ProgramFiles && join(process.env.ProgramFiles, 'Steam', 'steamapps', 'libraryfolders.vdf'),
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Steam', 'steamapps', 'libraryfolders.vdf'),
+  ];
+  for (const vdf of vdfRoots) {
+    if (!vdf || !existsSync(vdf)) continue;
+    try {
+      const text = readFileSync(vdf, 'utf8');
+      for (const match of text.matchAll(/"path"\s+"([^"]+)"/giu)) roots.add(match[1].replaceAll('\\\\', '\\'));
+    } catch {}
+  }
+  if (process.platform === 'win32') {
+    for (const drive of ['C:', 'D:', 'E:', 'F:']) {
+      roots.add(join(drive, 'SteamLibrary'));
+      roots.add(join(drive, 'steamapps', 'common'));
+    }
+  }
+  return [...roots].filter(Boolean).map((value) => resolve(String(value)));
+};
+const discoverEchoes = (hint = null) => {
+  const found = new Set();
+  const add = (value) => {
+    if (!value) return;
+    const candidate = resolve(String(value));
+    try { if (existsSync(candidate) && statSync(candidate).isFile() && echoFileName(basename(candidate))) found.add(candidate); } catch {}
+  };
+  const walk = (directory, depth = 0) => {
+    if (!directory || depth > 5 || !existsSync(directory)) return;
+    let entries;
+    try { entries = readdirSync(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isFile() && echoFileName(entry.name)) add(path);
+      else if (entry.isDirectory() && !['node_modules', 'app.asar.unpacked', '.git', 'Mods', 'installed'].includes(entry.name)) walk(path, depth + 1);
+    }
+  };
+  const direct = hint || echoExe || process.env.ECHO_EXE || loaderConfig.echoExe || loaderConfig.echoRoot;
+  if (direct) {
+    const path = resolve(String(direct));
+    try { if (existsSync(path) && statSync(path).isFile()) add(path); else walk(path); } catch {}
+  }
+  for (const candidate of echoCandidateRoots()) walk(candidate);
+  return [...found].sort((left, right) => left.localeCompare(right));
+};
+const findEcho = () => {
+  const found = discoverEchoes();
+  if (!found.length) throw new Error('ECHO executable not found; pass --echo <directory-or-exe>');
+  return found[0];
+};
 
 const launchEcho = () => {
+  if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
   const executable = findEcho();
-  if (!executable) throw new Error('ECHO.exe_not_found_use_--echo');
   if (echoProcess && !echoProcess.killed) return executable;
-  echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`], { detached: false, stdio: 'ignore' });
+  echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`], { cwd: dirname(executable), detached: false, stdio: 'ignore', windowsHide: true });
   echoProcess.once('exit', () => { echoProcess = null; });
   log('INFO', `launched ECHO ${executable}`);
   startWatch();
@@ -1263,9 +1900,9 @@ const webUiHtml = `<!doctype html>
       </div>
     </div>
 
-    <input type="file" id="file" accept=".echomod,application/json" style="display:none" onchange="uploadMod(this.files[0])">
+    <input type="file" id="file" accept=".echomod,.echo,application/json,application/zip" style="display:none" onchange="uploadMod(this.files[0])">
     <div class="dropzone" id="dropzone" onclick="document.getElementById('file').click()">
-      <div class="dropzone-title">📥 点击选择或拖放 .echomod 文件到此处</div>
+      <div class="dropzone-title">📥 点击选择或拖放 .echomod / .echo 文件到此处</div>
       <div>快速安装并部署外部模组至 ECHO</div>
     </div>
 
@@ -1456,8 +2093,21 @@ const server = createServer(async (request, response) => {
       return response.end(enableWebConsole ? webUiHtml : webUiDisabledHtml);
     }
     if (request.method === 'GET' && url.pathname === '/api/status') {
-      return jsonResponse(response, 200, { ok: true, loaderVersion, root, enableWebConsole, port, debugPort, dropRoot });
+      const togetherRelay = isTogetherEnabled() && togetherRelayServer
+        ? { port: togetherRelayPort, url: `http://127.0.0.1:${togetherRelayPort}` }
+        : null;
+      return jsonResponse(response, 200, {
+        ok: true, loaderVersion, root, gameRoot, enableWebConsole, port, debugPort,
+        loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
+        dropRoot, pluginDropRoot: pluginsRoot,
+        folders: { logs: logsRoot, mods: modsRoot, plugins: pluginsRoot },
+        ...(togetherRelay ? { togetherRelay } : {}),
+        echo: discoverEchoes(echoExe || null),
+      });
     }
+    if (request.method === 'GET' && url.pathname === '/api/echoes') return jsonResponse(response, 200, { echoes: discoverEchoes() });
+    if (request.method === 'GET' && url.pathname === '/api/sdk') return jsonResponse(response, 200, { version: 1, mode: 'external-cdp', ...await sdkStatus() });
+    if (request.method === 'GET' && url.pathname === '/api/logs') return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath });
     if (request.method === 'POST' && url.pathname === '/api/log') {
       const body = await readRequest(request);
       const id = safeId(body.id) ? body.id : 'unknown-mod';
@@ -1467,7 +2117,21 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 204, {});
     }
     if (request.method === 'GET' && url.pathname === '/api/mods') {
-      return jsonResponse(response, 200, { mods: modSummaries(), root });
+      const packages = modSummaries();
+      return jsonResponse(response, 200, { mods: packages, plugins: packages.filter((item) => item.kind === 'plugin'), root, modsRoot, pluginsRoot });
+    }
+    const fileMatch = url.pathname.match(/^\/api\/mod\/([^/]+)\/file\/(.+)$/u);
+    if (fileMatch && request.method === 'GET') {
+      const id = decodeURIComponent(fileMatch[1]);
+      const fileName = decodeURIComponent(fileMatch[2]);
+      const file = modFile(id, fileName);
+      response.writeHead(200, {
+        'content-type': file.contentType,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+        'access-control-allow-origin': '*',
+      });
+      return response.end(readFileSync(file.target));
     }
     if (request.method === 'POST' && url.pathname === '/api/import') {
       const body = await readRequest(request);
@@ -1481,20 +2145,21 @@ const server = createServer(async (request, response) => {
     const configMatch = url.pathname.match(/^\/api\/mod\/([^/]+)\/config$/u);
     if (configMatch && request.method === 'GET') {
       const id = decodeURIComponent(configMatch[1]);
-      return jsonResponse(response, 200, { id, config: readModConfig(id) });
+      const manifest = readManifest(id);
+      return jsonResponse(response, 200, { id, config: readModConfig(id), schema: readModConfigSchema(id, manifest), manifest });
     }
     if (configMatch && request.method === 'PUT') {
       const id = decodeURIComponent(configMatch[1]);
       const body = await readRequest(request);
       writeModConfig(id, body.config);
-      void injectEnabled().catch(() => undefined);
+      void requestInjection('config').catch((error) => log('WARN', 'config injection failed', error));
       return jsonResponse(response, 200, { ok: true, config: readModConfig(id) });
     }
     const match = url.pathname.match(/^\/api\/mod\/([^/]+)\/(enable|disable)$/u);
     if (request.method === 'POST' && match) {
       const id = decodeURIComponent(match[1]);
       setEnabled(id, match[2] === 'enable');
-      if (match[2] === 'enable') void injectEnabled().catch(() => undefined);
+      if (match[2] === 'enable') void requestInjection('enable').catch((error) => log('WARN', 'enable injection failed', error));
       else void removeInjected(id);
       return jsonResponse(response, 200, { ok: true });
     }
@@ -1510,7 +2175,7 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, { executable: launchEcho() });
     }
     if (request.method === 'POST' && url.pathname === '/api/reinject') {
-      return jsonResponse(response, 200, { targets: await injectEnabled() });
+      return jsonResponse(response, 200, { targets: await requestInjection('api') });
     }
     if (request.method === 'POST' && url.pathname === '/api/proxy') {
       const body = await readRequest(request);
@@ -1572,7 +2237,7 @@ const run = async () => {
   if (command === 'list') return printList();
   if (command === 'import' || command === 'install') {
     const source = args[0];
-    if (!source) throw new Error('用法: ShinawaseLoader.mjs import <file.echomod>');
+    if (!source) throw new Error('用法: ShinawaseLoader.mjs import <file.echomod|file.echo>');
     const manifest = importPackage(source);
     console.log(`  ${c.bGreen}✔${c.reset} 成功导入模组: ${c.bold}${c.white}${manifest.name || manifest.id}${c.reset} ${c.dim}(v${manifest.version || '1.0.0'})${c.reset}`);
     return;
@@ -1584,7 +2249,7 @@ const run = async () => {
   }
   if (command === 'enable' || command === 'disable') {
     setEnabled(args[0], command === 'enable');
-    if (command === 'enable') await injectEnabled().catch(() => undefined);
+    if (command === 'enable') await requestInjection('cli').catch(() => undefined);
     console.log(`  ${c.bGreen}✔${c.reset} 模组 [${args[0]}] ${command === 'enable' ? '已启用' : '已停用'}`);
     return;
   }
@@ -1594,15 +2259,16 @@ const run = async () => {
   }
 
   const isAttach = command === 'attach';
+  relayLifecycleActive = true;
   startDropWatcher();
-  startTogetherRelay();
+  await syncTogetherRelay();
   server.listen(port, '127.0.0.1', () => {
     console.log(`\n${c.bCyan}╭─────────────────────────────────────────────────────────────╮${c.reset}`);
     console.log(`${c.bCyan}│${c.reset}  ${c.bold}${c.white}✦ ShinawaseLoader 模组服务已启动${c.reset}                           ${c.bCyan}│${c.reset}`);
     console.log(`${c.bCyan}╰─────────────────────────────────────────────────────────────╯${c.reset}`);
     console.log(`  ${c.bold}服务端口   :${c.reset} ${c.cyan}http://127.0.0.1:${port}${c.reset}`);
     console.log(`  ${c.bold}Web 控制台 :${c.reset} ${enableWebConsole ? `${c.bGreen}已开启 (http://127.0.0.1:${port})${c.reset}` : `${c.gray}已关闭 (可在 loader.config.json 中开启)${c.reset}`}`);
-    console.log(`  ${c.bold}Together中继:${c.reset} ${c.white}http://127.0.0.1:${togetherRelayPort}${c.reset}`);
+    if (togetherRelayServer) console.log(`  ${c.bold}Together中继:${c.reset} ${c.white}http://127.0.0.1:${togetherRelayPort}${c.reset}`);
     console.log(`  ${c.bold}CDP调试端口 :${c.reset} ${c.white}${debugPort}${c.reset}\n`);
   });
 

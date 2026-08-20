@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "defaultProvider": {
+      "type": "string",
+      "title": "Default provider",
+      "enum": ["netease", "qqmusic", "soundcloud", "youtube", "spotify", "tidal", "qobuz", "bilibili"]
+    },
+    "defaultQuality": {
+      "type": "string",
+      "title": "Default quality",
+      "enum": ["lossless", "high", "standard", "hires"]
+    },
+    "pageSize": {
+      "type": "integer",
+      "title": "Search result count",
+      "minimum": 10,
+      "maximum": 50
+    },
+    "hideUnavailable": {
+      "type": "boolean",
+      "title": "Hide unavailable tracks"
+    },
+    "showDisabledProviders": {
+      "type": "boolean",
+      "title": "Show disabled providers"
+    }
+  }
+}

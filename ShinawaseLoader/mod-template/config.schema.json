@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "enabledFeature": {
+      "type": "boolean",
+      "title": "Enabled feature"
+    },
+    "message": {
+      "type": "string",
+      "title": "Message",
+      "description": "Shown by the sample mod."
+    }
+  }
+}

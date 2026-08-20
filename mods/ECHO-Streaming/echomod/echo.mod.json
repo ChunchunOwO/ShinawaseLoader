@@ -1,0 +1,11 @@
+{
+  "id": "echo.community-streaming",
+  "name": "ECHO Streaming",
+  "version": "1.0.0",
+  "minEchoVersion": "26.8.15",
+  "description": "Community streaming browser powered by ECHO's public streaming and playback bridge.",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "config": "config.json",
+  "configSchema": "config.schema.json"
+}

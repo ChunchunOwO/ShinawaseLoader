@@ -1,9 +1,10 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
-  [ValidateSet('install', 'update', 'uninstall', 'check', 'menu')]
+  [ValidateSet('install', 'update', 'uninstall', 'check', 'launch', 'menu')]
   [string]$Action = 'menu',
   [string]$EchoRoot,
-  [switch]$Force
+  [switch]$Force,
+  [switch]$PatchApp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,55 +12,183 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalSource = Join-Path $ProjectRoot 'ShinawaseLoader'
 $Repo = 'https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main'
 $Archive = 'https://github.com/ChunchunOwO/ShinawaseLoader/archive/refs/heads/main.zip'
-$InstalledEchoRoot = 'C:\Program Files\ECHO'
-$DefaultEchoRoot = if (Test-Path -LiteralPath (Join-Path $InstalledEchoRoot 'ECHO.exe')) {
-  $InstalledEchoRoot
-} else {
-  Join-Path $ProjectRoot '..\ECHOSteam-main\dist\win-unpacked'
-}
+$BaseData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+$UserDataRoot = Join-Path $BaseData 'ShinawaseLoader'
+$SelectionFile = Join-Path $UserDataRoot 'selection.json'
+$RuntimeCache = Join-Path $UserDataRoot 'runtimes'
 $Logo = @'
   ____  _     _
  / ___|| |__ (_)_ __   __ ___      ____ _ ___  ___
  \___ \| '_ \| | '_ \ / _` \ \ /\ / / _` / __|/ _ \
   ___) | | | | | | | | (_| |\ V  V / (_| \__ \  __/
  |____/|_| |_|_|_| |_|\__,_| \_/\_/ \__,_|___/\___|
- | |    ___   __ _  __| | ___ _ __
- | |   / _ \ / _` |/ _` |/ _ \ '__|
- | |__| (_) | (_| | (_| |  __/ |
- |_____\___/ \__,_|\__,_|\___|_|
 '@
 
-function Read-Version($path) {
-  if (-not (Test-Path -LiteralPath $path)) { return $null }
-  try { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json).version } catch { return $null }
+function Read-Json($path, $fallback) {
+  if (-not (Test-Path -LiteralPath $path)) { return $fallback }
+  try { return Get-Content -Raw -LiteralPath $path | ConvertFrom-Json } catch { return $fallback }
 }
 
-function Ensure-Administrator {
-  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-  $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-  if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { return }
+function Write-Json($path, $value) {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+  $json = $value | ConvertTo-Json -Depth 20
+  $utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+  [IO.File]::WriteAllText($path, "$json`n", $utf8)
+}
 
-  $forward = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
-  $forward += @('-Action', $Action)
-  if ($EchoRoot) { $forward += @('-EchoRoot', ('"' + $EchoRoot.Replace('"', '\"') + '"')) }
-  if ($Force) { $forward += '-Force' }
-  try {
-    $child = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Verb RunAs -ArgumentList $forward -Wait -PassThru
-    if ($null -eq $child.ExitCode) { exit 0 }
-    exit $child.ExitCode
-  } catch {
-    Write-Error 'Administrator permission is required to install or remove ShinawaseLoader.'
-    exit 1
+function Read-Version($path) {
+  $value = Read-Json $path $null
+  if ($value) { return $value.version }
+  return $null
+}
+
+function Test-VersionGreater([string]$left, [string]$right) {
+  try { return [version]$left -gt [version]$right } catch { return $false }
+}
+
+function Add-UniquePath([System.Collections.Generic.List[string]]$list, [string]$path) {
+  if ([string]::IsNullOrWhiteSpace($path)) { return }
+  try { $full = [IO.Path]::GetFullPath($path) } catch { return }
+  if (-not $list.Contains($full)) { $list.Add($full) }
+}
+
+function Combine-Path([string]$base, [string]$child) {
+  if ([string]::IsNullOrWhiteSpace($base)) { return $null }
+  return [IO.Path]::Combine($base, $child)
+}
+
+function Get-SteamLibraryRoots {
+  $roots = [System.Collections.Generic.List[string]]::new()
+  $vdfCandidates = @(
+    (Join-Path ${env:PROGRAMFILES(x86)} 'Steam\steamapps\libraryfolders.vdf'),
+    (Join-Path $env:PROGRAMFILES 'Steam\steamapps\libraryfolders.vdf'),
+    (Join-Path $env:LOCALAPPDATA 'Steam\steamapps\libraryfolders.vdf')
+  )
+  foreach ($vdf in $vdfCandidates) {
+    if (Test-Path -LiteralPath $vdf) {
+      $text = Get-Content -Raw -LiteralPath $vdf
+      [regex]::Matches($text, '"path"\s+"([^"]+)"') | ForEach-Object { Add-UniquePath $roots $_.Groups[1].Value.Replace('\\', '\') }
+    }
+  }
+  foreach ($drive in Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue) {
+    Add-UniquePath $roots (Join-Path $drive.Root 'SteamLibrary')
+    Add-UniquePath $roots (Join-Path $drive.Root 'steamapps\common')
+  }
+  return $roots
+}
+
+function Get-EchoCandidates([string]$Hint) {
+  if ($Hint -and (Test-Path -LiteralPath $Hint -PathType Leaf)) { return @([IO.Path]::GetFullPath($Hint)) }
+  if ($Hint -and (Test-Path -LiteralPath $Hint -PathType Container)) {
+    $direct = @(Get-ChildItem -LiteralPath $Hint -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$' })
+    if ($direct.Count -eq 1) { return @($direct[0].FullName) }
+  }
+  $found = [System.Collections.Generic.List[string]]::new()
+  $roots = [System.Collections.Generic.List[string]]::new()
+  if ($Hint) {
+    if (Test-Path -LiteralPath $Hint -PathType Leaf) { Add-UniquePath $found $Hint }
+    else { Add-UniquePath $roots $Hint }
+  }
+  $saved = Read-Json $SelectionFile $null
+  if ($saved -and $saved.echoExe) { Add-UniquePath $found $saved.echoExe }
+  foreach ($root in @(
+    (Get-Location).Path,
+    $ProjectRoot,
+    (Join-Path $env:PROGRAMFILES 'ECHO'),
+    (Join-Path ${env:PROGRAMFILES(x86)} 'ECHO'),
+    (Join-Path $env:PROGRAMFILES 'Steam\steamapps\common'),
+    (Join-Path ${env:PROGRAMFILES(x86)} 'Steam\steamapps\common'),
+    (Join-Path $env:LOCALAPPDATA 'Programs')
+  )) { Add-UniquePath $roots $root }
+  foreach ($library in Get-SteamLibraryRoots) {
+    Add-UniquePath $roots (Combine-Path $library 'steamapps\common')
+    Add-UniquePath $roots $library
+  }
+  foreach ($root in $roots) {
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+    try {
+      $items = Get-ChildItem -LiteralPath $root -Filter '*.exe' -File -Recurse -Depth 6 -ErrorAction SilentlyContinue
+      foreach ($item in $items) {
+        if ($item.Name -match '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$') { Add-UniquePath $found $item.FullName }
+      }
+    } catch { }
+  }
+  return @($found | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Sort-Object -Unique)
+}
+
+function Select-EchoExecutable([string]$Hint) {
+  $candidates = @(Get-EchoCandidates $Hint)
+  if ($candidates.Count -eq 1) { return $candidates[0] }
+  if (-not $candidates.Count) {
+    $manual = Read-Host 'ECHO directory or executable (0 = back)'
+    if ($manual -eq '0' -or [string]::IsNullOrWhiteSpace($manual)) { return $null }
+    $retry = @(Get-EchoCandidates $manual.Trim())
+    if ($retry.Count -eq 1) { return $retry[0] }
+    throw "No ECHO executable found under '$manual'."
+  }
+  Write-Host ''
+  for ($i = 0; $i -lt $candidates.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $candidates[$i]) -ForegroundColor Gray }
+  Write-Host '  [M] enter another directory    [0] back' -ForegroundColor DarkGray
+  while ($true) {
+    $choice = (Read-Host 'Choose ECHO').Trim()
+    if ($choice -eq '0') { return $null }
+    if ($choice -match '^[mM]$') { return Select-EchoExecutable (Read-Host 'ECHO directory') }
+    $number = 0
+    if ([int]::TryParse($choice, [ref]$number) -and $number -ge 1 -and $number -le $candidates.Count) { return $candidates[$number - 1] }
+    Write-Host 'Invalid choice.' -ForegroundColor Yellow
   }
 }
 
-function Resolve-EchoRoot {
-  if ($EchoRoot) { return [IO.Path]::GetFullPath($EchoRoot) }
-  return [IO.Path]::GetFullPath($DefaultEchoRoot)
+function Resolve-EchoExecutable {
+  $path = Select-EchoExecutable $EchoRoot
+  if (-not $path) { throw 'ECHO selection cancelled.' }
+  $path = [IO.Path]::GetFullPath($path)
+  Write-Json $SelectionFile @{ echoExe = $path; selectedAt = (Get-Date).ToUniversalTime().ToString('o') }
+  return $path
 }
 
-function Get-RemoteVersion {
-  try { return Invoke-RestMethod -Uri "$Repo/ShinawaseLoader/loader-version.json" -TimeoutSec 15 } catch { return $null }
+function Download-File([string]$Uri, [string]$Destination) {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+  $request = [Net.HttpWebRequest]::Create($Uri)
+  $request.Method = 'GET'
+  $request.UserAgent = 'ShinawaseLoader/1.3'
+  $request.Timeout = 30000
+  $response = $request.GetResponse()
+  $input = $response.GetResponseStream()
+  $output = [IO.File]::Open($Destination, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $total = [double]$response.ContentLength
+    $loaded = [int64]0
+    $buffer = New-Object byte[] (1024 * 128)
+    while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      $output.Write($buffer, 0, $read)
+      $loaded += $read
+      if ($total -gt 0) { Write-Progress -Activity "Downloading $([IO.Path]::GetFileName($Destination))" -Status ("{0:N1} MB / {1:N1} MB" -f ($loaded / 1MB), ($total / 1MB)) -PercentComplete ([math]::Min(100, ($loaded / $total) * 100)) }
+      else { Write-Progress -Activity "Downloading $([IO.Path]::GetFileName($Destination))" -Status ("{0:N1} MB" -f ($loaded / 1MB)) }
+    }
+  } finally {
+    $output.Dispose(); $input.Dispose(); $response.Dispose(); Write-Progress -Activity 'Download' -Completed
+  }
+}
+
+function Get-NodeRuntime($versionInfo, $loaderRoot) {
+  New-Item -ItemType Directory -Force -Path $RuntimeCache | Out-Null
+  $cacheDir = Join-Path $RuntimeCache ("node-" + $versionInfo.nodeVersion)
+  $cacheNode = Join-Path $cacheDir 'node.exe'
+  if (-not (Test-Path -LiteralPath $cacheNode)) {
+    $zip = Join-Path $RuntimeCache ("node-" + $versionInfo.nodeVersion + '.zip')
+    $extract = Join-Path $RuntimeCache (".node-" + [guid]::NewGuid().ToString('N'))
+    try {
+      Download-File $versionInfo.nodeUrl $zip
+      Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+      $downloaded = Get-ChildItem -LiteralPath $extract -Filter 'node.exe' -File -Recurse | Select-Object -First 1
+      if (-not $downloaded) { throw 'node.exe was not found in the downloaded archive.' }
+      New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+      Copy-Item -LiteralPath $downloaded.FullName -Destination $cacheNode -Force
+    } finally { Remove-Item -LiteralPath $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue }
+  }
+  $localNode = Join-Path $loaderRoot 'node.exe'
+  try { Copy-Item -LiteralPath $cacheNode -Destination $localNode -Force; return $localNode } catch { return $cacheNode }
 }
 
 function Stop-Loader($loaderRoot) {
@@ -68,122 +197,235 @@ function Stop-Loader($loaderRoot) {
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
-function Download-Node($loaderRoot, $versionInfo) {
-  $nodePath = Join-Path $loaderRoot 'node.exe'
-  if (Test-Path -LiteralPath $nodePath) { return $nodePath }
-  $temp = Join-Path ([IO.Path]::GetTempPath()) "shinawase-node-$([guid]::NewGuid()).zip"
-  $extract = Join-Path ([IO.Path]::GetTempPath()) "shinawase-node-$([guid]::NewGuid())"
+function New-HardLinkOrCopy([string]$source, [string]$destination) {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
   try {
-    Write-Host "Downloading Node.js $($versionInfo.nodeVersion)..."
-    Invoke-WebRequest -Uri $versionInfo.nodeUrl -OutFile $temp -UseBasicParsing
-    Expand-Archive -LiteralPath $temp -DestinationPath $extract -Force
-    $downloaded = Get-ChildItem -LiteralPath $extract -Filter node.exe -Recurse | Select-Object -First 1
-    if (-not $downloaded) { throw 'node.exe was not found in the downloaded archive' }
-    Copy-Item -LiteralPath $downloaded.FullName -Destination $nodePath -Force
-    return $nodePath
-  } finally {
-    Remove-Item -LiteralPath $temp, $extract -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType HardLink -Path $destination -Target $source -Force -ErrorAction Stop | Out-Null
+  } catch {
+    Copy-Item -LiteralPath $source -Destination $destination -Force
   }
 }
 
-function Copy-Loader($source, $echoRoot, $versionInfo) {
+function Export-OriginalIcon([string]$echoExe, [string]$loaderRoot) {
+  $iconPath = Join-Path $loaderRoot 'echo-original.ico'
+  Add-Type -AssemblyName System.Drawing
+  $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($echoExe)
+  if (-not $icon) { throw "Could not extract the icon from '$echoExe'." }
+  try {
+    $stream = [IO.File]::Open($iconPath, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $icon.Save($stream) } finally { $stream.Dispose() }
+  } finally { $icon.Dispose() }
+  return $iconPath
+}
+
+function Build-ModdedHost([string]$echoRoot, [string]$loaderRoot, [string]$echoExe) {
+  $source = Join-Path $loaderRoot 'modded-host.cs'
+  $target = Join-Path $echoRoot 'ECHO.modded.exe'
+  $icon = Export-OriginalIcon $echoExe $loaderRoot
+  $compiler = @(
+    (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
+    (Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe')
+  ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  if (-not $compiler) { throw 'Microsoft C# compiler was not found; cannot create ECHO.modded.exe.' }
+  & $compiler /nologo /target:winexe /optimize+ /win32icon:$icon /out:$target $source
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $target)) { throw 'ECHO.modded.exe compilation failed.' }
+  return $target
+}
+
+function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loaderRoot, [string]$node) {
+  $runtimeRoot = Join-Path $loaderRoot 'modded-runtime'
+  if (Test-Path -LiteralPath $runtimeRoot) { Remove-Item -LiteralPath $runtimeRoot -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'resources') | Out-Null
+
+  foreach ($item in Get-ChildItem -LiteralPath $echoRoot -File -Force) {
+    if ($item.Name -in @('ECHO.exe', 'ECHO.modded.exe')) { continue }
+    New-HardLinkOrCopy $item.FullName (Join-Path $runtimeRoot $item.Name)
+  }
+  foreach ($item in Get-ChildItem -LiteralPath $echoRoot -Directory -Force) {
+    if ($item.Name -in @('resources', 'ShinawaseLoader', 'Mods', 'Plugins')) { continue }
+    $target = Join-Path $runtimeRoot $item.Name
+    try { New-Item -ItemType Junction -Path $target -Target $item.FullName -ErrorAction Stop | Out-Null }
+    catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
+  }
+  $originalAsar = Join-Path $echoRoot 'resources\app.asar'
+  $backupAsar = Join-Path $loaderRoot 'backups\app.asar.original'
+  if (Test-Path -LiteralPath $backupAsar) { $originalAsar = $backupAsar }
+  New-HardLinkOrCopy $echoExe (Join-Path $runtimeRoot 'ECHO.exe')
+  foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -File -Force) {
+    if ($item.Name -eq 'app.asar') { continue }
+    New-HardLinkOrCopy $item.FullName (Join-Path (Join-Path $runtimeRoot 'resources') $item.Name)
+  }
+  Copy-Item -LiteralPath $originalAsar -Destination (Join-Path $runtimeRoot 'resources\app.asar') -Force
+  $unpacked = Join-Path $runtimeRoot 'resources\app.asar.unpacked'
+  $sourceUnpacked = Join-Path $echoRoot 'resources\app.asar.unpacked'
+  try { New-Item -ItemType Junction -Path $unpacked -Target $sourceUnpacked -ErrorAction Stop | Out-Null }
+  catch { Copy-Item -LiteralPath $sourceUnpacked -Destination $unpacked -Recurse -Force }
+  # Keep Electron's native helper directories available in the isolated runtime.
+  foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -Directory -Force) {
+    if ($item.Name -eq 'app.asar.unpacked') { continue }
+    $target = Join-Path (Join-Path $runtimeRoot 'resources') $item.Name
+    try { New-Item -ItemType Junction -Path $target -Target $item.FullName -ErrorAction Stop | Out-Null }
+    catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
+  }
+  New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'ShinawaseLoader\backups') | Out-Null
+  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot | Out-Host
+  return $runtimeRoot
+}
+
+function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$EnableDirectAutoStart = $false) {
+  $echoRoot = Split-Path -Parent $echoExe
   $loaderRoot = Join-Path $echoRoot 'ShinawaseLoader'
   $modsRoot = Join-Path $echoRoot 'Mods'
-  New-Item -ItemType Directory -Force -Path $loaderRoot, $modsRoot | Out-Null
+  $pluginsRoot = Join-Path $echoRoot 'Plugins'
+  $logsRoot = Join-Path $loaderRoot 'Logs'
+  New-Item -ItemType Directory -Force -Path $loaderRoot, $modsRoot, $pluginsRoot, $logsRoot | Out-Null
   Stop-Loader $loaderRoot
-  @('install-mod.bat', 'install-modloader.bat', 'install-echotogether-mod.bat') | ForEach-Object {
-    Remove-Item -LiteralPath (Join-Path $loaderRoot $_) -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $echoRoot $_) -ErrorAction SilentlyContinue
-  }
-  Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'loader.config.json') } |
+  Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'loader.config.json', 'Logs', 'backups') } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $loaderRoot $_.Name) -Recurse -Force }
-  $node = Download-Node $loaderRoot $versionInfo
-  $config = Join-Path $loaderRoot 'loader.config.json'
-  if (-not (Test-Path -LiteralPath $config)) { Copy-Item (Join-Path $source 'loader.config.json') $config }
+  $node = Get-NodeRuntime $versionInfo $loaderRoot
+  $configPath = Join-Path $loaderRoot 'loader.config.json'
+  $config = Read-Json $configPath (Read-Json (Join-Path $source 'loader.config.json') @{})
+  $config | Add-Member -NotePropertyName runtimePath -NotePropertyValue $node -Force
+  if (-not $config.PSObject.Properties['autoStart']) { $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $false }
+  if (-not $config.PSObject.Properties['autoStartMode']) { $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'manual' }
+  $config | Add-Member -NotePropertyName loadMode -NotePropertyValue 'external-cdp' -Force
+  Write-Json $configPath $config
   & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Host
-  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $echoRoot | Out-Host
-  & icacls.exe $loaderRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
-  & icacls.exe $modsRoot /grant "${env:USERNAME}:(OI)(CI)M" /T /C | Out-Null
-  Write-Host "Installed ShinawaseLoader $($versionInfo.version) in $loaderRoot" -ForegroundColor Green
-  Write-Host "Mods folder: $modsRoot" -ForegroundColor Cyan
+  $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $true -Force
+  $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'app-asar-bridge' -Force
+  Write-Json $configPath $config
+  Prepare-ModdedRuntime $echoRoot $echoExe $loaderRoot $node | Out-Null
+  $moddedHost = Build-ModdedHost $echoRoot $loaderRoot $echoExe
+  $escapedRoot = $echoRoot.Replace('%', '%%')
+  $launcherSpecs = @(
+    @{ Name = 'start-echo-with-mods.cmd'; Command = 'host'; Description = 'modded host with Steam-aware ECHO child' },
+    @{ Name = 'start-echo-debug.cmd'; Command = 'run --debug --web-console --log-level debug'; Description = 'development and debug logging' },
+    @{ Name = 'start-echo-safe.cmd'; Command = 'run --safe-mode'; Description = 'start ECHO without Mod or Plugin injection' },
+    @{ Name = 'attach-to-echo.cmd'; Command = 'attach'; Description = 'attach Loader to an already running ECHO instance' }
+  )
+  foreach ($spec in $launcherSpecs) {
+    $launcherPath = Join-Path $loaderRoot $spec.Name
+    if ($spec.Command -eq 'host') {
+      @("@echo off", "setlocal", "cd /d `"$escapedRoot`"", "`"$moddedHost`" %*", "endlocal") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+    } else {
+      @("@echo off", "setlocal", "cd /d `"$escapedRoot`"", "`"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*", "endlocal") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+    }
+  }
+  $launcher = Join-Path $loaderRoot 'start-echo-with-mods.cmd'
+  if ($EnableDirectAutoStart) { Write-Host 'Direct ECHO.exe patching is no longer required; use ECHO.modded.exe for isolated loading.' -ForegroundColor DarkGray }
+  Write-Host "Installed ShinawaseLoader $($versionInfo.version)" -ForegroundColor Green
+  Write-Host "ECHO: $echoExe" -ForegroundColor Cyan
+  Write-Host "Modded host: $moddedHost" -ForegroundColor Cyan
+  Write-Host "Start with mods: $launcher" -ForegroundColor Cyan
+  Write-Host "Plugins: $pluginsRoot" -ForegroundColor Cyan
+  Write-Host "Logs: $logsRoot" -ForegroundColor Cyan
+  Write-Host 'Dependency downloads use the user cache; protected install folders may still require Windows permission for the loader itself.' -ForegroundColor DarkGray
 }
 
-function Get-Status($echoRoot) {
-  $loaderRoot = Join-Path $echoRoot 'ShinawaseLoader'
-  $local = Read-Version (Join-Path $LocalSource 'loader-version.json')
-  $installed = Read-Version (Join-Path $loaderRoot 'loader-version.json')
-  $remote = Get-RemoteVersion
-  [pscustomobject]@{ Local = $local; Installed = $installed; Remote = if ($remote) { $remote.version } else { 'unavailable' }; EchoRoot = $echoRoot; LoaderRoot = $loaderRoot }
+function Get-RemoteVersion {
+  try { return Invoke-RestMethod -Uri "$Repo/ShinawaseLoader/loader-version.json" -TimeoutSec 15 } catch { return $null }
 }
 
 function Download-RemoteSource {
   $zip = Join-Path ([IO.Path]::GetTempPath()) "shinawase-loader-$([guid]::NewGuid()).zip"
   $dir = Join-Path ([IO.Path]::GetTempPath()) "shinawase-loader-$([guid]::NewGuid())"
-  Invoke-WebRequest -Uri $Archive -OutFile $zip -UseBasicParsing
+  Download-File $Archive $zip
   Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+  Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
   $source = Get-ChildItem -LiteralPath $dir -Directory | Select-Object -First 1
-  try { return Join-Path $source.FullName 'ShinawaseLoader' } finally { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue }
+  if (-not $source) { Remove-Item -LiteralPath $dir -Recurse -Force; throw 'Remote source archive is empty.' }
+  return @{ Path = (Join-Path $source.FullName 'ShinawaseLoader'); Temp = $dir }
 }
 
-Ensure-Administrator
-
-Write-Host $Logo -ForegroundColor Cyan
-Write-Host 'ShinawaseLoader v0.0.1Beta' -ForegroundColor White
-Write-Host ''
-if ($Action -eq 'menu') {
-  $targetEcho = Resolve-EchoRoot
-  while ($true) {
-    Write-Host "ShinawaseLoader setup" -ForegroundColor Cyan
-    Write-Host "ECHO: $targetEcho"
-    Write-Host "1. Install"
-    Write-Host "2. Update"
-    Write-Host "3. Uninstall loader (keeps Mods)"
-    Write-Host "4. Check versions"
-    Write-Host "5. Change ECHO directory"
-    Write-Host "6. Exit"
-    switch (Read-Host 'Select') {
-      '1' { $Action = 'install'; break }
-      '2' { $Action = 'update'; break }
-      '3' { $Action = 'uninstall'; break }
-      '4' { $Action = 'check'; break }
-      '5' {
-        $selectedRoot = Read-Host 'New ECHO directory'
-        if ($selectedRoot.Trim()) { $EchoRoot = $selectedRoot.Trim(); $targetEcho = Resolve-EchoRoot }
-        continue
-      }
-      default { exit 0 }
-    }
-    break
+function Invoke-Install($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStart = $false) {
+  $loaderRoot = Join-Path (Split-Path -Parent $selectedExe) 'ShinawaseLoader'
+  $localVersion = Read-Json (Join-Path $LocalSource 'loader-version.json') $null
+  $versionInfo = $localVersion
+  $remote = $null
+  $useRemote = $false
+  if ($Update) {
+    $remote = Get-RemoteVersion
+    if ($remote -and (Test-VersionGreater $remote.version $localVersion.version)) { $versionInfo = $remote; $useRemote = $true }
   }
-}
-$targetEcho = Resolve-EchoRoot
-
-$echoExe = Join-Path $targetEcho 'ECHO.exe'
-$loaderRoot = Join-Path $targetEcho 'ShinawaseLoader'
-switch ($Action) {
-  'check' { Get-Status $targetEcho | Format-List; exit 0 }
-  'uninstall' {
-    $asarScript = Join-Path $loaderRoot 'echo-asar.mjs'
-    $nodePath = Join-Path $loaderRoot 'node.exe'
-    if ((Test-Path -LiteralPath $asarScript) -and (Test-Path -LiteralPath $nodePath)) {
-      $restoreArgs = @($asarScript, 'restore', $targetEcho)
-      if ($Force) { $restoreArgs += '--force' }
-      & $nodePath @restoreArgs | Out-Host
+  $remoteSource = $null
+  try {
+    if ($useRemote -and (Read-Version (Join-Path $loaderRoot 'loader-version.json'))) {
+      if ([version]$remote.version -gt [version](Read-Version (Join-Path $loaderRoot 'loader-version.json'))) { $remoteSource = Download-RemoteSource }
     }
-    Stop-Loader $loaderRoot
-    if (Test-Path -LiteralPath $loaderRoot) { Remove-Item -LiteralPath $loaderRoot -Recurse -Force }
-    Write-Host "Loader removed. Mods were kept at $(Join-Path $targetEcho 'Mods')." -ForegroundColor Green
-    exit 0
-  }
-    'install' { if (-not (Test-Path -LiteralPath $echoExe)) { throw "ECHO.exe was not found: $targetEcho" } }
-    'update' { if (-not (Test-Path -LiteralPath $echoExe)) { throw "ECHO.exe was not found: $targetEcho" } }
+    $installSource = if ($remoteSource) { $remoteSource.Path } else { $LocalSource }
+    Copy-Loader $installSource $selectedExe $versionInfo $EnableDirectAutoStart
+  } finally { if ($remoteSource) { Remove-Item -LiteralPath $remoteSource.Temp -Recurse -Force -ErrorAction SilentlyContinue } }
 }
 
-$versionInfo = Get-Content -Raw -LiteralPath (Join-Path $LocalSource 'loader-version.json') | ConvertFrom-Json
-if ($Action -eq 'update') {
+function Show-Status($selectedExe) {
+  $root = Split-Path -Parent $selectedExe
   $remote = Get-RemoteVersion
-  if ($remote -and (Read-Version (Join-Path $loaderRoot 'loader-version.json')) -and ([version]$remote.version -gt [version](Read-Version (Join-Path $loaderRoot 'loader-version.json')))) {
-    $remoteSource = Download-RemoteSource
-    try { Copy-Loader $remoteSource $targetEcho $remote } finally { Remove-Item -LiteralPath (Split-Path -Parent (Split-Path -Parent $remoteSource)) -Recurse -Force -ErrorAction SilentlyContinue }
-  } else { Copy-Loader $LocalSource $targetEcho $versionInfo }
-} else { Copy-Loader $LocalSource $targetEcho $versionInfo }
+  [pscustomobject]@{
+    ECHO = $selectedExe
+    Loader = Join-Path $root 'ShinawaseLoader'
+    Local = Read-Version (Join-Path $LocalSource 'loader-version.json')
+    Installed = Read-Version (Join-Path $root 'ShinawaseLoader\loader-version.json')
+    Remote = $(if ($remote) { $remote.version } else { 'unavailable' })
+    Launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'
+  } | Format-List
+}
+
+function Invoke-Uninstall($selectedExe) {
+  $root = Split-Path -Parent $selectedExe
+  $loaderRoot = Join-Path $root 'ShinawaseLoader'
+  $node = Join-Path $loaderRoot 'node.exe'
+  $asar = Join-Path $loaderRoot 'echo-asar.mjs'
+  if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $asar)) {
+    $restoreArgs = @($asar, 'restore', $root)
+    if ($Force) { $restoreArgs += '--force' }
+    & $node @restoreArgs | Out-Host
+  }
+  Stop-Loader $loaderRoot
+  Remove-Item -LiteralPath $loaderRoot -Recurse -Force -ErrorAction Stop
+  Write-Host "Loader removed. Mods and Plugins kept at $(Join-Path $root 'Mods') and $(Join-Path $root 'Plugins')." -ForegroundColor Green
+}
+
+function Pause-Menu { [void](Read-Host 'Press Enter to continue') }
+
+function Invoke-Menu {
+  $selected = $null
+  while ($true) {
+    Clear-Host
+    Write-Host $Logo -ForegroundColor Cyan
+    Write-Host 'ShinawaseLoader 1.3.1  |  external CDP mod runtime' -ForegroundColor White
+    Write-Host ("Target: " + $(if ($selected) { $selected } else { 'not selected' })) -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '  [1] Install / update' -ForegroundColor Green
+    Write-Host '  [2] Check status'
+    Write-Host '  [3] Launch ECHO with mods'
+    Write-Host '  [4] Choose ECHO directory'
+    Write-Host '  [5] Uninstall loader (keep Mods)'
+    Write-Host '  [6] Enable direct ECHO.exe auto start (patch app.asar)'
+    Write-Host '  [0] Exit' -ForegroundColor DarkGray
+    switch ((Read-Host 'Select').Trim()) {
+      '1' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $true ([bool]$PatchApp) } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '2' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Show-Status $selected } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '3' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher; Write-Host 'ECHO launched.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Write-Json $SelectionFile @{ echoExe = $selected } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '5' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Uninstall $selected; $selected = $null } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '6' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $false $true; Write-Host 'Direct ECHO.exe auto start is enabled.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '0' { return }
+      default { Write-Host 'Invalid choice.' -ForegroundColor Yellow; Pause-Menu }
+    }
+  }
+}
+
+try {
+  if ($Action -eq 'menu') { Invoke-Menu; return }
+  $selected = Resolve-EchoExecutable
+  switch ($Action) {
+    'install' { Invoke-Install $selected $false ([bool]$PatchApp) }
+    'update' { Invoke-Install $selected $true ([bool]$PatchApp) }
+    'check' { Show-Status $selected }
+    'launch' { $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher }
+    'uninstall' { Invoke-Uninstall $selected }
+  }
+} catch {
+  Write-Host "`nSetup failed: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}

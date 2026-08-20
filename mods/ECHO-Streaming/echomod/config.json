@@ -1,0 +1,7 @@
+{
+  "defaultProvider": "netease",
+  "defaultQuality": "lossless",
+  "pageSize": 30,
+  "hideUnavailable": false,
+  "showDisabledProviders": true
+}

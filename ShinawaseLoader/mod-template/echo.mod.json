@@ -6,5 +6,6 @@
   "description": "A minimal external ECHOSteam mod.",
   "icon": "icon.svg",
   "entry": "mod.js",
-  "config": "config.json"
+  "config": "config.json",
+  "configSchema": "config.schema.json"
 }

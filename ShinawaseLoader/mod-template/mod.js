@@ -36,7 +36,22 @@ badge.onclick = () => {
 
 document.body.append(badge);
 
+const disposeSidebar = echoExternalMod.sidebar?.register({
+  id: 'main',
+  label: manifest.name || 'External Mod',
+  icon: '◆',
+  order: 50,
+  render(root, context) {
+    root.innerHTML = `
+      <h2 style="margin:0 0 8px;font:650 18px -apple-system,system-ui,sans-serif">${manifest.name || 'External Mod'}</h2>
+      <p style="margin:0 0 16px;color:var(--theme-muted-text,#64748b);font:13px -apple-system,system-ui,sans-serif">${config.message || 'External Mod page'}</p>
+      <button type="button" style="padding:7px 12px;border:0;border-radius:6px;background:var(--theme-accent-solid-bg,#4b55e8);color:#fff;cursor:pointer">Test notification</button>
+    `;
+    root.querySelector('button').onclick = () => context.toast(manifest.name || 'External Mod');
+  },
+});
+
 return () => {
+  disposeSidebar?.();
   badge.remove();
 };
-
