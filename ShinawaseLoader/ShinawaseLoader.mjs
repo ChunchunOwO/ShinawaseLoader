@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
 import { isZip, readZip } from './echomod-archive.mjs';
+import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 
 const c = {
   reset: '\x1b[0m',
@@ -133,6 +135,32 @@ const nativePort = Number(option('--native-port', process.env.ECHO_NATIVE_PORT |
 const inspectPort = Number(option('--inspect-port', process.env.ECHO_INSPECT_PORT || loaderConfig.inspectPort || 9230));
 const nativeStatusPath = join(root, 'native-host.json');
 const echoExe = option('--echo', null);
+const userDataRoot = join(process.env.LOCALAPPDATA || process.env.APPDATA || homedir(), 'ShinawaseLoader');
+const selectionPath = join(userDataRoot, 'selection.json');
+const persistLocale = (value) => {
+  const localeValue = normalizeLocale(value) || 'zh';
+  const selection = readJson(selectionPath, {});
+  writeJson(selectionPath, { ...selection, locale: localeValue });
+  writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), locale: localeValue });
+  return localeValue;
+};
+const detectLocale = () => normalizeLocale(option('--locale', process.env.ECHO_LOADER_LOCALE || loaderConfig.locale || readJson(selectionPath, {}).locale || process.env.LANG));
+let locale = detectLocale();
+const t = (key) => (i18nCopy[locale || 'zh'] || i18nCopy.zh)[key] || key;
+const promptLocale = () => new Promise((resolve) => {
+  if (!process.stdin.isTTY) return resolve(persistLocale(process.env.LANG?.toLowerCase().startsWith('zh') ? 'zh' : 'en'));
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  console.log(`${c.white}${c.bold}Shinawase${c.reset}`);
+  console.log(`${c.gray}──────────${c.reset}`);
+  console.log('  1  中文');
+  console.log('  2  English');
+  rl.question('> ', (answer) => {
+    rl.close();
+    const picked = String(answer).trim() === '2' || /^en/i.test(String(answer)) ? 'en' : 'zh';
+    resolve(persistLocale(picked));
+  });
+});
+const loaderStats = { startedAt: Date.now(), injects: 0, lastInjectAt: null, lastError: null };
 
 mkdirSync(installedRoot, { recursive: true });
 mkdirSync(installedPluginsRoot, { recursive: true });
@@ -484,868 +512,16 @@ const externalContext = (id, manifest) => ({
 });
 
 const injectLoaderUi = async (target) => {
-  const expression = `(() => {
-    if (window.__echoExternalLoaderUi?.version >= 7) return 'already';
-    window.__echoExternalLoaderUi?.dispose?.();
-    const base = 'http://127.0.0.1:${port}';
-    let panel = null;
-    let configModal = null;
-    let activeNav = null;
-    let activeSidebar = null;
-    let loaderGroup = null;
-    let loaderNav = null;
-    let loaderButton = null;
-    const sidebarEntries = new Map();
-    const sidebarButtons = new Map();
-    const sidebarPages = new Map();
-
-    const css = document.createElement('style');
-    css.id = 'echo-loader-ui-style';
-    css.textContent = \`
-      @keyframes echo-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-      @keyframes echo-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-      .echo-external-mod-panel {
-        grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; z-index: 1;
-        background: var(--theme-page-bg, var(--color-bg, #f4f5f7));
-        color: var(--theme-page-text, var(--color-text, #292e37));
-        border: 0; padding: clamp(20px, 3vw, 36px); overflow-y: auto; overflow-x: hidden;
-        box-shadow: none;
-        font-family: var(--echo-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif);
-        font-size: 13px;
-        box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; position: relative;
-        animation: echo-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-        user-select: none;
-      }
-      .echo-external-mod-panel[hidden] { display: none !important; }
-      .echo-external-mod-panel * { box-sizing: border-box; }
-      .echo-external-mod-panel::-webkit-scrollbar { width: 5px; }
-      .echo-external-mod-panel::-webkit-scrollbar-thumb { background: var(--theme-scrollbar-thumb, rgba(125, 125, 125, 0.3)); border-radius: 4px; }
-
-      .echo-panel-header {
-        display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        padding-bottom: 14px; border-bottom: 1px solid var(--theme-panel-border, var(--color-border, rgba(0, 0, 0, 0.08)));
-      }
-      .echo-brand { display: flex; flex-direction: column; gap: 3px; }
-      .echo-brand-title {
-        font-size: 18px; font-weight: 700;
-        color: var(--theme-heading-text, var(--theme-page-text, inherit));
-        line-height: 1.2;
-      }
-      .echo-status-pill {
-        display: inline-flex; align-items: center;
-        font-size: 11px; color: var(--theme-muted-text, var(--color-muted, #616977));
-        font-weight: 500;
-      }
-
-      .echo-panel-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-      .echo-search-box { position: relative; width: 180px; flex-shrink: 0; }
-      .echo-search-box input {
-        width: 100%; padding: 7px 12px; border-radius: var(--radius-md, 8px);
-        border: 1px solid var(--theme-field-border, var(--theme-panel-border, rgba(0, 0, 0, 0.12)));
-        background: var(--theme-field-bg, rgba(255, 255, 255, 0.85));
-        color: var(--theme-page-text, inherit); font-size: 12px; font-family: inherit;
-        outline: none; box-sizing: border-box; transition: border-color 0.18s, box-shadow 0.18s;
-      }
-      .echo-search-box input:focus {
-        border-color: var(--theme-accent-solid-bg, var(--color-accent, #4b55e8));
-      }
-      .echo-search-box input::placeholder {
-        color: var(--theme-field-placeholder, var(--theme-subtle-text, #858d9a));
-      }
-
-      .echo-btn {
-        padding: 6px 14px; border-radius: var(--radius-md, 8px);
-        border: 1px solid var(--theme-button-border, var(--theme-panel-border, rgba(0, 0, 0, 0.12)));
-        background: var(--theme-button-bg, rgba(255, 255, 255, 0.8));
-        color: var(--theme-button-text, var(--theme-page-text, inherit));
-        font: 500 12px inherit; cursor: pointer; display: inline-flex;
-        align-items: center; justify-content: center;
-        transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1); outline: none; user-select: none;
-        flex-shrink: 0;
-      }
-      .echo-btn:hover {
-        background: var(--theme-button-bg-hover, rgba(255, 255, 255, 0.95));
-        border-color: var(--theme-accent-border, var(--theme-panel-border-strong, rgba(0, 0, 0, 0.2)));
-        transform: translateY(-1px);
-      }
-      .echo-btn:active { transform: scale(0.98); }
-      .echo-btn.primary {
-        background: var(--theme-accent-solid-bg, var(--color-accent, #4b55e8));
-        border-color: transparent; color: var(--theme-on-accent, #ffffff);
-        font-weight: 600;
-        box-shadow: 0 2px 8px color-mix(in srgb, var(--theme-accent-solid-bg, #4b55e8) 25%, transparent);
-      }
-      .echo-btn.primary:hover {
-        box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-accent-solid-bg, #4b55e8) 40%, transparent);
-      }
-      .echo-btn.danger {
-        background: var(--theme-danger-bg, rgba(255, 59, 48, 0.08));
-        border-color: var(--theme-danger-border, rgba(255, 59, 48, 0.2));
-        color: var(--theme-danger-text, #ff3b30);
-        font-weight: 500;
-      }
-      .echo-btn.danger:hover {
-        background: color-mix(in srgb, var(--theme-danger-bg, rgba(255, 59, 48, 0.16)) 100%, transparent);
-        border-color: var(--theme-danger-border, rgba(255, 59, 48, 0.35));
-      }
-
-      .echo-dropzone {
-        border: 1px dashed var(--theme-panel-border-strong, var(--color-border-strong, rgba(75, 85, 232, 0.25)));
-        background: var(--theme-accent-bg, rgba(75, 85, 232, 0.04));
-        border-radius: var(--radius-md, 8px); padding: 14px; text-align: center;
-        color: var(--theme-muted-text, var(--color-muted, #616977)); font-size: 12px;
-        transition: all 0.18s; cursor: pointer; display: flex; align-items: center; justify-content: center;
-        user-select: none;
-      }
-      .echo-dropzone:hover, .echo-dropzone.dragover {
-        background: var(--theme-accent-bg-strong, rgba(75, 85, 232, 0.09));
-        border-color: var(--theme-accent-solid-bg, var(--color-accent, #4b55e8));
-        color: var(--theme-page-text, inherit);
-      }
-
-      .echo-filter-row { display: flex; gap: 6px; align-items: center; margin: 2px 0 6px; }
-      .echo-filter-chip {
-        padding: 4px 12px; border-radius: var(--radius-sm, 6px); font-size: 12px; font-weight: 500;
-        cursor: pointer; background: var(--theme-chip-bg, rgba(0, 0, 0, 0.05));
-        color: var(--theme-chip-text, var(--theme-muted-text, #616977));
-        border: 1px solid var(--theme-panel-border, transparent); transition: all 0.15s;
-        user-select: none;
-      }
-      .echo-filter-chip:hover {
-        color: var(--theme-page-text, inherit);
-        background: var(--theme-button-bg-hover, rgba(0, 0, 0, 0.08));
-      }
-      .echo-filter-chip.active {
-        background: var(--theme-chip-bg-active, rgba(75, 85, 232, 0.12));
-        color: var(--theme-accent-text, var(--color-accent, #4b55e8));
-        border-color: var(--theme-accent-border, rgba(75, 85, 232, 0.25));
-        font-weight: 600;
-      }
-
-      .echo-mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-      .echo-mod-card {
-        background: var(--theme-panel-bg, rgba(255, 255, 255, 0.85));
-        border: 1px solid var(--theme-panel-border, var(--color-border, rgba(0, 0, 0, 0.1)));
-        border-radius: var(--radius-md, 8px); padding: 14px 16px;
-        display: flex; flex-direction: column; gap: 10px;
-        transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
-        position: relative;
-        box-shadow: var(--shadow-panel, 0 1px 4px rgba(0, 0, 0, 0.04));
-      }
-      .echo-mod-card:hover {
-        border-color: var(--theme-accent-border, var(--color-accent, #4b55e8));
-        box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-accent-solid-bg, #4b55e8) 12%, transparent);
-        transform: translateY(-2px);
-      }
-      .echo-mod-card.disabled { opacity: 0.65; }
-
-      .echo-card-top { display: flex; align-items: flex-start; }
-      .echo-mod-info { flex: 1; min-width: 0; }
-      .echo-mod-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .echo-mod-title {
-        font-size: 14px; font-weight: 600;
-        color: var(--theme-heading-text, var(--theme-page-text, inherit));
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .echo-mod-version {
-        padding: 1px 6px; border-radius: var(--radius-sm, 4px);
-        background: var(--theme-control-bg, rgba(125, 125, 125, 0.12));
-        color: var(--theme-muted-text, var(--color-muted, #616977));
-        font-size: 11px; font-family: var(--font-mono, ui-monospace, monospace);
-        flex-shrink: 0;
-      }
-      .echo-mod-id {
-        font-size: 11px; color: var(--theme-subtle-text, var(--color-subtle, #858d9a));
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
-        font-family: var(--font-mono, ui-monospace, monospace);
-      }
-
-      .echo-mod-desc {
-        font-size: 12px; color: var(--theme-muted-text, var(--color-muted, #616977));
-        line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-        overflow: hidden; min-height: 34px; margin: 0;
-      }
-
-      .echo-card-bottom {
-        display: flex; align-items: center; justify-content: space-between;
-        padding-top: 10px; border-top: 1px solid var(--theme-panel-border, var(--color-border, rgba(0, 0, 0, 0.06)));
-      }
-      .echo-switch-row { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
-      .echo-switch {
-        position: relative; width: 32px; height: 18px;
-        background: var(--theme-control-bg, rgba(125, 125, 125, 0.25));
-        border-radius: 18px; transition: background 0.2s;
-      }
-      .echo-switch.active { background: var(--theme-accent-solid-bg, #4b55e8); }
-      .echo-switch-knob {
-        position: absolute; left: 2px; top: 2px; width: 14px; height: 14px;
-        border-radius: 50%; background: #ffffff; transition: transform 0.2s;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-      }
-      .echo-switch.active .echo-switch-knob { transform: translateX(14px); }
-      .echo-switch-label { font-size: 12px; font-weight: 500; color: var(--theme-muted-text, var(--color-muted, inherit)); }
-
-      .echo-card-btns { display: flex; gap: 6px; }
-
-      .echo-empty-box { text-align: center; padding: 48px 24px; color: var(--theme-muted-text, var(--color-muted, #616977)); }
-
-      .echo-modal-overlay {
-        position: fixed; inset: 0; z-index: 45;
-        background: var(--theme-overlay-bg, rgba(0, 0, 0, 0.45));
-        backdrop-filter: blur(6px); display: grid; place-items: center; padding: 20px;
-        animation: echo-fade-in 0.18s ease;
-      }
-      .echo-modal-card {
-        background: var(--theme-panel-bg-strong, var(--color-bg-elevated, #ffffff));
-        border: 1px solid var(--theme-panel-border-strong, var(--color-border-strong, rgba(0, 0, 0, 0.15)));
-        color: var(--theme-page-text, inherit);
-        border-radius: var(--radius-lg, 10px);
-        width: min(560px, 94vw); max-height: 85vh; display: flex; flex-direction: column; gap: 14px;
-        padding: 20px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
-      }
-      .echo-modal-header { display: flex; align-items: center; justify-content: space-between; }
-      .echo-modal-title { font-size: 15px; font-weight: 600; color: var(--theme-heading-text, var(--theme-page-text, inherit)); }
-      .echo-modal-body { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 220px; }
-      .echo-modal-body textarea {
-        width: 100%; height: 260px;
-        background: var(--theme-field-bg, rgba(0, 0, 0, 0.03));
-        border: 1px solid var(--theme-field-border, var(--theme-panel-border, rgba(0, 0, 0, 0.15)));
-        border-radius: var(--radius-md, 6px);
-        color: var(--theme-page-text, inherit);
-        font: 12px var(--font-mono, ui-monospace, Consolas, monospace);
-        padding: 12px; box-sizing: border-box; resize: vertical; outline: none;
-      }
-      .echo-modal-body textarea:focus { border-color: var(--theme-accent-solid-bg, #4b55e8); }
-      .echo-modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
-
-      .echo-config-editor { display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 2px; }
-      .echo-config-section { border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.1)); border-radius: var(--radius-md, 8px); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-      .echo-config-section > legend { padding: 0 5px; color: var(--theme-heading-text, inherit); font-size: 12px; font-weight: 650; }
-      .echo-config-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-      .echo-config-label { color: var(--theme-heading-text, inherit); font-size: 12px; font-weight: 550; }
-      .echo-config-help { color: var(--theme-muted-text, #616977); font-size: 11px; line-height: 1.35; }
-      .echo-config-input, .echo-config-json { width: 100%; border: 1px solid var(--theme-field-border, rgba(0, 0, 0, 0.14)); border-radius: var(--radius-sm, 6px); padding: 8px 9px; background: var(--theme-field-bg, rgba(255, 255, 255, 0.82)); color: var(--theme-page-text, inherit); font: 12px inherit; outline: none; }
-      .echo-config-input:focus, .echo-config-json:focus { border-color: var(--theme-accent-solid-bg, #4b55e8); }
-      .echo-config-json { min-height: 78px; resize: vertical; font-family: var(--font-mono, ui-monospace, Consolas, monospace); }
-      .echo-config-toggle { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
-      .echo-config-toggle input { width: 17px; height: 17px; accent-color: var(--theme-accent-solid-bg, #4b55e8); }
-      .echo-config-error { color: var(--theme-danger-text, #ff6961); font-size: 11px; white-space: pre-wrap; }
-      .echo-external-mod-page { grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; overflow: auto; padding: clamp(20px, 3vw, 36px); background: var(--theme-page-bg, var(--color-bg, #f4f5f7)); color: var(--theme-page-text, var(--color-text, #292e37)); }
-      .echo-external-mod-page[hidden] { display: none !important; }
-
-      .echo-toast {
-        position: fixed; right: 20px; bottom: calc(var(--player-bar-height, 76px) + 12px); z-index: 50;
-        background: var(--theme-panel-bg-strong, var(--color-bg-elevated, #1e293b));
-        color: var(--theme-page-text, #ffffff);
-        padding: 10px 16px; border-radius: var(--radius-md, 8px);
-        font: 500 12px inherit;
-        border: 1px solid var(--theme-panel-border-strong, var(--color-border-strong, rgba(125, 125, 125, 0.2)));
-        box-shadow: var(--shadow-soft, 0 8px 24px rgba(0, 0, 0, 0.2));
-        display: flex; align-items: center; gap: 8px;
-        animation: echo-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); pointer-events: none;
-      }
-      .echo-toast.success { border-color: var(--theme-success-border, rgba(77, 132, 104, 0.4)); color: var(--theme-success-text, #34d399); }
-      .echo-toast.error { border-color: var(--theme-danger-border, rgba(255, 59, 48, 0.4)); color: var(--theme-danger-text, #ff6961); }
-      @media (prefers-reduced-motion: reduce) { .echo-external-mod-panel, .echo-toast { animation: none !important; transition: none !important; } }
-    \`;
-    document.head.append(css);
-
-    const toast = (text, type = 'info') => {
-      const existing = document.querySelector('.echo-toast');
-      if (existing) existing.remove();
-      const el = document.createElement('div');
-      el.className = 'echo-toast ' + type;
-      el.textContent = String(text);
-      document.body.append(el);
-      setTimeout(() => el.remove(), 3200);
-    };
-    window.__echoModToast = toast;
-
-    const esc = (val) => String(val ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-    const api = async (path, options) => {
-      const res = await fetch(base + path, options);
-      const val = await res.json();
-      if (!res.ok) throw new Error(val.error || '请求失败 (' + res.status + ')');
-      return val;
-    };
-
-    const hideNativeSurfaces = () => document.querySelectorAll('.page-surface:not([hidden])').forEach((surface) => {
-      surface.dataset.echoExternalHidden = 'true';
-      surface.setAttribute('hidden', '');
-    });
-    const restoreNativeSurfaces = () => document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => {
-      delete surface.dataset.echoExternalHidden;
-      surface.removeAttribute('hidden');
-    });
-    const closeSidebarPage = () => {
-      sidebarPages.forEach((page) => { page.hidden = true; });
-      activeSidebar = null;
-      restoreNativeSurfaces();
-      sidebarButtons.forEach((button) => { button.setAttribute('aria-current', 'false'); button.dataset.active = 'false'; });
-      if (loaderButton) { loaderButton.setAttribute('aria-current', 'false'); loaderButton.dataset.active = 'false'; }
-    };
-    // Native ECHO routes own the main surface; release any external Mod page first.
-    const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:route', 'app:navigate:lyrics-back'];
-    const onNativeRoute = () => closeSidebarPage();
-    nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNativeRoute));
-    const setPanelVisible = (visible) => {
-      if (!panel) return;
-      if (visible) {
-        closeSidebarPage();
-        panel.hidden = false;
-        hideNativeSurfaces();
-      } else {
-        panel.hidden = true;
-        if (!activeSidebar) restoreNativeSurfaces();
-      }
-      if (activeNav) {
-        activeNav.dataset.active = String(visible);
-        activeNav.setAttribute('aria-current', visible ? 'page' : 'false');
-      }
-    };
-    const hidePanel = () => setPanelVisible(false);
-
-    const ensureLoaderGroup = () => {
-      const nativeNav = document.querySelector('.sidebar-group[data-group="preferences"] .utility-nav')
-        || document.querySelector('[data-group="preferences"] .nav-list');
-      if (nativeNav) {
-        loaderNav = nativeNav;
-        loaderGroup = nativeNav.closest('.sidebar-group');
-        return loaderNav;
-      }
-      const groups = document.querySelector('.sidebar-groups');
-      if (!groups) return null;
-      let group = groups.querySelector('[data-echo-external-loader-group]');
-      if (!group) {
-        group = document.createElement('section');
-        group.className = 'sidebar-group sidebar-group--utility';
-        group.dataset.group = 'preferences';
-        group.dataset.echoExternalLoaderGroup = 'true';
-        const heading = document.createElement('h2');
-        heading.className = 'sidebar-group-label';
-        heading.textContent = 'Mods';
-        const nav = document.createElement('nav');
-        nav.className = 'nav-list utility-nav';
-        nav.setAttribute('aria-label', 'Mods');
-        group.append(heading, nav);
-        groups.append(group);
-      }
-      loaderGroup = group;
-      loaderNav = group.querySelector('.utility-nav') || group.querySelector('.nav-list');
-      return loaderNav;
-    };
-    const ensureLoaderButton = (nav) => {
-      if (!nav) return null;
-      let button = nav.querySelector('[data-echo-external-mods]');
-      if (!button) {
-        button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'nav-item';
-        button.setAttribute('aria-label', 'Mod 管理');
-        button.title = 'ShinawaseLoader Mod 管理';
-        button.dataset.echoExternalMods = 'true';
-        button.dataset.echoExternalOwned = 'true';
-        const icon = document.createElement('span');
-        icon.className = 'nav-icon-shell';
-        icon.textContent = '◆';
-        const label = document.createElement('span');
-        label.className = 'nav-item-label';
-        label.textContent = 'Mod 管理';
-        button.append(icon, label);
-      }
-      if (button.dataset.echoExternalBound !== 'true') {
-        button.dataset.echoExternalBound = 'true';
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          activeNav = button;
-          void open();
-        }, true);
-      }
-      if (button.parentElement !== nav || button !== nav.firstElementChild) nav.prepend(button);
-      loaderButton = button;
-      return button;
-    };
-    const sidebarNav = () => ensureLoaderGroup();
-    const mountSidebarPage = (entry) => {
-      let page = sidebarPages.get(entry.id);
-      if (!page) {
-        page = document.createElement('section');
-        page.className = 'echo-external-mod-page';
-        page.hidden = true;
-        page.dataset.echoExternalPage = entry.id;
-        (document.querySelector('.app-shell') || document.body).append(page);
-        sidebarPages.set(entry.id, page);
-      }
-      closeSidebarPage();
-      if (panel) panel.hidden = true;
-      hideNativeSurfaces();
-      page.hidden = false;
-      activeSidebar = entry.id;
-      sidebarButtons.forEach((button, id) => { const active = id === entry.id; button.setAttribute('aria-current', active ? 'page' : 'false'); button.dataset.active = String(active); });
-      if (loaderButton) { loaderButton.setAttribute('aria-current', 'false'); loaderButton.dataset.active = 'false'; }
-      if (entry.mounted) return;
-      try {
-        if (typeof entry.render === 'function') entry.cleanup = entry.render(page, entry.context || {});
-        else if (typeof entry.html === 'string') page.innerHTML = entry.html;
-        entry.mounted = true;
-      } catch (error) {
-        page.textContent = 'Mod page failed to load: ' + (error?.message || error);
-        toast('Mod page failed to load', 'error');
-      }
-    };
-    const removeSidebar = (id) => {
-      const entry = sidebarEntries.get(id);
-      if (entry) { try { entry.cleanup?.(); } catch {} }
-      sidebarEntries.delete(id);
-      sidebarButtons.get(id)?.remove();
-      sidebarButtons.delete(id);
-      sidebarPages.get(id)?.remove();
-      sidebarPages.delete(id);
-      if (activeSidebar === id) { activeSidebar = null; restoreNativeSurfaces(); }
-    };
-    const renderSidebarButtons = () => {
-      const nav = sidebarNav();
-      if (!nav) return false;
-      ensureLoaderButton(nav);
-      for (const [id, button] of sidebarButtons) if (!sidebarEntries.has(id)) { button.remove(); sidebarButtons.delete(id); }
-      const entries = [...sidebarEntries.values()].sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
-      let anchor = loaderButton?.nextElementSibling || null;
-      for (const entry of entries) {
-        let button = sidebarButtons.get(entry.id);
-        if (!button || !button.isConnected) {
-          button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'nav-item echo-external-mod-sidebar';
-          button.dataset.echoExternalSidebar = entry.id;
-          button.title = entry.label;
-          button.setAttribute('aria-label', entry.label);
-          const icon = document.createElement('span');
-          icon.className = 'nav-item-icon';
-          icon.textContent = entry.icon || '◆';
-          const label = document.createElement('span');
-          label.className = 'nav-item-label';
-          label.textContent = entry.label;
-          button.append(icon, label);
-          button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            mountSidebarPage(entry);
-          }, true);
-          sidebarButtons.set(entry.id, button);
-        }
-        if (button.parentElement !== nav || button !== anchor) nav.insertBefore(button, anchor);
-        anchor = button.nextElementSibling;
-      }
-      return true;
-    };
-    const registerSidebar = (modId, options = {}, context = {}) => {
-      const value = options && typeof options === 'object' ? options : {};
-      const pageId = modId + ':' + String(value.id || 'main');
-      removeSidebar(pageId);
-      const entry = {
-        id: pageId,
-        label: String(value.label || value.title || modId),
-        icon: String(value.icon || '◆').slice(0, 4),
-        order: Number.isFinite(Number(value.order)) ? Number(value.order) : 50,
-        render: typeof value.render === 'function' ? value.render : null,
-        html: typeof value.html === 'string' ? value.html : null,
-        context,
-        mounted: false,
-        cleanup: null,
-      };
-      sidebarEntries.set(pageId, entry);
-      renderSidebarButtons();
-      return () => { if (sidebarEntries.get(pageId) === entry) removeSidebar(pageId); };
-    };
-
-    let allMods = [];
-    let currentFilter = 'all';
-    let searchQuery = '';
-
-    const renderModList = () => {
-      if (!panel) return;
-      const listEl = panel.querySelector('[data-mod-list]');
-      const filtered = allMods.filter((m) => {
-        if (currentFilter === 'active' && !m.enabled) return false;
-        if (currentFilter === 'inactive' && m.enabled) return false;
-        if (searchQuery) {
-          const q = searchQuery.toLowerCase();
-          return (m.name || '').toLowerCase().includes(q) || (m.id || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q);
-        }
-        return true;
-      });
-
-      panel.querySelector('[data-count-all]').textContent = allMods.length;
-      panel.querySelector('[data-count-active]').textContent = allMods.filter((m) => m.enabled).length;
-      panel.querySelector('[data-count-inactive]').textContent = allMods.filter((m) => !m.enabled).length;
-
-      if (!filtered.length) {
-        listEl.innerHTML = \`
-          <div class="echo-empty-box">
-            <div style="font-weight:600;font-size:14px">\${searchQuery ? '没有找到匹配的模组' : '尚未安装任何模组'}</div>
-            <div style="font-size:12px;margin-top:6px;color:var(--theme-subtle-text, #858d9a)">可直接拖拽 .echomod 文件至窗口进行安装</div>
-          </div>\`;
-        return;
-      }
-
-      listEl.innerHTML = '<div class="echo-mod-grid">' + filtered.map((m) => \`
-        <article class="echo-mod-card \${m.enabled ? '' : 'disabled'}">
-          <div class="echo-card-top">
-            <div class="echo-mod-info">
-              <div class="echo-mod-header-row">
-                <div class="echo-mod-title" title="\${esc(m.name)}">\${esc(m.name)}</div>
-                <span class="echo-mod-version" title="\${esc(m.folder || 'Mods')}">\${m.kind === 'plugin' ? 'Plugin' : 'Mod'} · v\${esc(m.version)}</span>
-              </div>
-              <div class="echo-mod-id" title="\${esc(m.id)}">\${esc(m.id)}</div>
-            </div>
-          </div>
-          <p class="echo-mod-desc">\${esc(m.description || '暂无模组简介。')}</p>
-          <div class="echo-card-bottom">
-            <div class="echo-switch-row" data-action="toggle" data-id="\${esc(m.id)}" data-enabled="\${m.enabled}">
-              <div class="echo-switch \${m.enabled ? 'active' : ''}">
-                <div class="echo-switch-knob"></div>
-              </div>
-              <span class="echo-switch-label">\${m.enabled ? '已启用' : '已停用'}</span>
-            </div>
-            <div class="echo-card-btns">
-              <button class="echo-btn" data-action="config" data-id="\${esc(m.id)}" data-name="\${esc(m.name)}" title="修改模组配置">配置</button>
-              <button class="echo-btn danger" data-action="remove" data-id="\${esc(m.id)}" title="卸载模组">卸载</button>
-            </div>
-          </div>
-        </article>
-      \`).join('') + '</div>';
-    };
-
-    const refresh = async () => {
-      if (!panel) return;
-      try {
-        const data = await api('/api/mods');
-        allMods = data.mods || [];
-        renderModList();
-      } catch (err) {
-        toast(err.message, 'error');
-      }
-    };
-
-    const copyValue = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-    const labelFor = (key) => String(key).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase());
-    const configType = (value, spec = {}) => spec.type || (Array.isArray(value) ? 'array' : value === null ? 'string' : typeof value);
-    const configProperties = (spec, value) => spec?.properties || (value && typeof value === 'object' && !Array.isArray(value) ? {} : null);
-    const configDefaults = (value, spec = {}) => {
-      if (Object.prototype.hasOwnProperty.call(spec, 'default')) return copyValue(spec.default);
-      const properties = configProperties(spec, value);
-      if (!properties) return copyValue(value);
-      const output = {};
-      for (const key of new Set([...Object.keys(value || {}), ...Object.keys(properties)])) output[key] = configDefaults(value?.[key], properties[key] || {});
-      return output;
-    };
-    const renderConfigEditor = (value, schema) => {
-      const root = document.createElement('div');
-      root.className = 'echo-config-editor';
-      const controls = [];
-      const build = (parent, key, current, spec = {}, path = []) => {
-        const type = configType(current, spec);
-        const properties = configProperties(spec, current);
-        if (type === 'object' && properties) {
-          const section = document.createElement('fieldset');
-          section.className = 'echo-config-section';
-          const legend = document.createElement('legend');
-          legend.textContent = spec.title || labelFor(key);
-          section.append(legend);
-          if (spec.description) { const help = document.createElement('div'); help.className = 'echo-config-help'; help.textContent = spec.description; section.append(help); }
-          for (const child of new Set([...Object.keys(current || {}), ...Object.keys(properties)])) build(section, child, current?.[child], properties[child] || {}, [...path, child]);
-          parent.append(section);
-          return;
-        }
-        const field = document.createElement('label');
-        field.className = 'echo-config-field';
-        const title = document.createElement('span');
-        title.className = 'echo-config-label';
-        title.textContent = spec.title || labelFor(key);
-        field.append(title);
-        let input;
-        if (type === 'boolean') {
-          const row = document.createElement('span');
-          row.className = 'echo-config-toggle';
-          input = document.createElement('input');
-          input.type = 'checkbox';
-          input.checked = current === true;
-          row.append(input);
-          field.append(row);
-        } else if (Array.isArray(spec.enum)) {
-          input = document.createElement('select');
-          input.className = 'echo-config-input';
-          for (const option of spec.enum) { const node = document.createElement('option'); node.value = String(option); node.textContent = String(option); node.selected = option === current; input.append(node); }
-          field.append(input);
-        } else if (type === 'number' || type === 'integer') {
-          input = document.createElement('input');
-          input.type = 'number';
-          input.step = type === 'integer' ? '1' : 'any';
-          if (spec.minimum !== undefined) input.min = String(spec.minimum);
-          if (spec.maximum !== undefined) input.max = String(spec.maximum);
-          input.value = current === undefined || current === null ? '' : String(current);
-          input.className = 'echo-config-input';
-          field.append(input);
-        } else if (type === 'string' && String(current ?? '').length <= 120 && spec.format !== 'textarea') {
-          input = document.createElement('input');
-          input.type = spec.format === 'password' ? 'password' : 'text';
-          input.value = current === undefined || current === null ? '' : String(current);
-          input.className = 'echo-config-input';
-          field.append(input);
-        } else if (type === 'string') {
-          input = document.createElement('textarea');
-          input.value = current === undefined || current === null ? '' : String(current);
-          input.className = 'echo-config-json';
-          field.append(input);
-        } else {
-          input = document.createElement('textarea');
-          input.value = JSON.stringify(current ?? (type === 'array' ? [] : {}), null, 2);
-          input.className = 'echo-config-json';
-          field.append(input);
-        }
-        if (spec.description) { const help = document.createElement('span'); help.className = 'echo-config-help'; help.textContent = spec.description; field.append(help); }
-        controls.push({ input, type, path, complex: type === 'array' || type === 'object' });
-        parent.append(field);
-      };
-      const rootSpec = schema && typeof schema === 'object' ? schema : {};
-      const properties = configProperties(rootSpec, value);
-      if (properties) for (const key of new Set([...Object.keys(value || {}), ...Object.keys(properties)])) build(root, key, value?.[key], properties[key] || {}, [key]);
-      else build(root, 'value', value, rootSpec, []);
-      const collect = () => {
-        let output = copyValue(value);
-        const setAt = (path, next) => {
-          if (!path.length) { output = next; return; }
-          if (!output || typeof output !== 'object' || Array.isArray(output)) output = {};
-          let cursor = output;
-          path.slice(0, -1).forEach((part) => { if (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) cursor[part] = {}; cursor = cursor[part]; });
-          cursor[path[path.length - 1]] = next;
-        };
-        for (const control of controls) {
-          let next;
-          if (control.type === 'boolean') next = control.input.checked;
-          else if (control.type === 'number' || control.type === 'integer') { if (control.input.value.trim() === '') throw new Error('Number is required'); next = Number(control.input.value); if (!Number.isFinite(next)) throw new Error('Invalid number'); if (control.type === 'integer' && !Number.isInteger(next)) throw new Error('Integer is required'); }
-          else if (control.complex) { try { next = JSON.parse(control.input.value || (control.type === 'array' ? '[]' : '{}')); } catch (error) { throw new Error('Invalid JSON: ' + error.message); } }
-          else next = control.input.value;
-          setAt(control.path, next);
-        }
-        return output;
-      };
-      return { root, collect };
-    };
-    const openConfigModal = async (modId, modName) => {
-      if (configModal) configModal.remove();
-      configModal = document.createElement('div');
-      configModal.className = 'echo-modal-overlay';
-      configModal.innerHTML = '<div class="echo-modal-card"><div class="echo-modal-header"><div class="echo-modal-title" data-config-title></div><button class="echo-btn" data-modal-close aria-label="Close">Close</button></div><div class="echo-modal-body"><div data-config-host class="echo-config-editor">Loading configuration...</div><div class="echo-config-error" data-config-error></div></div><div class="echo-modal-footer"><button class="echo-btn" data-modal-reset>Reset</button><button class="echo-btn" data-modal-close>Cancel</button><button class="echo-btn primary" data-modal-save>Save</button></div></div>';
-      document.body.append(configModal);
-      configModal.querySelector('[data-config-title]').textContent = 'Mod config · ' + modName + ' (' + modId + ')';
-      const close = () => { configModal?.remove(); configModal = null; };
-      configModal.querySelectorAll('[data-modal-close]').forEach((button) => { button.onclick = close; });
-      const host = configModal.querySelector('[data-config-host]');
-      const errorBox = configModal.querySelector('[data-config-error]');
-      let response;
-      let editor;
-      let initial;
-      const mount = (value) => { editor = renderConfigEditor(value, response?.schema || response?.manifest?.configSchema || {}); host.replaceChildren(editor.root); errorBox.textContent = ''; };
-      try {
-        response = await api('/api/mod/' + encodeURIComponent(modId) + '/config');
-        initial = configDefaults(response.config || {}, response.schema || {});
-        mount(initial);
-        configModal.querySelector('[data-modal-reset]').onclick = () => mount(configDefaults(initial, response.schema || {}));
-        configModal.querySelector('[data-modal-save]').onclick = async () => {
-          try {
-            const parsed = editor.collect();
-            await api('/api/mod/' + encodeURIComponent(modId) + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: parsed }) });
-            toast('Configuration saved', 'success');
-            close();
-            refresh();
-          } catch (error) { errorBox.textContent = error.message || String(error); }
-        };
-      } catch (error) { host.textContent = 'Unable to load configuration'; errorBox.textContent = error.message || String(error); }
-    };
-    const processFileImport = async (file) => {
-      if (!file) return;
-      toast('正在导入模组 ' + file.name + '...', 'info');
-      try {
-        const buffer = await file.arrayBuffer();
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        const res = await api('/api/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: btoa(binary) }),
-        });
-        toast('成功导入模组 [' + (res.manifest?.name || res.manifest?.id) + ']', 'success');
-        refresh();
-      } catch (err) {
-        toast('导入失败: ' + err.message, 'error');
-      }
-    };
-
-    const open = async () => {
-      if (panel) { setPanelVisible(panel.hidden); return; }
-      panel = document.createElement('section');
-      panel.className = 'echo-external-mod-panel';
-      panel.innerHTML = \`
-        <div class="echo-panel-header">
-          <div class="echo-brand">
-            <span class="echo-brand-title">ShinawaseLoader</span>
-            <span class="echo-status-pill">已连接 Loader 核心</span>
-          </div>
-          <div class="echo-panel-actions">
-            <div class="echo-search-box">
-              <input type="text" placeholder="搜索模组..." data-search>
-            </div>
-        <input type="file" accept=".echomod,.echo,application/json,application/zip" data-file style="display:none">
-            <button class="echo-btn primary" data-action="import-btn">导入模组</button>
-            <button class="echo-btn" data-action="reinject-btn" title="重新注入已启用的模组">重新加载</button>
-            <button class="echo-btn" data-action="close" title="关闭面板">关闭</button>
-          </div>
-        </div>
-
-        <div class="echo-dropzone" data-dropzone>
-          <span>拖放 <b>.echomod</b> / <b>.echo</b> 文件到此直接安装，或点击选择文件</span>
-        </div>
-
-        <div class="echo-filter-row">
-          <div class="echo-filter-chip active" data-filter="all">全部 (<span data-count-all>0</span>)</div>
-          <div class="echo-filter-chip" data-filter="active">已启用 (<span data-count-active>0</span>)</div>
-          <div class="echo-filter-chip" data-filter="inactive">已停用 (<span data-count-inactive>0</span>)</div>
-        </div>
-
-        <div data-mod-list style="flex:1"></div>
-      \`;
-
-      const host = document.querySelector('.app-shell');
-      (host || document.body).append(panel);
-      setPanelVisible(true);
-
-      const fileInput = panel.querySelector('[data-file]');
-      panel.querySelector('[data-action="import-btn"]').onclick = () => fileInput.click();
-      fileInput.onchange = (e) => {
-        const file = e.target.files?.[0];
-        if (file) processFileImport(file);
-        fileInput.value = '';
-      };
-
-      const dropzone = panel.querySelector('[data-dropzone]');
-      dropzone.onclick = () => fileInput.click();
-      dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('dragover'); };
-      dropzone.ondragleave = () => dropzone.classList.remove('dragover');
-      dropzone.ondrop = (e) => {
-        e.preventDefault();
-        dropzone.classList.remove('dragover');
-        const file = e.dataTransfer?.files?.[0];
-        if (file) processFileImport(file);
-      };
-
-      panel.querySelector('[data-search]').oninput = (e) => {
-        searchQuery = e.target.value;
-        renderModList();
-      };
-
-      panel.querySelectorAll('[data-filter]').forEach((chip) => {
-        chip.onclick = () => {
-          panel.querySelectorAll('[data-filter]').forEach((c) => c.classList.remove('active'));
-          chip.classList.add('active');
-          currentFilter = chip.dataset.filter;
-          renderModList();
-        };
-      });
-
-      panel.querySelector('[data-action="reinject-btn"]').onclick = async () => {
-        try {
-          const r = await api('/api/reinject', { method: 'POST' });
-          toast('已向 ' + r.targets + ' 个窗口重新注入模组', 'success');
-          refresh();
-        } catch (e) { toast(e.message, 'error'); }
-      };
-
-      panel.querySelector('[data-action="close"]').onclick = hidePanel;
-
-      panel.addEventListener('click', async (e) => {
-        const toggleRow = e.target.closest('[data-action="toggle"]');
-        if (toggleRow) {
-          const id = toggleRow.dataset.id;
-          const nextState = toggleRow.dataset.enabled !== 'true';
-          try {
-            await api('/api/mod/' + encodeURIComponent(id) + '/' + (nextState ? 'enable' : 'disable'), { method: 'POST' });
-            toast((nextState ? '已启用 ' : '已停用 ') + id, 'success');
-            refresh();
-          } catch (err) { toast(err.message, 'error'); }
-          return;
-        }
-
-        const configBtn = e.target.closest('[data-action="config"]');
-        if (configBtn) {
-          openConfigModal(configBtn.dataset.id, configBtn.dataset.name);
-          return;
-        }
-
-        const removeBtn = e.target.closest('[data-action="remove"]');
-        if (removeBtn) {
-          const id = removeBtn.dataset.id;
-          if (confirm('确定要卸载模组 ' + id + ' 吗？此操作将删除其本地文件。')) {
-            try {
-              await api('/api/mod/' + encodeURIComponent(id), { method: 'DELETE' });
-              toast('已卸载模组 ' + id, 'success');
-              refresh();
-            } catch (err) { toast(err.message, 'error'); }
-          }
-          return;
-        }
-      });
-
-      await refresh();
-    };
-
-    const ensure = () => {
-      const nav = ensureLoaderGroup();
-      if (!nav) return false;
-      const button = ensureLoaderButton(nav);
-      if (!activeNav || !activeNav.isConnected) activeNav = button;
-      renderSidebarButtons();
-      return true;
-    };
-
-    const observer = new MutationObserver(ensure);
-    observer.observe(document.body, { childList: true, subtree: true });
-    document.addEventListener('click', (event) => {
-      const navItem = event.target?.closest?.('.nav-item');
-      if (!navItem) return;
-      if (navItem.dataset.echoExternalSidebar) return;
-      if (navItem !== activeNav) { hidePanel(); closeSidebarPage(); }
-    }, true);
-    ensure();
-
-    window.__echoExternalLoaderUi = {
-      version: 7,
-      registerSidebar,
-      unregisterSidebar: removeSidebar,
-      dispose: () => {
-        observer.disconnect();
-        nativeRouteEvents.forEach((eventName) => window.removeEventListener(eventName, onNativeRoute));
-        panel?.remove();
-        configModal?.remove();
-        css.remove();
-        sidebarEntries.forEach((entry) => { try { entry.cleanup?.(); } catch {} });
-        sidebarButtons.forEach((button) => button.remove());
-        sidebarPages.forEach((page) => page.remove());
-        sidebarEntries.clear();
-        sidebarButtons.clear();
-        sidebarPages.clear();
-        document.querySelector('[data-echo-external-loader-group]')?.remove();
-        restoreNativeSurfaces();
-        delete window.__echoExternalLoaderUi;
-        delete window.__echoModToast;
-      },
-    };
-    return 'installed';
-  })()`;
+  const uiSource = readFileSync(join(loaderDir, 'loader-ui.js'), 'utf8');
+  const expression = [
+    '(() => {',
+    `const LOADER_PORT = ${Number(port)};`,
+    `const LOADER_VERSION = ${JSON.stringify(loaderVersion)};`,
+    `const LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
+    `const T = ${JSON.stringify(i18nCopy[locale || 'zh'] || i18nCopy.zh)};`,
+    uiSource,
+    '})()',
+  ].join('\n');
   return cdpEvaluate(target.webSocketDebuggerUrl, expression);
 };
 
@@ -1979,7 +1155,7 @@ const injectEnabled = async () => {
   }
   for (const target of targets) {
     const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 7;
+    const uiReloaded = targetState.uiVersion < 8;
     await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
       const extra = window.__echoShinawaseStreaming;
       if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
@@ -2005,6 +1181,8 @@ const injectEnabled = async () => {
     }
   }
   lastTargets = new Set(targets.map((target) => target.id));
+  loaderStats.injects += 1;
+  loaderStats.lastInjectAt = Date.now();
   return targets.length;
 };
 let injectionPromise = null;
@@ -2667,7 +1845,8 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, {
         ok: true, loaderVersion, root, gameRoot, enableWebConsole, port, debugPort,
         loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
-        nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort,
+        nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort, locale: locale || 'zh',
+        debugMode, stats: loaderStats,
         dropRoot, pluginDropRoot: pluginsRoot,
         folders: { logs: logsRoot, mods: modsRoot, plugins: pluginsRoot },
         ...(togetherRelay ? { togetherRelay } : {}),
@@ -2684,7 +1863,52 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/native/reload') return jsonResponse(response, 200, await notifyNativeHost('api') || { ok: false, error: 'native_host_unavailable' });
     if (request.method === 'GET' && url.pathname === '/api/player') return jsonResponse(response, 200, await playbackControl({ action: 'status' }));
     if (request.method === 'POST' && url.pathname === '/api/player') return jsonResponse(response, 200, await playbackControl(await readRequest(request)));
-    if (request.method === 'GET' && url.pathname === '/api/logs') return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath });
+    if (request.method === 'GET' && url.pathname === '/api/logs') {
+      const kind = url.searchParams.get('kind') === 'error' ? errorLogPath : logFilePath;
+      const tail = Math.min(400, Math.max(20, Number(url.searchParams.get('tail') || 80)));
+      let text = '';
+      try {
+        const raw = existsSync(kind) ? readFileSync(kind, 'utf8') : '';
+        text = raw.split(/\r?\n/).filter(Boolean).slice(-tail).join('\n');
+      } catch {}
+      return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath, file: kind, text });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/locale') {
+      const body = await readRequest(request);
+      locale = persistLocale(body.locale);
+      return jsonResponse(response, 200, { ok: true, locale });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/debug') {
+      const body = await readRequest(request);
+      const enabled = body.enabled === true;
+      writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), debugMode: enabled, enableWebConsole: enabled || loaderConfig.enableWebConsole });
+      return jsonResponse(response, 200, { ok: true, debugMode: enabled });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/perf') {
+      const report = {
+        generatedAt: new Date().toISOString(),
+        loaderVersion,
+        locale: locale || 'zh',
+        uptimeMs: Date.now() - loaderStats.startedAt,
+        injects: loaderStats.injects,
+        lastInjectAt: loaderStats.lastInjectAt,
+        memory: process.memoryUsage(),
+        port, debugPort, inspectPort, nativePort,
+        packages: modSummaries().map((item) => ({ id: item.id, enabled: item.enabled, version: item.version })),
+      };
+      const file = join(logsRoot, `perf-${Date.now()}.json`);
+      writeJson(file, report);
+      return jsonResponse(response, 200, { ok: true, file, report });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/update') {
+      try {
+        const remote = await fetch('https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main/ShinawaseLoader/loader-version.json');
+        const info = await remote.json();
+        return jsonResponse(response, 200, { ok: true, local: loaderVersion, remote: info.version, updateAvailable: String(info.version || '') !== String(loaderVersion) });
+      } catch (error) {
+        return jsonResponse(response, 200, { ok: false, local: loaderVersion, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     if (request.method === 'POST' && url.pathname === '/api/log') {
       const body = await readRequest(request);
       const id = safeId(body.id) ? body.id : 'unknown-mod';
@@ -2788,45 +2012,46 @@ const server = createServer(async (request, response) => {
 
 const printList = () => {
   const mods = modSummaries();
-  console.log(`${c.white}packages${c.reset}`);
+  console.log(`${c.white}${t('packages')}${c.reset}`);
   if (!mods.length) {
-    console.log(`${c.gray}  none installed${c.reset}`);
+    console.log(`${c.gray}  ${t('noneInstalled')}${c.reset}`);
     return;
   }
   for (const item of mods) {
-    const mark = item.enabled ? `${c.green}on ${c.reset}` : `${c.gray}off${c.reset}`;
+    const mark = item.enabled ? `${c.green}${t('on')} ${c.reset}` : `${c.gray}${t('off')}${c.reset}`;
     console.log(`  ${mark}  ${item.name}  ${c.gray}${item.id}  ${item.version}${c.reset}`);
   }
 };
 
 const run = async () => {
+  if (!locale) locale = await promptLocale();
   printLogo();
   if (command === 'init' || command === 'install-loader') {
     writeJson(statePath, readState());
-    console.log(`  ${c.bGreen}✔${c.reset} ShinawaseLoader 运行时已初始化: ${c.white}${root}${c.reset}`);
+    console.log(`${c.gray}${t('initialized')}${c.reset}  ${root}`);
     return;
   }
   if (command === 'list') return printList();
   if (command === 'import' || command === 'install') {
     const source = args[0];
-    if (!source) throw new Error('用法: ShinawaseLoader.mjs import <file.echomod|file.echo>');
+    if (!source) throw new Error('ShinawaseLoader.mjs import <file.echomod|file.echo>');
     const manifest = importPackage(source);
-    console.log(`  ${c.bGreen}✔${c.reset} 成功导入模组: ${c.bold}${c.white}${manifest.name || manifest.id}${c.reset} ${c.dim}(v${manifest.version || '1.0.0'})${c.reset}`);
+    console.log(`${c.gray}${t('imported')}${c.reset}  ${manifest.name || manifest.id}  ${manifest.version || '1.0.0'}`);
     return;
   }
   if (command === 'uninstall') {
     removeMod(args[0]);
-    console.log(`  ${c.bGreen}✔${c.reset} 已卸载模组: ${args[0]}`);
+    console.log(`${c.gray}${t('removed')}${c.reset}  ${args[0]}`);
     return;
   }
   if (command === 'enable' || command === 'disable') {
     setEnabled(args[0], command === 'enable');
     if (command === 'enable') await requestInjection('cli').catch(() => undefined);
-    console.log(`  ${c.bGreen}✔${c.reset} 模组 [${args[0]}] ${command === 'enable' ? '已启用' : '已停用'}`);
+    console.log(`${c.gray}${command === 'enable' ? t('enabled') : t('disabled')}${c.reset}  ${args[0]}`);
     return;
   }
   if (command === 'launch') {
-    console.log(`  ${c.bGreen}✔${c.reset} ECHO 已启动: ${launchEcho()}`);
+    console.log(`${c.gray}${t('launched')}${c.reset}  ${launchEcho()}`);
     return;
   }
 
@@ -2836,7 +2061,7 @@ const run = async () => {
     if (existing.ok) {
       const status = await existing.json();
       if (status?.ok) {
-        console.log(`${c.gray}listen${c.reset}  already running on ${port}`);
+        console.log(`${c.gray}${t('listen')}${c.reset}  ${t('alreadyRunning')} ${port}`);
         if (isAttach) startWatch();
         if (command === 'run') launchEcho();
         return;
@@ -2847,12 +2072,12 @@ const run = async () => {
   startDropWatcher();
   await syncTogetherRelay();
   server.listen(port, '127.0.0.1', () => {
-    console.log(`${c.gray}listen${c.reset}   http://127.0.0.1:${port}`);
-    console.log(`${c.gray}cdp${c.reset}      ${debugPort}`);
-    console.log(`${c.gray}inspect${c.reset}  ${inspectPort}`);
-    console.log(`${c.gray}native${c.reset}   ${nativeHostEnabled ? nativePort : 'off'}`);
-    if (togetherRelayServer) console.log(`${c.gray}together${c.reset} ${togetherRelayPort}`);
-    console.log(`${c.gray}console${c.reset}  ${enableWebConsole ? 'on' : 'off'}`);
+    console.log(`${c.gray}${t('listen')}${c.reset}   http://127.0.0.1:${port}`);
+    console.log(`${c.gray}${t('cdp')}${c.reset}      ${debugPort}`);
+    console.log(`${c.gray}${t('inspect')}${c.reset}  ${inspectPort}`);
+    console.log(`${c.gray}${t('native')}${c.reset}   ${nativeHostEnabled ? nativePort : t('off')}`);
+    if (togetherRelayServer) console.log(`${c.gray}${t('together')}${c.reset} ${togetherRelayPort}`);
+    console.log(`${c.gray}${t('console')}${c.reset}  ${enableWebConsole ? t('on') : t('off')}`);
   });
 
   if (isAttach) {
@@ -2863,6 +2088,6 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(`\n  ${c.bRed}✖ Loader 异常:${c.reset}`, error instanceof Error ? error.message : error, '\n');
+  console.error(`\n${c.gray}${t('failed')}${c.reset}`, error instanceof Error ? error.message : error, '\n');
   process.exitCode = 1;
 });

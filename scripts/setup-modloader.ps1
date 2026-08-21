@@ -17,6 +17,80 @@ $UserDataRoot = Join-Path $BaseData 'ShinawaseLoader'
 $SelectionFile = Join-Path $UserDataRoot 'selection.json'
 $RuntimeCache = Join-Path $UserDataRoot 'runtimes'
 $Logo = 'Shinawase'
+$script:Strings = @{
+  zh = @{
+    choose = '选择语言'
+    target = '目标'
+    notSelected = '未选择'
+    install = '安装 / 更新'
+    status = '状态'
+    launch = '启动'
+    chooseEcho = '选择 ECHO'
+    uninstall = '卸载 Loader'
+    isolated = '隔离运行时 (ECHO.modded.exe)'
+    exit = '退出'
+    select = '选择'
+    pressEnter = '按 Enter 继续'
+    invalid = '无效选项。'
+    launched = '已启动'
+    failed = '失败'
+    language = '语言'
+  }
+  en = @{
+    choose = 'Choose language'
+    target = 'target'
+    notSelected = 'not selected'
+    install = 'install / update'
+    status = 'status'
+    launch = 'launch'
+    chooseEcho = 'choose ECHO'
+    uninstall = 'uninstall loader'
+    isolated = 'isolated runtime (ECHO.modded.exe)'
+    exit = 'exit'
+    select = 'select'
+    pressEnter = 'Press Enter to continue'
+    invalid = 'Invalid choice.'
+    launched = 'launched'
+    failed = 'failed'
+    language = 'language'
+  }
+}
+function Get-LoaderLocale {
+  $saved = Read-Json $SelectionFile @{}
+  if ($saved.locale -in @('zh', 'en')) { return $saved.locale }
+  $cfg = Read-Json (Join-Path $LocalSource 'loader.config.json') @{}
+  if ($cfg.locale -in @('zh', 'en')) { return $cfg.locale }
+  return $null
+}
+function Set-LoaderLocale([string]$value) {
+  $saved = Read-Json $SelectionFile @{}
+  if (-not $saved) { $saved = [pscustomobject]@{} }
+  $saved | Add-Member -NotePropertyName locale -NotePropertyValue $value -Force
+  if ($saved.echoExe) { Write-Json $SelectionFile $saved } else { Write-Json $SelectionFile @{ locale = $value } }
+  $cfgPath = Join-Path $LocalSource 'loader.config.json'
+  $cfg = Read-Json $cfgPath @{}
+  $cfg | Add-Member -NotePropertyName locale -NotePropertyValue $value -Force
+  Write-Json $cfgPath $cfg
+  $script:Locale = $value
+}
+function T([string]$key) {
+  $table = $script:Strings[$script:Locale]
+  if (-not $table) { $table = $script:Strings.zh }
+  if ($table.ContainsKey($key)) { return $table[$key] }
+  return $key
+}
+function Choose-LoaderLocale {
+  $current = Get-LoaderLocale
+  if ($current) { $script:Locale = $current; return }
+  Clear-Host
+  Write-Host "$Logo" -ForegroundColor White
+  Write-Host '──────────' -ForegroundColor DarkGray
+  Write-Host '  1  中文'
+  Write-Host '  2  English'
+  $answer = (Read-Host '>').Trim()
+  if ($answer -eq '2' -or $answer -match '^en') { Set-LoaderLocale 'en' } else { Set-LoaderLocale 'zh' }
+}
+$script:Locale = 'zh'
 
 function Read-Json($path, $fallback) {
   if (-not (Test-Path -LiteralPath $path)) { return $fallback }
@@ -379,38 +453,40 @@ function Invoke-Uninstall($selectedExe) {
   Write-Host "Loader removed. Mods and Plugins kept at $(Join-Path $root 'Mods') and $(Join-Path $root 'Plugins')." -ForegroundColor Green
 }
 
-function Pause-Menu { [void](Read-Host 'Press Enter to continue') }
+function Pause-Menu { [void](Read-Host (T 'pressEnter')) }
 
 function Invoke-Menu {
+  Choose-LoaderLocale
   $selected = $null
   while ($true) {
     Clear-Host
     $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
     Write-Host "$Logo  $version" -ForegroundColor White
     Write-Host '──────────' -ForegroundColor DarkGray
-    Write-Host ("target  " + $(if ($selected) { $selected } else { 'not selected' })) -ForegroundColor DarkGray
+    Write-Host ((T 'target') + '  ' + $(if ($selected) { $selected } else { T 'notSelected' })) -ForegroundColor DarkGray
     Write-Host ''
-    Write-Host '  1  install / update'
-    Write-Host '  2  status'
-    Write-Host '  3  launch'
-    Write-Host '  4  choose ECHO'
-    Write-Host '  5  uninstall loader'
-    Write-Host '  6  isolated runtime (ECHO.modded.exe)'
-    Write-Host '  0  exit' -ForegroundColor DarkGray
-    switch ((Read-Host 'select').Trim()) {
+    Write-Host ('  1  ' + (T 'install'))
+    Write-Host ('  2  ' + (T 'status'))
+    Write-Host ('  3  ' + (T 'launch'))
+    Write-Host ('  4  ' + (T 'chooseEcho'))
+    Write-Host ('  5  ' + (T 'uninstall'))
+    Write-Host ('  6  ' + (T 'isolated'))
+    Write-Host ('  0  ' + (T 'exit')) -ForegroundColor DarkGray
+    switch ((Read-Host (T 'select')).Trim()) {
       '1' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $true ([bool]$PatchApp) } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '2' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Show-Status $selected } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '3' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher; Write-Host 'ECHO launched.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
-      '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Write-Json $SelectionFile @{ echoExe = $selected } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Write-Json $SelectionFile @{ echoExe = $selected; locale = $script:Locale } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '5' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Uninstall $selected; $selected = $null } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '6' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $false $true; Write-Host 'Direct ECHO.exe auto start is enabled.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '0' { return }
-      default { Write-Host 'Invalid choice.' -ForegroundColor Yellow; Pause-Menu }
+      default { Write-Host (T 'invalid') -ForegroundColor Yellow; Pause-Menu }
     }
   }
 }
 
 try {
+  Choose-LoaderLocale
   if ($Action -eq 'menu') { Invoke-Menu; return }
   $selected = Resolve-EchoExecutable
   switch ($Action) {

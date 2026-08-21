@@ -15,7 +15,9 @@ ShinawaseLoader is a community external ModLoader for ECHOSteam. It does not use
 - Safe mode, debug mode, attach-only, and a single-instance listen port (`17862`).
 - Logs: `ShinawaseLoader/Logs/loader.log` and `errors.log`.
 
-CLI flags: `--safe-mode`, `--debug`, `--load-mode`, `--inject-interval`, `--startup-delay`, `--native-port`, `--inspect-port`, `--no-native-host`, `--web-console`.
+CLI flags: `--safe-mode`, `--debug`, `--load-mode`, `--inject-interval`, `--startup-delay`, `--native-port`, `--inspect-port`, `--no-native-host`, `--web-console`, `--locale`.
+
+First launch of Setup or the CLI asks for 中文 or English and stores the choice in `%LOCALAPPDATA%\ShinawaseLoader\selection.json`. The in-app Shinawase page can change it later. The Mods page is separate from the Loader page.
 
 ## Setup
 
