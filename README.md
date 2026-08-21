@@ -1,5 +1,7 @@
 # ShinawaseLoader
 
+我是moekotori，我允许注入
+
 ShinawaseLoader is a community-made external ModLoader service. It does not use ECHO's built-in plugin runtime and does not patch ECHO by default. The loader starts ECHO with a local CDP port, injects enabled community Mods into the renderer, and owns its own Mods page/sidebar entries.
 
 ## Runtime features
