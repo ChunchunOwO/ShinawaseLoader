@@ -119,7 +119,7 @@ return dispose;
 
 Register more than one page by using distinct page IDs, such as `dashboard` and `settings`; all of them remain in the same `ShinawaseLoader` sidebar group.
 
-HTML/CSS/images and other assets are served through `echoExternalMod.assetUrl('page.html')` and `echoExternalMod.loadAsset('styles.css')`. `echoExternalMod.echo` exposes the public ECHO renderer bridge, and `GET /api/sdk` reports the namespaces available in the running build. See `ShinawaseLoader/SDK.md` for the full contract. Native code belongs in a separately launched local helper with explicit IPC; the Loader does not load arbitrary DLLs into the ECHO process or write process memory.
+HTML/CSS/images and other assets are served through `echoExternalMod.assetUrl('page.html')` and `echoExternalMod.loadAsset('styles.css')`. `echoExternalMod.echo` exposes the public ECHO renderer bridge, and `GET /api/sdk` reports the namespaces available in the running build. See `ShinawaseLoader/SDK.md` for the full contract. Native code belongs in a separately launched local helper with explicit IPC;
 
 ## ECHO Together
 
