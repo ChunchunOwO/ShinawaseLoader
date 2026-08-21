@@ -25,15 +25,13 @@ const c = {
   white: '\x1b[97m',
   gray: '\x1b[90m',
 };
-const printLogo = () => console.log(`${c.bCyan}  ____  _     _
- / ___|| |__ (_)_ __   __ ___      ____ _ ___  ___
- \___ \| '_ \| | '_ \ / _\` \ \ /\ / / _\` / __|/ _ \
-  ___) | | | | | | | | (_| |\ V  V / (_| \__ \  __/
- |____/|_| |_|_|_| |_|\__,_| \_/\_/ \__,_|___/\___|
-${c.reset}${c.bold}${c.white}ShinawaseLoader v${loaderVersion}${c.reset}\n`);
+const printLogo = () => {
+  console.log(`${c.white}${c.bold}Shinawase${c.reset}  ${c.gray}${loaderVersion}${c.reset}`);
+  console.log(`${c.gray}──────────${c.reset}`);
+};
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.3.1';
+const loaderVersion = '1.4.0';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
 const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));
@@ -98,6 +96,9 @@ const loaderConfig = readJson(loaderConfigPath, {
   injectIntervalMs: 5000,
   startupDelayMs: 500,
   logLevel: 'info',
+  nativeHost: true,
+  nativePort: 17863,
+  nativeMemoryApi: true,
 });
 
 const args = process.argv.slice(2);
@@ -126,6 +127,11 @@ configuredLogLevel = Object.hasOwn(logRanks, requestedLogLevel) ? requestedLogLe
 const enableWebConsole = hasFlag('--web-console') || debugMode || String(process.env.ECHO_ENABLE_WEB_CONSOLE || '').toLowerCase() === 'true' || loaderConfig.enableWebConsole === true;
 const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.port || defaultPort));
 const debugPort = Number(option('--debug-port', process.env.ECHO_MOD_DEBUG_PORT || loaderConfig.debugPort || defaultDebugPort));
+const nativeHostEnabled = !safeMode && loaderConfig.nativeHost !== false && !hasFlag('--no-native-host');
+const nativeMemoryApi = nativeHostEnabled && loaderConfig.nativeMemoryApi !== false;
+const nativePort = Number(option('--native-port', process.env.ECHO_NATIVE_PORT || loaderConfig.nativePort || 17863));
+const inspectPort = Number(option('--inspect-port', process.env.ECHO_INSPECT_PORT || loaderConfig.inspectPort || 9230));
+const nativeStatusPath = join(root, 'native-host.json');
 const echoExe = option('--echo', null);
 
 mkdirSync(installedRoot, { recursive: true });
@@ -217,6 +223,9 @@ const modSummaries = () => {
       configSchema: readModConfigSchema(id, manifest),
       enabled: state.mods[id].enabled === true,
       directory: record.directory,
+      main: Boolean(manifest.main || manifest.native?.main),
+      native: Boolean(manifest.native || manifest.main),
+      nativeMemory: manifest.native?.memory === true,
     }];
   });
 };
@@ -227,6 +236,7 @@ const mimeTypes = new Map([
   ['.json', 'application/json; charset=utf-8'], ['.txt', 'text/plain; charset=utf-8'], ['.md', 'text/markdown; charset=utf-8'],
   ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.gif', 'image/gif'], ['.webp', 'image/webp'],
   ['.ico', 'image/x-icon'], ['.wasm', 'application/wasm'], ['.woff', 'font/woff'], ['.woff2', 'font/woff2'], ['.dll', 'application/octet-stream'],
+  ['.node', 'application/octet-stream'], ['.so', 'application/octet-stream'], ['.dylib', 'application/octet-stream'],
 ]);
 const modFile = (id, fileName) => {
   if (!safeId(id)) throw new Error('invalid_mod_id');
@@ -304,7 +314,8 @@ const importPackage = (source) => {
     return { path, data };
   });
   const entryPath = safeRelative(manifest.entry);
-  if (!validatedFiles.some((file) => file.path === entryPath)) throw new Error('mod_entry_missing');
+  const samePath = (left, right) => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+  if (!validatedFiles.some((file) => samePath(file.path, entryPath))) throw new Error('mod_entry_missing');
   rmSync(installedDirectory(manifest.id, 'mod'), { recursive: true, force: true });
   rmSync(installedDirectory(manifest.id, 'plugin'), { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
@@ -320,6 +331,7 @@ const importPackage = (source) => {
   state.mods[manifest.id] = { ...previous, kind, enabled: previous.enabled === true, importedAt: new Date().toISOString() };
   saveState(state);
   if (manifest.id === togetherModId) void syncTogetherRelay();
+  void notifyNativeHost('install');
   log('INFO', `installed ${kind} ${manifest.id} v${manifest.version || '1.0.0'}`);
   return manifest;
 };
@@ -332,6 +344,7 @@ const removeMod = (id) => {
   delete state.mods[id];
   saveState(state);
   if (id === togetherModId) void syncTogetherRelay();
+  void notifyNativeHost('uninstall');
   log('INFO', `uninstalled package ${id}`);
 };
 const setEnabled = (id, enabled) => {
@@ -341,7 +354,31 @@ const setEnabled = (id, enabled) => {
   state.mods[id] = { ...(state.mods[id] || {}), kind: record?.kind || 'mod', enabled };
   saveState(state);
   if (id === togetherModId) void syncTogetherRelay();
+  void notifyNativeHost(enabled ? 'enable' : 'disable');
   log('INFO', `${enabled ? 'enabled' : 'disabled'} mod ${id}`);
+};
+
+const nativeHostUrl = () => {
+  const status = readJson(nativeStatusPath, null);
+  return `http://127.0.0.1:${Number(status?.port || nativePort)}`;
+};
+const callNativeHost = async (body) => {
+  const remote = await fetch(`${nativeHostUrl()}/call`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return remoteJson(remote);
+};
+const notifyNativeHost = async (reason = 'reload') => {
+  if (!nativeHostEnabled) return null;
+  try {
+    const remote = await fetch(`${nativeHostUrl()}/reload`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    return remoteJson(remote);
+  } catch (error) {
+    log('DEBUG', `native host reload skipped (${reason})`, error instanceof Error ? error.message : String(error));
+    return null;
+  }
 };
 
 const dropLocations = [
@@ -404,22 +441,28 @@ let lastTargets = new Set();
 let lastInjectedTargetCount = -1;
 const cdpEvaluate = async (webSocketUrl, expression) => {
   const socket = new WebSocket(webSocketUrl);
-  await new Promise((resolvePromise, reject) => {
-    socket.addEventListener('open', resolvePromise, { once: true });
-    socket.addEventListener('error', reject, { once: true });
+  const timeoutMs = 15000;
+  const withTimeout = (work, label) => new Promise((resolvePromise, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), timeoutMs);
+    Promise.resolve(work).then((value) => { clearTimeout(timer); resolvePromise(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+  await withTimeout(new Promise((resolvePromise, reject) => {
+    socket.addEventListener('open', () => resolvePromise(), { once: true });
+    socket.addEventListener('error', () => reject(new Error('cdp_socket_error')), { once: true });
+  }), 'cdp_connect_timeout');
   let sequence = 0;
-  const call = (method, params) => new Promise((resolvePromise, reject) => {
+  const call = (method, params) => withTimeout(new Promise((resolvePromise, reject) => {
     const id = ++sequence;
     const onMessage = (event) => {
-      const message = JSON.parse(String(event.data));
+      let message;
+      try { message = JSON.parse(String(event.data)); } catch (error) { reject(error); return; }
       if (message.id !== id) return;
       socket.removeEventListener('message', onMessage);
       if (message.error) reject(new Error(message.error.message || method)); else resolvePromise(message.result);
     };
     socket.addEventListener('message', onMessage);
     socket.send(JSON.stringify({ id, method, params }));
-  });
+  }), `cdp_${method}_timeout`);
   try {
     await call('Runtime.enable', {});
     const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
@@ -431,7 +474,7 @@ const cdpTargets = async () => {
   const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
   if (!response.ok) throw new Error(`cdp_http_${response.status}`);
   const targets = await response.json();
-  return targets.filter((target) => target.type === 'page' && target.webSocketDebuggerUrl);
+  return targets.filter((target) => target.type === 'page' && target.webSocketDebuggerUrl && !/^devtools:/i.test(target.url || '') && !/chrome-error/i.test(target.url || ''));
 };
 const externalContext = (id, manifest) => ({
   id,
@@ -442,7 +485,7 @@ const externalContext = (id, manifest) => ({
 
 const injectLoaderUi = async (target) => {
   const expression = `(() => {
-    if (window.__echoExternalLoaderUi?.version >= 6) return 'already';
+    if (window.__echoExternalLoaderUi?.version >= 7) return 'already';
     window.__echoExternalLoaderUi?.dispose?.();
     const base = 'http://127.0.0.1:${port}';
     let panel = null;
@@ -648,7 +691,7 @@ const injectLoaderUi = async (target) => {
       .echo-empty-box { text-align: center; padding: 48px 24px; color: var(--theme-muted-text, var(--color-muted, #616977)); }
 
       .echo-modal-overlay {
-        position: fixed; inset: 0; z-index: 2147483645;
+        position: fixed; inset: 0; z-index: 45;
         background: var(--theme-overlay-bg, rgba(0, 0, 0, 0.45));
         backdrop-filter: blur(6px); display: grid; place-items: center; padding: 20px;
         animation: echo-fade-in 0.18s ease;
@@ -692,7 +735,7 @@ const injectLoaderUi = async (target) => {
       .echo-external-mod-page[hidden] { display: none !important; }
 
       .echo-toast {
-        position: fixed; right: 28px; bottom: 28px; z-index: 2147483647;
+        position: fixed; right: 20px; bottom: calc(var(--player-bar-height, 76px) + 12px); z-index: 50;
         background: var(--theme-panel-bg-strong, var(--color-bg-elevated, #1e293b));
         color: var(--theme-page-text, #ffffff);
         padding: 10px 16px; border-radius: var(--radius-md, 8px);
@@ -728,13 +771,13 @@ const injectLoaderUi = async (target) => {
       return val;
     };
 
-    const hideNativeSurfaces = () => document.querySelectorAll('.page-surface').forEach((surface) => {
+    const hideNativeSurfaces = () => document.querySelectorAll('.page-surface:not([hidden])').forEach((surface) => {
       surface.dataset.echoExternalHidden = 'true';
-      surface.style.setProperty('display', 'none', 'important');
+      surface.setAttribute('hidden', '');
     });
     const restoreNativeSurfaces = () => document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => {
       delete surface.dataset.echoExternalHidden;
-      surface.style.removeProperty('display');
+      surface.removeAttribute('hidden');
     });
     const closeSidebarPage = () => {
       sidebarPages.forEach((page) => { page.hidden = true; });
@@ -765,20 +808,27 @@ const injectLoaderUi = async (target) => {
     const hidePanel = () => setPanelVisible(false);
 
     const ensureLoaderGroup = () => {
-      const groups = document.querySelector('.sidebar-groups') || document.querySelector('.sidebar-group[data-group="preferences"]')?.parentElement;
+      const nativeNav = document.querySelector('.sidebar-group[data-group="preferences"] .utility-nav')
+        || document.querySelector('[data-group="preferences"] .nav-list');
+      if (nativeNav) {
+        loaderNav = nativeNav;
+        loaderGroup = nativeNav.closest('.sidebar-group');
+        return loaderNav;
+      }
+      const groups = document.querySelector('.sidebar-groups');
       if (!groups) return null;
       let group = groups.querySelector('[data-echo-external-loader-group]');
       if (!group) {
         group = document.createElement('section');
         group.className = 'sidebar-group sidebar-group--utility';
-        group.dataset.group = 'shinawase-loader';
+        group.dataset.group = 'preferences';
         group.dataset.echoExternalLoaderGroup = 'true';
         const heading = document.createElement('h2');
         heading.className = 'sidebar-group-label';
-        heading.textContent = 'ShinawaseLoader';
+        heading.textContent = 'Mods';
         const nav = document.createElement('nav');
         nav.className = 'nav-list utility-nav';
-        nav.setAttribute('aria-label', 'ShinawaseLoader');
+        nav.setAttribute('aria-label', 'Mods');
         group.append(heading, nav);
         groups.append(group);
       }
@@ -1273,7 +1323,7 @@ const injectLoaderUi = async (target) => {
     ensure();
 
     window.__echoExternalLoaderUi = {
-      version: 6,
+      version: 7,
       registerSidebar,
       unregisterSidebar: removeSidebar,
       dispose: () => {
@@ -1294,6 +1344,420 @@ const injectLoaderUi = async (target) => {
         delete window.__echoModToast;
       },
     };
+    return 'installed';
+  })()`;
+  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
+};
+
+const injectPlayerRuntime = async (target) => {
+  const expression = `(() => {
+    if (window.__echoExternalPlayer?.version >= 1) return 'already';
+    const findQueue = () => {
+      const root = window.__echoReactRoot?._internalRoot?.current;
+      if (!root) return null;
+      const seen = new Set();
+      let found = null;
+      const visit = (fiber, depth = 0) => {
+        if (!fiber || found || seen.has(fiber) || depth > 10000) return;
+        seen.add(fiber);
+        const value = fiber.memoizedProps?.value;
+        if (value && typeof value.playTrack === 'function' && typeof value.appendToQueue === 'function') {
+          found = value;
+          return;
+        }
+        visit(fiber.child, depth + 1);
+        visit(fiber.sibling, depth + 1);
+      };
+      visit(root);
+      return found;
+    };
+    const playback = () => window.echo?.playback;
+    const asPlayable = (track) => {
+      if (!track) return null;
+      if (track.mediaType === 'streaming' || track.providerTrackId) {
+        const quality = track.streamingQuality || track.quality || 'lossless';
+        const id = String(track.stableKey || track.id || track.trackId || '');
+        return {
+          mediaType: 'streaming',
+          trackId: id,
+          provider: track.provider,
+          providerTrackId: track.providerTrackId,
+          quality,
+          streamingQuality: quality,
+          stableKey: id,
+          title: track.title || '',
+          artist: track.artist || '',
+          album: track.album || '',
+          albumArtist: track.albumArtist || track.artist || '',
+          duration: Number(track.duration) || 0,
+          coverThumb: track.coverThumb || null,
+          playable: track.unavailable !== true && track.playable !== false,
+        };
+      }
+      if (track.mediaType === 'remote' || track.remotePath || track.sourceId) {
+        return {
+          mediaType: 'remote',
+          trackId: String(track.id || track.trackId || ''),
+          sourceId: track.sourceId || null,
+          stableKey: track.stableKey || null,
+          remotePath: track.remotePath || null,
+          title: track.title || '',
+          artist: track.artist || '',
+          album: track.album || '',
+          duration: Number(track.duration) || 0,
+          coverThumb: track.coverThumb || null,
+        };
+      }
+      return {
+        mediaType: 'local',
+        trackId: String(track.id || track.trackId || track.path || ''),
+        path: track.path || track.filePath || '',
+        title: track.title || '',
+        artist: track.artist || '',
+        album: track.album || '',
+        duration: Number(track.duration) || 0,
+        coverThumb: track.coverThumb || null,
+      };
+    };
+    const snapshot = (status, queue) => {
+      const current = queue?.currentTrack || null;
+      return {
+        connected: Boolean(playback()),
+        queueBound: Boolean(queue),
+        state: status?.state || 'stopped',
+        currentTrackId: status?.currentTrackId || current?.id || '',
+        currentFilePath: status?.filePath || status?.currentFilePath || current?.path || '',
+        positionSeconds: Number.isFinite(Number(status?.positionSeconds)) ? Number(status.positionSeconds) : Number(status?.positionMs || 0) / 1000,
+        durationSeconds: Number.isFinite(Number(status?.durationSeconds))
+          ? Number(status.durationSeconds)
+          : Number.isFinite(Number(status?.durationMs))
+            ? Number(status.durationMs) / 1000
+            : Number(current?.duration) || 0,
+        title: current?.title || status?.currentTrackTitle || status?.title || '',
+        artist: current?.artist || status?.currentTrackArtist || status?.artist || '',
+        album: current?.album || status?.currentTrackAlbum || status?.album || '',
+        mediaType: current?.mediaType || null,
+        provider: current?.provider || null,
+        canGoNext: queue?.canGoNext === true,
+        canGoPrevious: queue?.canGoPrevious === true,
+        queueCount: Array.isArray(queue?.items) ? queue.items.length : 0,
+        currentTrack: current,
+      };
+    };
+    const player = {
+      version: 1,
+      mode: 'external-cdp',
+      queue: findQueue,
+      playback,
+      async status() {
+        const queue = findQueue();
+        const status = await playback()?.getStatus?.();
+        return snapshot(status, queue);
+      },
+      async play() { return playback()?.play?.(); },
+      async pause() { return playback()?.pause?.(); },
+      async stop() { return playback()?.stop?.(); },
+      async seek(positionSeconds) { return playback()?.seek?.(Number(positionSeconds) || 0); },
+      async next() {
+        const queue = findQueue();
+        if (queue?.playNext) return queue.playNext();
+        throw new Error('echo_queue_unavailable');
+      },
+      async previous() {
+        const queue = findQueue();
+        if (queue?.playPrevious) return queue.playPrevious();
+        throw new Error('echo_queue_unavailable');
+      },
+      async playTrack(track, options = {}) {
+        const queue = findQueue();
+        if (queue?.playTrack) return queue.playTrack(track, options);
+        const api = playback();
+        if (!api?.playMediaItem && !api?.playLocalFile) throw new Error('echo_playback_api_unavailable');
+        const item = asPlayable(track);
+        if (item?.mediaType === 'local') {
+          return api.playLocalFile({
+            filePath: item.path,
+            trackId: item.trackId,
+            startSeconds: options.startSeconds,
+            metadata: { title: item.title, artist: item.artist, album: item.album, coverUrl: item.coverThumb },
+          });
+        }
+        return api.playMediaItem({ item, startSeconds: options.startSeconds, forceRefresh: options.forceRefresh === true });
+      },
+      async playMedia(item, options = {}) {
+        const api = playback();
+        if (!api?.playMediaItem) throw new Error('echo_playback_api_unavailable');
+        return api.playMediaItem({ item: asPlayable(item) || item, startSeconds: options.startSeconds, forceRefresh: options.forceRefresh === true });
+      },
+      async playLocal(request = {}) {
+        const api = playback();
+        if (!api?.playLocalFile) throw new Error('echo_playback_api_unavailable');
+        return api.playLocalFile(request);
+      },
+      async prepare(track) {
+        const api = playback();
+        const item = asPlayable(track);
+        if (item?.mediaType === 'local') return api?.prepareLocalFile?.({ filePath: item.path, trackId: item.trackId });
+        return api?.prepareMediaItem?.({ item });
+      },
+      append(track, source) {
+        const queue = findQueue();
+        if (!queue?.appendToQueue) throw new Error('echo_queue_unavailable');
+        return queue.appendToQueue(track, source);
+      },
+      replaceQueue(tracks, options) {
+        const queue = findQueue();
+        if (!queue?.replaceQueue) throw new Error('echo_queue_unavailable');
+        return queue.replaceQueue(tracks, options);
+      },
+      clearQueue() {
+        const queue = findQueue();
+        if (!queue?.clearQueue) throw new Error('echo_queue_unavailable');
+        return queue.clearQueue();
+      },
+      async setRepeat(mode) {
+        const api = playback();
+        if (!api?.setRepeatMode) throw new Error('echo_playback_api_unavailable');
+        return api.setRepeatMode(mode);
+      },
+      async command(payload = {}) {
+        const action = String(payload.action || '');
+        if (action === 'status') return player.status();
+        if (action === 'play') { await player.play(); return player.status(); }
+        if (action === 'pause') { await player.pause(); return player.status(); }
+        if (action === 'stop') { await player.stop(); return player.status(); }
+        if (action === 'seek') { await player.seek(payload.positionSeconds); return player.status(); }
+        if (action === 'next') { await player.next(); return player.status(); }
+        if (action === 'previous') { await player.previous(); return player.status(); }
+        if (action === 'playTrack') { await player.playTrack(payload.track || payload.item, payload.options || payload); return player.status(); }
+        if (action === 'playMedia') { await player.playMedia(payload.item, payload); return player.status(); }
+        if (action === 'playLocal' || action === 'load') {
+          await player.playLocal({
+            filePath: String(payload.filePath || ''),
+            trackId: String(payload.trackId || payload.filePath || ''),
+            mimeType: String(payload.mimeType || ''),
+            startSeconds: Number(payload.positionSeconds || payload.startSeconds) || 0,
+            metadata: {
+              title: String(payload.title || ''),
+              artist: String(payload.artist || ''),
+              album: String(payload.album || ''),
+              albumArtist: String(payload.albumArtist || ''),
+              coverUrl: String(payload.coverUrl || ''),
+              fileName: String(payload.fileName || ''),
+              durationSeconds: Number(payload.durationSeconds) || 0,
+            },
+          });
+          if (payload.state && payload.state !== 'playing') await player.pause();
+          return player.status();
+        }
+        if (action === 'append') { player.append(payload.track || payload.item, payload.source); return player.status(); }
+        if (action === 'replaceQueue') { player.replaceQueue(payload.tracks || [], payload.options); return player.status(); }
+        if (action === 'clearQueue') { player.clearQueue(); return player.status(); }
+        if (action === 'setRepeat') { await player.setRepeat(payload.mode || 'off'); return player.status(); }
+        throw new Error('player_action_invalid');
+      },
+    };
+    window.__echoExternalPlayer = player;
+    return 'installed';
+  })()`;
+  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
+};
+
+const injectExtendRuntime = async (target) => {
+  const expression = `(() => {
+    if (window.__echoExternalExtend?.version >= 1) return 'already';
+    const blocked = new Set(['__proto__', 'constructor', 'prototype', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__']);
+    const hooks = new Map();
+    const styles = new Map();
+    const replacements = new Map();
+    const hiddenNav = new Set();
+    const hiddenSelectors = new Map();
+    let navStyle = null;
+    const safeId = (value) => String(value || '').replace(/[^a-zA-Z0-9:_-]/g, '');
+    const routeSelector = (routeId) => '.page-surface[data-route-id="' + safeId(routeId) + '"]';
+    const navSelector = (routeId) => '[data-workshop-icon="nav-' + safeId(routeId) + '"]';
+    const resolvePath = (path) => {
+      const parts = String(path || '').split('.').filter(Boolean);
+      if (!parts.length || parts.some((part) => blocked.has(part))) throw new Error('extend_path_invalid');
+      let owner = window.echo;
+      for (let i = 0; i < parts.length - 1; i++) {
+        owner = owner?.[parts[i]];
+        if (!owner || (typeof owner !== 'object' && typeof owner !== 'function')) throw new Error('extend_path_missing');
+      }
+      return { owner, key: parts[parts.length - 1], path: parts.join('.') };
+    };
+    const ensureStyle = (id, cssText) => {
+      let node = styles.get(id);
+      if (!node) {
+        node = document.createElement('style');
+        node.dataset.echoExternalExtend = id;
+        document.head.append(node);
+        styles.set(id, node);
+      }
+      node.textContent = String(cssText || '');
+      return () => {
+        node.remove();
+        styles.delete(id);
+      };
+    };
+    const syncNavCss = () => {
+      const rules = [];
+      hiddenNav.forEach((routeId) => rules.push(navSelector(routeId) + '{display:none!important}'));
+      hiddenSelectors.forEach((selector) => rules.push(selector + '{display:none!important}'));
+      if (!rules.length) {
+        navStyle?.remove();
+        navStyle = null;
+        return;
+      }
+      if (!navStyle) {
+        navStyle = document.createElement('style');
+        navStyle.dataset.echoExternalExtend = 'chrome';
+        document.head.append(navStyle);
+      }
+      navStyle.textContent = rules.join('');
+    };
+    const ensureReplacePage = (routeId) => {
+      let page = document.querySelector('[data-echo-external-replace="' + safeId(routeId) + '"]');
+      if (!page) {
+        page = document.createElement('section');
+        page.className = 'echo-external-mod-page';
+        page.hidden = true;
+        page.dataset.echoExternalReplace = safeId(routeId);
+        (document.querySelector('.app-shell') || document.body).append(page);
+      }
+      return page;
+    };
+    const currentRoute = () => document.querySelector('.page-surface[data-route-id]:not([hidden])')?.getAttribute('data-route-id') || null;
+    const syncReplacements = () => {
+      const routeId = currentRoute();
+      replacements.forEach((entry, id) => {
+        const native = document.querySelector(routeSelector(id));
+        const page = ensureReplacePage(id);
+        if (routeId === id) {
+          if (native) {
+            native.dataset.echoExternalReplaced = 'true';
+            native.style.setProperty('display', 'none', 'important');
+          }
+          page.hidden = false;
+          if (!entry.mounted) {
+            try {
+              if (typeof entry.render === 'function') entry.cleanup = entry.render(page);
+              else if (typeof entry.html === 'string') page.innerHTML = entry.html;
+              entry.mounted = true;
+            } catch (error) {
+              page.textContent = 'Route replacement failed: ' + (error?.message || error);
+            }
+          }
+          return;
+        }
+        page.hidden = true;
+      });
+      document.querySelectorAll('[data-echo-external-replaced="true"]').forEach((surface) => {
+        const id = surface.getAttribute('data-route-id');
+        if (replacements.has(id) && id === routeId) return;
+        delete surface.dataset.echoExternalReplaced;
+        if (!surface.dataset.echoExternalHidden) surface.style.removeProperty('display');
+      });
+    };
+    const extend = {
+      version: 1,
+      mode: 'external-cdp',
+      css(id, cssText) {
+        return ensureStyle(safeId(id) || 'style', cssText);
+      },
+      removeCss(id) {
+        const node = styles.get(safeId(id));
+        node?.remove();
+        styles.delete(safeId(id));
+      },
+      hook(path, wrapper) {
+        if (typeof wrapper !== 'function') throw new Error('extend_hook_invalid');
+        const target = resolvePath(path);
+        if (hooks.has(target.path)) extend.unhook(target.path);
+        const original = target.owner[target.key];
+        if (typeof original !== 'function') throw new Error('extend_hook_not_function');
+        const wrapped = function (...args) {
+          return wrapper.call(this, original.bind(this), ...args);
+        };
+        target.owner[target.key] = wrapped;
+        hooks.set(target.path, { owner: target.owner, key: target.key, original });
+        return () => extend.unhook(target.path);
+      },
+      unhook(path) {
+        const target = resolvePath(path);
+        const entry = hooks.get(target.path);
+        if (!entry) return;
+        if (entry.owner === target.owner) entry.owner[entry.key] = entry.original;
+        hooks.delete(target.path);
+      },
+      on(type, handler, options) {
+        window.addEventListener(type, handler, options);
+        return () => window.removeEventListener(type, handler, options);
+      },
+      navigate(routeId) {
+        window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: String(routeId || '') }));
+      },
+      currentRoute,
+      replaceRoute(routeId, options = {}) {
+        const id = safeId(routeId);
+        if (!id) throw new Error('extend_route_invalid');
+        extend.restoreRoute(id);
+        replacements.set(id, {
+          render: typeof options.render === 'function' ? options.render : null,
+          html: typeof options.html === 'string' ? options.html : null,
+          cleanup: null,
+          mounted: false,
+        });
+        syncReplacements();
+        return () => extend.restoreRoute(id);
+      },
+      restoreRoute(routeId) {
+        const id = safeId(routeId);
+        const entry = replacements.get(id);
+        if (!entry) return;
+        try { entry.cleanup?.(); } catch {}
+        document.querySelector('[data-echo-external-replace="' + id + '"]')?.remove();
+        replacements.delete(id);
+        syncReplacements();
+      },
+      hideNav(routeId) {
+        const id = safeId(routeId);
+        hiddenNav.add(id);
+        syncNavCss();
+        return () => extend.showNav(id);
+      },
+      showNav(routeId) {
+        hiddenNav.delete(safeId(routeId));
+        syncNavCss();
+      },
+      hide(selector) {
+        const key = String(selector || '');
+        if (!key) throw new Error('extend_selector_invalid');
+        hiddenSelectors.set(key, key);
+        syncNavCss();
+        return () => extend.show(key);
+      },
+      show(selector) {
+        hiddenSelectors.delete(String(selector || ''));
+        syncNavCss();
+      },
+      observe(selector, callback) {
+        if (typeof callback !== 'function') throw new Error('extend_observe_invalid');
+        const run = () => document.querySelectorAll(String(selector || '')).forEach((node) => callback(node));
+        const observer = new MutationObserver(run);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        run();
+        return () => observer.disconnect();
+      },
+    };
+    window.addEventListener('app:navigate:route', () => requestAnimationFrame(syncReplacements));
+    window.addEventListener('app:navigate:lyrics', () => requestAnimationFrame(syncReplacements));
+    window.addEventListener('app:navigate:lyrics-back', () => requestAnimationFrame(syncReplacements));
+    window.addEventListener('app:navigate:queue', () => requestAnimationFrame(syncReplacements));
+    window.addEventListener('app:navigate:settings', () => requestAnimationFrame(syncReplacements));
+    const observer = new MutationObserver(() => syncReplacements());
+    observer.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    window.__echoExternalExtend = extend;
     return 'installed';
   })()`;
   return cdpEvaluate(target.webSocketDebuggerUrl, expression);
@@ -1373,6 +1837,30 @@ const injectIntoTarget = async (target, id, manifest, source) => {
       async status() { return request('/api/status', { method: 'GET' }); },
     };
     const sidebarDisposers = [];
+    const extendDisposers = [];
+    const trackExtend = (dispose) => {
+      if (typeof dispose === 'function') extendDisposers.push(dispose);
+      return dispose;
+    };
+    const rawExtend = window.__echoExternalExtend;
+    const extend = rawExtend ? {
+      version: rawExtend.version,
+      mode: rawExtend.mode,
+      css: (styleId, cssText) => trackExtend(rawExtend.css(id + ':' + String(styleId || 'style'), cssText)),
+      removeCss: (styleId) => rawExtend.removeCss(id + ':' + String(styleId || 'style')),
+      hook: (path, wrapper) => trackExtend(rawExtend.hook(path, wrapper)),
+      unhook: (path) => rawExtend.unhook(path),
+      on: (type, handler, options) => trackExtend(rawExtend.on(type, handler, options)),
+      navigate: (routeId) => rawExtend.navigate(routeId),
+      currentRoute: () => rawExtend.currentRoute(),
+      replaceRoute: (routeId, options) => trackExtend(rawExtend.replaceRoute(routeId, options)),
+      restoreRoute: (routeId) => rawExtend.restoreRoute(routeId),
+      hideNav: (routeId) => trackExtend(rawExtend.hideNav(routeId)),
+      showNav: (routeId) => rawExtend.showNav(routeId),
+      hide: (selector) => trackExtend(rawExtend.hide(selector)),
+      show: (selector) => rawExtend.show(selector),
+      observe: (selector, callback) => trackExtend(rawExtend.observe(selector, callback)),
+    } : null;
     const sidebar = {
       register(options = {}) {
         const register = window.__echoExternalLoaderUi?.registerSidebar;
@@ -1397,15 +1885,26 @@ const injectIntoTarget = async (target, id, manifest, source) => {
       sidebar,
       toast: (message) => {
         if (typeof window.__echoModToast === 'function') window.__echoModToast(message, 'info');
-        else {
-          const el = document.createElement('div');
-          el.textContent = String(message);
-          el.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:2147483647;background:rgba(15,23,42,0.95);color:#fff;padding:10px 16px;border-radius:10px;font:600 12px sans-serif;box-shadow:0 12px 36px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);';
-          document.body.append(el);
-          setTimeout(() => el.remove(), 2800);
-        }
+        else window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: String(message) }));
       },
       echo: window.echo,
+      player: window.__echoExternalPlayer || null,
+      extend,
+      native: {
+        version: 1,
+        mode: 'in-process-asar-bridge',
+        status: () => request('/api/native/status', { method: 'GET' }),
+        modules: () => request('/api/native/call', { body: { method: 'modules', packageId: id } }),
+        invoke: (method, payload) => request('/api/native/call', { body: { method: 'invoke', packageId: id, payload: { method, payload } } }),
+        read: (input) => request('/api/native/call', { body: { method: 'read', packageId: id, payload: input } }),
+        write: (input) => request('/api/native/call', { body: { method: 'write', packageId: id, payload: input } }),
+        protect: (input) => request('/api/native/call', { body: { method: 'protect', packageId: id, payload: input } }),
+      },
+      main: {
+        version: 1,
+        mode: 'in-process-asar-bridge',
+        invoke: (method, payload) => request('/api/native/call', { body: { method: 'main.invoke', packageId: id, payload: { method, payload } } }),
+      },
     };
     const modConsole = Object.fromEntries(['debug', 'info', 'log', 'warn', 'error'].map((level) => [level, (...values) => {
       const message = values.map((value) => { try { return typeof value === 'string' ? value : JSON.stringify(value); } catch { return String(value); } }).join(' ');
@@ -1425,6 +1924,7 @@ const injectIntoTarget = async (target, id, manifest, source) => {
     const dispose = () => {
       try { if (typeof returnedDispose === 'function') returnedDispose(); } finally {
         while (sidebarDisposers.length) sidebarDisposers.pop()?.();
+        while (extendDisposers.length) extendDisposers.pop()?.();
       }
     };
     window.__echoExternalMods[id] = { source, signature, dispose };
@@ -1449,16 +1949,22 @@ const injectionPlan = (id, stateEntry) => {
   const manifest = record?.manifest;
   if (!record || !manifest) return null;
   const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
-  if (!existsSync(entry)) return null;
+  if (!existsSync(entry)) {
+    if (!manifest.main && !manifest.native) return null;
+    const source = '/* shinawase native-only package */';
+    return { id, manifest, source, signature: `${source}\n${JSON.stringify(externalContext(id, manifest))}` };
+  }
   const source = modEntrySource(id, manifest, entry);
   return { id, manifest, source, signature: `${source}\n${JSON.stringify(externalContext(id, manifest))}` };
 };
 const targetInjectionState = async (target) => {
   const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(() => ({
     uiVersion: Number(window.__echoExternalLoaderUi?.version || 0),
+    playerVersion: Number(window.__echoExternalPlayer?.version || 0),
+    extendVersion: Number(window.__echoExternalExtend?.version || 0),
     mods: Object.fromEntries(Object.entries(window.__echoExternalMods || {}).map(([id, value]) => [id, String(value?.signature || '')]))
   }))()`);
-  return result?.result?.value || { uiVersion: 0, mods: {} };
+  return result?.result?.value || { uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} };
 };
 
 const injectEnabled = async () => {
@@ -1472,9 +1978,27 @@ const injectEnabled = async () => {
     log('INFO', `ECHO targets=${targets.length}, enabledPackages=${plans.length}`);
   }
   for (const target of targets) {
-    const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 5;
+    const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
+    const uiReloaded = targetState.uiVersion < 7;
+    await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
+      const extra = window.__echoShinawaseStreaming;
+      if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
+      const base = window.echo || {};
+      try {
+        window.echo = new Proxy(base, {
+          get(target, prop) {
+            const value = Reflect.get(target, prop);
+            if ((value === null || value === undefined) && extra[prop]) return extra[prop];
+            return value;
+          }
+        });
+        window.__echoShinawaseEchoPatched = true;
+        return 'proxied';
+      } catch { return 'frozen'; }
+    })()`).catch(() => undefined);
     if (uiReloaded) await injectLoaderUi(target).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
+    if (targetState.playerVersion < 1) await injectPlayerRuntime(target).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
+    if (targetState.extendVersion < 1) await injectExtendRuntime(target).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
     for (const plan of plans) {
       if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
       await injectIntoTarget(target, plan.id, plan.manifest, plan.source).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
@@ -1542,9 +2066,12 @@ const playbackStatus = async () => {
   };
 };
 const playbackControl = async (payload) => {
-  const input = JSON.stringify(payload || {});
-  await rendererValue(`(async()=>{const payload=${input};const playback=window.echo?.playback;if(!playback)throw new Error('echo_playback_api_unavailable');if(payload.action==='play')await playback.play();else if(payload.action==='pause')await playback.pause();else if(payload.action==='stop')await playback.stop?.();else if(payload.action==='seek')await playback.seek(Number(payload.positionSeconds)||0);else if(payload.action==='load'){await playback.playLocalFile({filePath:String(payload.filePath||''),trackId:String(payload.trackId||payload.filePath||''),mimeType:String(payload.mimeType||''),startSeconds:Number(payload.positionSeconds)||0,metadata:{title:String(payload.title||''),artist:String(payload.artist||''),album:String(payload.album||''),albumArtist:String(payload.albumArtist||''),coverUrl:String(payload.coverUrl||''),fileName:String(payload.fileName||''),durationSeconds:Number(payload.durationSeconds)||0}});if(payload.state!=='playing')await playback.pause();}else throw new Error('control_action_invalid');return true;})()`);
-  return { ok: true, ...(await playbackStatus()) };
+  const input = JSON.stringify(payload && typeof payload === 'object' ? payload : {});
+  const value = await rendererValue(`(async()=>{
+    if (!window.__echoExternalPlayer) throw new Error('echo_player_runtime_unavailable');
+    return window.__echoExternalPlayer.command(${input});
+  })()`);
+  return { ok: true, ...(value || {}) };
 };
 const remoteJson = async (response) => {
   const text = await response.text();
@@ -1721,13 +2248,54 @@ const findEcho = () => {
   return found[0];
 };
 
+const attachMainInspector = async () => {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${inspectPort}/json`);
+      if (response.ok) {
+        const targets = await response.json();
+        const target = (Array.isArray(targets) ? targets : []).find((item) => item.webSocketDebuggerUrl);
+        if (target?.webSocketDebuggerUrl) {
+          const loaderLiteral = JSON.stringify(root.replaceAll('\\', '/'));
+          const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(async () => {
+            process.env.ECHO_MOD_HOME = process.env.ECHO_MOD_HOME || ${loaderLiteral};
+            const path = require('node:path');
+            const bootstrap = require(path.join(process.env.ECHO_MOD_HOME, 'main-bootstrap.cjs'));
+            return bootstrap.startShinawaseMainBootstrap();
+          })()`);
+          log('INFO', 'main inspector bootstrap', result?.result?.value || result);
+          return result?.result?.value || { ok: true };
+        }
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  log('DEBUG', `main inspector unavailable on ${inspectPort}; renderer CDP and optional asar-bridge remain active`);
+  return null;
+};
 const launchEcho = () => {
   if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
   const executable = findEcho();
   if (echoProcess && !echoProcess.killed) return executable;
-  echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`], { cwd: dirname(executable), detached: false, stdio: 'ignore', windowsHide: true });
+  echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`, `--inspect=${inspectPort}`], {
+    cwd: dirname(executable),
+    env: {
+      ...process.env,
+      ECHO_MOD_ROOT: gameRoot,
+      ECHO_MOD_HOME: root,
+      ECHO_GAME_ROOT: gameRoot,
+      ECHO_MODS_HOME: modsRoot,
+      ECHO_PLUGINS_HOME: pluginsRoot,
+      ECHO_LOGS_HOME: logsRoot,
+    },
+    detached: false,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
   echoProcess.once('exit', () => { echoProcess = null; });
-  log('INFO', `launched ECHO ${executable}`);
+  log('INFO', `launched ECHO ${executable} inspect=${inspectPort}`);
+  void attachMainInspector();
   startWatch();
   return executable;
 };
@@ -2099,6 +2667,7 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, {
         ok: true, loaderVersion, root, gameRoot, enableWebConsole, port, debugPort,
         loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
+        nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort,
         dropRoot, pluginDropRoot: pluginsRoot,
         folders: { logs: logsRoot, mods: modsRoot, plugins: pluginsRoot },
         ...(togetherRelay ? { togetherRelay } : {}),
@@ -2106,7 +2675,15 @@ const server = createServer(async (request, response) => {
       });
     }
     if (request.method === 'GET' && url.pathname === '/api/echoes') return jsonResponse(response, 200, { echoes: discoverEchoes() });
-    if (request.method === 'GET' && url.pathname === '/api/sdk') return jsonResponse(response, 200, { version: 1, mode: 'external-cdp', ...await sdkStatus() });
+    if (request.method === 'GET' && url.pathname === '/api/sdk') return jsonResponse(response, 200, { version: 1, mode: 'external-cdp', player: { version: 1, mode: 'external-cdp' }, extend: { version: 1, mode: 'external-cdp' }, native: { version: 1, mode: 'in-process-asar-bridge', enabled: nativeHostEnabled, memoryApi: nativeMemoryApi }, main: { version: 1, mode: 'in-process-asar-bridge' }, ...await sdkStatus() });
+    if (request.method === 'GET' && url.pathname === '/api/native/status') {
+      try { return jsonResponse(response, 200, await callNativeHost({ method: 'status' })); }
+      catch (error) { return jsonResponse(response, 200, { ok: false, enabled: nativeHostEnabled, error: error instanceof Error ? error.message : String(error), hint: 'Enable app-asar-bridge so the in-process native host can start inside ECHO.' }); }
+    }
+    if (request.method === 'POST' && url.pathname === '/api/native/call') return jsonResponse(response, 200, await callNativeHost(await readRequest(request)));
+    if (request.method === 'POST' && url.pathname === '/api/native/reload') return jsonResponse(response, 200, await notifyNativeHost('api') || { ok: false, error: 'native_host_unavailable' });
+    if (request.method === 'GET' && url.pathname === '/api/player') return jsonResponse(response, 200, await playbackControl({ action: 'status' }));
+    if (request.method === 'POST' && url.pathname === '/api/player') return jsonResponse(response, 200, await playbackControl(await readRequest(request)));
     if (request.method === 'GET' && url.pathname === '/api/logs') return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath });
     if (request.method === 'POST' && url.pathname === '/api/log') {
       const body = await readRequest(request);
@@ -2211,19 +2788,14 @@ const server = createServer(async (request, response) => {
 
 const printList = () => {
   const mods = modSummaries();
-  console.log(`\n${c.bCyan}╭─────────────────────────────────────────────────────────────╮${c.reset}`);
-  console.log(`${c.bCyan}│${c.reset}  ${c.bold}${c.white}✦ ShinawaseLoader 已安装模组列表${c.reset}                           ${c.bCyan}│${c.reset}`);
-  console.log(`${c.bCyan}╰─────────────────────────────────────────────────────────────╯${c.reset}\n`);
+  console.log(`${c.white}packages${c.reset}`);
   if (!mods.length) {
-    console.log(`  ${c.gray}暂无已安装的模组。${c.reset}\n`);
+    console.log(`${c.gray}  none installed${c.reset}`);
     return;
   }
-  for (const m of mods) {
-    const statusPill = m.enabled ? `${c.bGreen}● 已启用${c.reset}` : `${c.gray}○ 已停用${c.reset}`;
-    console.log(`  ${statusPill}  ${c.bold}${c.white}${m.name}${c.reset} ${c.dim}(v${m.version})${c.reset}`);
-    console.log(`      ${c.gray}ID:${c.reset} ${c.cyan}${m.id}${c.reset}  ${c.gray}路径:${c.reset} ${c.dim}${m.directory}${c.reset}`);
-    if (m.description) console.log(`      ${c.gray}简介:${c.reset} ${m.description}`);
-    console.log('');
+  for (const item of mods) {
+    const mark = item.enabled ? `${c.green}on ${c.reset}` : `${c.gray}off${c.reset}`;
+    console.log(`  ${mark}  ${item.name}  ${c.gray}${item.id}  ${item.version}${c.reset}`);
   }
 };
 
@@ -2259,20 +2831,34 @@ const run = async () => {
   }
 
   const isAttach = command === 'attach';
+  try {
+    const existing = await fetch(`http://127.0.0.1:${port}/api/status`);
+    if (existing.ok) {
+      const status = await existing.json();
+      if (status?.ok) {
+        console.log(`${c.gray}listen${c.reset}  already running on ${port}`);
+        if (isAttach) startWatch();
+        if (command === 'run') launchEcho();
+        return;
+      }
+    }
+  } catch {}
   relayLifecycleActive = true;
   startDropWatcher();
   await syncTogetherRelay();
   server.listen(port, '127.0.0.1', () => {
-    console.log(`\n${c.bCyan}╭─────────────────────────────────────────────────────────────╮${c.reset}`);
-    console.log(`${c.bCyan}│${c.reset}  ${c.bold}${c.white}✦ ShinawaseLoader 模组服务已启动${c.reset}                           ${c.bCyan}│${c.reset}`);
-    console.log(`${c.bCyan}╰─────────────────────────────────────────────────────────────╯${c.reset}`);
-    console.log(`  ${c.bold}服务端口   :${c.reset} ${c.cyan}http://127.0.0.1:${port}${c.reset}`);
-    console.log(`  ${c.bold}Web 控制台 :${c.reset} ${enableWebConsole ? `${c.bGreen}已开启 (http://127.0.0.1:${port})${c.reset}` : `${c.gray}已关闭 (可在 loader.config.json 中开启)${c.reset}`}`);
-    if (togetherRelayServer) console.log(`  ${c.bold}Together中继:${c.reset} ${c.white}http://127.0.0.1:${togetherRelayPort}${c.reset}`);
-    console.log(`  ${c.bold}CDP调试端口 :${c.reset} ${c.white}${debugPort}${c.reset}\n`);
+    console.log(`${c.gray}listen${c.reset}   http://127.0.0.1:${port}`);
+    console.log(`${c.gray}cdp${c.reset}      ${debugPort}`);
+    console.log(`${c.gray}inspect${c.reset}  ${inspectPort}`);
+    console.log(`${c.gray}native${c.reset}   ${nativeHostEnabled ? nativePort : 'off'}`);
+    if (togetherRelayServer) console.log(`${c.gray}together${c.reset} ${togetherRelayPort}`);
+    console.log(`${c.gray}console${c.reset}  ${enableWebConsole ? 'on' : 'off'}`);
   });
 
-  if (isAttach) startWatch();
+  if (isAttach) {
+    void attachMainInspector();
+    startWatch();
+  }
   if (command === 'run') launchEcho();
 };
 

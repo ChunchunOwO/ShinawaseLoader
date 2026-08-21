@@ -7,6 +7,8 @@ dist/
 release/
 ShinawaseLoader/loader-state.json
 ShinawaseLoader/loader-debug.log
+ShinawaseLoader/native-host.json
+ShinawaseLoader/echo-native-host.node
 ShinawaseLoader/node.exe
 Packages/template-self-test.echomod
 /backup.zip

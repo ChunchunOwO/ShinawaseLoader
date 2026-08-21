@@ -24,7 +24,7 @@ $loaderSource = Join-Path $ProjectRoot 'ShinawaseLoader'
 $loaderTarget = Join-Path $releaseRoot 'ShinawaseLoader'
 New-Item -ItemType Directory -Force -Path $loaderTarget | Out-Null
 Get-ChildItem -LiteralPath $loaderSource -Force |
-  Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'Logs', 'backups') } |
+  Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'Logs', 'backups', 'native-host.json') } |
   ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $loaderTarget $_.Name) -Recurse -Force }
 
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'setup-modloader.bat') -Destination $releaseRoot
@@ -43,7 +43,7 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'scripts\pack-echomod.mjs') -Dest
   '3. Use the generated ShinawaseLoader\start-echo-with-mods.cmd beside ECHO.exe.',
   '',
   'The installer uses an external CDP connection and does not patch ECHO by default.',
-  'For direct ECHO.exe auto startup, run setup-modloader.bat -Action install -PatchApp; this creates a reversible app.asar bridge.',
+  'For direct ECHO.exe auto startup and in-process native host loading, run setup-modloader.bat -Action install -PatchApp; this creates a reversible app.asar bridge.',
   'It downloads Node into the current user cache only when required.',
   'Drop Mod packages into Mods and Plugin packages into Plugins for automatic import.',
   'Logs are written to ShinawaseLoader\Logs\loader.log and ShinawaseLoader\Logs\errors.log.',

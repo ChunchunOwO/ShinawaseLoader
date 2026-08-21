@@ -29,6 +29,10 @@ internal static class EchoModdedHost
             if (!acquired) return 0;
 
         var launchArgs = args.ToList();
+        if (!launchArgs.Any(value => value.StartsWith("--remote-debugging-port=", StringComparison.OrdinalIgnoreCase)))
+            launchArgs.Add("--remote-debugging-port=9229");
+        if (!launchArgs.Any(value => value.StartsWith("--inspect=", StringComparison.OrdinalIgnoreCase)))
+            launchArgs.Add("--inspect=9230");
         var info = new ProcessStartInfo
         {
             FileName = moddedExe,

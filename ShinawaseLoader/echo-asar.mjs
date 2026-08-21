@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, join } from 'node:path';
 
 const marker = '/* shinawase-loader-bridge-v1 */';
+const nativeHostMarker = '/* shinawase-loader-native-host-v1 */';
 const preloadMarker = '/* shinawase-loader-preload-bridge-v1 */';
 const playbackMarker = '/* shinawase-loader-streaming-playback-v1 */';
 const align4 = (value) => (value + 3) & ~3;
@@ -78,6 +79,36 @@ const bridge = `${marker}
     if (process.platform === 'win32' && child.pid) childProcess.spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'taskkill', '/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
     else child.kill();
   });
+})();
+`;
+
+const nativeHostBridge = `${nativeHostMarker}
+(() => {
+  const builtin = (name) => process.getBuiltinModule?.(name);
+  const fs = builtin('node:fs');
+  const path = builtin('node:path');
+  const url = builtin('node:url');
+  if (!fs || !path || !url || typeof app === 'undefined') return;
+  const installRoot = process.env.ECHO_MOD_ROOT || path.dirname(process.resourcesPath);
+  const loaderRoot = process.env.ECHO_MOD_HOME || path.join(installRoot, 'ShinawaseLoader');
+  const script = path.join(loaderRoot, 'native-host.cjs');
+  const configPath = path.join(loaderRoot, 'loader.config.json');
+  let config = {};
+  try { config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\\uFEFF/u, '')); } catch {}
+  if (config.nativeHost === false || process.argv.includes('--no-native-host') || process.argv.includes('--safe-mode')) return;
+  app.whenReady().then(() => {
+    if (globalThis.__shinawaseNativeHost || !fs.existsSync(script)) return;
+    globalThis.__shinawaseNativeHost = import(url.pathToFileURL(script).href)
+      .then((module) => module.startShinawaseNativeHost?.() || module.default?.startShinawaseNativeHost?.())
+      .catch((error) => {
+        const detail = error instanceof Error ? error.stack || error.message : String(error);
+        try {
+          fs.mkdirSync(path.join(loaderRoot, 'Logs'), { recursive: true });
+          fs.appendFileSync(path.join(loaderRoot, 'Logs', 'errors.log'), '[' + new Date().toISOString() + '] native host unavailable\\n' + detail + '\\n');
+        } catch {}
+        console.warn('[ShinawaseLoader] native host unavailable', error);
+      });
+  }).catch(() => {});
 })();
 `;
 
@@ -173,20 +204,37 @@ const patchPreload = (text) => {
   return `${next.split('\n').slice(0, 1).join('\n')}\n${preloadBridge}\n${next.split('\n').slice(1).join('\n')}`;
 };
 
+const applyStreamingQualityPassthrough = (text) => {
+  const qualityPairs = [
+    ["quality: 'standard',\n      stableKey:", "quality: input.quality || input.streamingQuality || 'standard',\n      stableKey:"],
+    ['quality: "standard",\n      stableKey:', 'quality: input.quality || input.streamingQuality || "standard",\n      stableKey:'],
+    ['quality:"standard",stableKey:', 'quality:input.quality||input.streamingQuality||"standard",stableKey:'],
+    ['quality: "standard", stableKey:', 'quality: input.quality || input.streamingQuality || "standard", stableKey:'],
+  ];
+  let next = text;
+  for (const [from, to] of qualityPairs) {
+    if (next.includes(from)) next = next.replace(from, to);
+  }
+  return next;
+};
+
 const patchPlayback = (text) => {
-  if (text.includes(playbackMarker)) return text;
+  if (text.includes(playbackMarker)) return applyStreamingQualityPassthrough(text);
   const validation = 'if (provider2 !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Music streaming playback is not available in the Steam distribution.");\n    }';
   const validationAlt = 'if (provider !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Music streaming playback is not available in the Steam distribution.");\n    }';
   let next = text;
-  const oldValidation = next.includes(validation) ? validation : validationAlt;
+  const usedMinifiedProvider = next.includes(validation);
+  const oldValidation = usedMinifiedProvider ? validation : validationAlt;
   if (!next.includes(oldValidation)) throw new Error('asar_streaming_validation_missing');
-  next = next.replace(oldValidation, 'if (provider2 === "m3u8" && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Streaming playback URL must be valid.");\n    }');
+  const providerName = usedMinifiedProvider ? 'provider2' : 'provider';
+  next = next.replace(oldValidation, `if (${providerName} === "m3u8" && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Streaming playback URL must be valid.");\n    }`);
   const oldResolve = '  let filePath;\n  let probe = createProbeHintForMediaItem(';
   if (!next.includes(oldResolve)) throw new Error('asar_streaming_resolver_missing');
   next = next.replace(oldResolve, '  let filePath;\n  let inputHeaders;\n  let probe = createProbeHintForMediaItem(');
   const oldPath = '  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {';
   if (!next.includes(oldPath)) throw new Error('asar_streaming_path_missing');
-  next = next.replace(oldPath, '  } else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n      filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n    }\n  } else {');
+  next = next.replace(oldPath, '  } else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n      filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n    }\n  } else {');
+  next = applyStreamingQualityPassthrough(next);
   const oldReturn = '  return { filePath, mimeType: null, probe, durationSeconds };';
   if (!next.includes(oldReturn)) throw new Error('asar_streaming_return_missing');
   next = next.replace(oldReturn, '  return { filePath, inputHeaders, mimeType: null, probe, durationSeconds };');
@@ -263,7 +311,8 @@ const patch = (root) => {
   if (!preload) throw new Error('asar_preload_entry_missing');
   const currentPreloadText = current.bytes.subarray(current.dataStart + Number(preload.info.offset), current.dataStart + Number(preload.info.offset) + Number(preload.info.size)).toString('utf8');
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
-  const mainText = patchPlayback(mainWithBridge);
+  const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
+  const mainText = patchPlayback(mainWithNative);
   const preloadText = patchPreload(currentPreloadText);
   if (mainText === currentText && preloadText === currentPreloadText) return { status: 'already-patched' };
   const backup = backupFor(root);

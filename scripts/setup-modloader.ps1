@@ -16,13 +16,7 @@ $BaseData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTe
 $UserDataRoot = Join-Path $BaseData 'ShinawaseLoader'
 $SelectionFile = Join-Path $UserDataRoot 'selection.json'
 $RuntimeCache = Join-Path $UserDataRoot 'runtimes'
-$Logo = @'
-  ____  _     _
- / ___|| |__ (_)_ __   __ ___      ____ _ ___  ___
- \___ \| '_ \| | '_ \ / _` \ \ /\ / / _` / __|/ _ \
-  ___) | | | | | | | | (_| |\ V  V / (_| \__ \  __/
- |____/|_| |_|_|_| |_|\__,_| \_/\_/ \__,_|___/\___|
-'@
+$Logo = 'Shinawase'
 
 function Read-Json($path, $fallback) {
   if (-not (Test-Path -LiteralPath $path)) { return $fallback }
@@ -391,18 +385,19 @@ function Invoke-Menu {
   $selected = $null
   while ($true) {
     Clear-Host
-    Write-Host $Logo -ForegroundColor Cyan
-    Write-Host 'ShinawaseLoader 1.3.1  |  external CDP mod runtime' -ForegroundColor White
-    Write-Host ("Target: " + $(if ($selected) { $selected } else { 'not selected' })) -ForegroundColor DarkGray
+    $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
+    Write-Host "$Logo  $version" -ForegroundColor White
+    Write-Host '──────────' -ForegroundColor DarkGray
+    Write-Host ("target  " + $(if ($selected) { $selected } else { 'not selected' })) -ForegroundColor DarkGray
     Write-Host ''
-    Write-Host '  [1] Install / update' -ForegroundColor Green
-    Write-Host '  [2] Check status'
-    Write-Host '  [3] Launch ECHO with mods'
-    Write-Host '  [4] Choose ECHO directory'
-    Write-Host '  [5] Uninstall loader (keep Mods)'
-    Write-Host '  [6] Enable direct ECHO.exe auto start (patch app.asar)'
-    Write-Host '  [0] Exit' -ForegroundColor DarkGray
-    switch ((Read-Host 'Select').Trim()) {
+    Write-Host '  1  install / update'
+    Write-Host '  2  status'
+    Write-Host '  3  launch'
+    Write-Host '  4  choose ECHO'
+    Write-Host '  5  uninstall loader'
+    Write-Host '  6  isolated runtime (ECHO.modded.exe)'
+    Write-Host '  0  exit' -ForegroundColor DarkGray
+    switch ((Read-Host 'select').Trim()) {
       '1' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $true ([bool]$PatchApp) } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '2' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Show-Status $selected } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '3' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher; Write-Host 'ECHO launched.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }

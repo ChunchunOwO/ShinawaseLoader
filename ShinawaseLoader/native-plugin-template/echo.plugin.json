@@ -1,0 +1,20 @@
+{
+  "id": "com.example.echo-native",
+  "name": "Example Native ECHO Plugin",
+  "version": "1.0.0",
+  "description": "Main-process and host-dll template for authorized ECHO native extension.",
+  "entry": "plugin.js",
+  "main": "main.cjs",
+  "config": "config.json",
+  "native": {
+    "memory": true,
+    "modules": [
+      {
+        "kind": "host-dll",
+        "entry": "native/echo-example.dll",
+        "export": "EchoNative_Init",
+        "invoke": "EchoNative_Invoke"
+      }
+    ]
+  }
+}

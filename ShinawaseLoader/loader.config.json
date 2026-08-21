@@ -10,5 +10,9 @@
   "debugMode": false,
   "injectIntervalMs": 5000,
   "startupDelayMs": 500,
-  "logLevel": "info"
+  "logLevel": "info",
+  "nativeHost": true,
+  "nativePort": 17863,
+  "nativeMemoryApi": true,
+  "inspectPort": 9230
 }

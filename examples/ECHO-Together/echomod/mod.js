@@ -118,7 +118,7 @@ const echoTogetherMount=()=>{
 @keyframes et-fade-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 #echo-together-tab{
-  position:fixed;right:0;left:auto;top:50%;z-index:2147483000;transform:translateY(-50%);
+  position:fixed;right:0;left:auto;top:42%;z-index:40;transform:translateY(-50%);
   display:flex;flex-direction:column;align-items:center;gap:6px;
   padding:12px 6px 12px 7px;
   background:rgba(18,24,35,.88);backdrop-filter:blur(18px) saturate(180%);
@@ -144,7 +144,7 @@ const echoTogetherMount=()=>{
 #echo-together-tab .et-tab-dot.idle{background:#94a3b8;box-shadow:none;animation:none}
 
 #echo-together-panel{
-  position:fixed;right:48px;left:auto;top:50%;z-index:2147482999;
+  position:fixed;right:48px;left:auto;top:42%;z-index:39;
   transform:translateY(-50%) translateX(12px) scale(.96);
   opacity:0;pointer-events:none;
   width:min(390px,calc(100vw - 64px));max-height:calc(100vh - 40px);
