@@ -346,6 +346,16 @@ const writeArchive = (archive, replacements) => {
   renameSync(temporary, archive);
 };
 
+// The Steam edition's playlists page hides everything imported from streaming
+// providers: it renders only `sourceProvider === "local"` rows even though the
+// imports land in the shared library database. Drop that filter so streaming
+// playlists show up next to local ones. Removing the pattern keeps the patch
+// idempotent (a patched bundle simply no longer matches).
+const patchSteamPlaylistsPage = (text) => text.replace(
+  /\.filter\(([A-Za-z_$][\w$]*)=>\1\.sourceProvider==="local"\)/gu,
+  '',
+);
+
 const patch = (root) => {
   const archive = archiveFor(root);
   if (!existsSync(archive)) throw new Error(`app.asar_not_found:${archive}`);
@@ -356,21 +366,30 @@ const patch = (root) => {
   const preload = filesIn(current.value).find((entry) => entry.relativePath === 'out/preload/index.mjs');
   if (!preload) throw new Error('asar_preload_entry_missing');
   const currentPreloadText = current.bytes.subarray(current.dataStart + Number(preload.info.offset), current.dataStart + Number(preload.info.offset) + Number(preload.info.size)).toString('utf8');
+  const playlistsPage = filesIn(current.value).find((entry) => /^out\/renderer\/assets\/SteamPlaylistsPage-[\w-]+\.js$/u.test(entry.relativePath));
+  const currentPlaylistsText = playlistsPage
+    ? current.bytes.subarray(current.dataStart + Number(playlistsPage.info.offset), current.dataStart + Number(playlistsPage.info.offset) + Number(playlistsPage.info.size)).toString('utf8')
+    : null;
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
   const mainText = applyAuxiliaryWindowCrashFix(patchPlayback(mainWithNative));
   const preloadText = patchPreload(currentPreloadText);
-  if (mainText === currentText && preloadText === currentPreloadText) return { status: 'already-patched' };
+  const playlistsText = currentPlaylistsText === null ? null : patchSteamPlaylistsPage(currentPlaylistsText);
+  if (mainText === currentText && preloadText === currentPreloadText && playlistsText === currentPlaylistsText) return { status: 'already-patched' };
   const backup = backupFor(root);
   if (!existsSync(backup)) {
     const backupDir = dirname(backup);
     mkdirSync(backupDir, { recursive: true });
     copyFileSync(archive, backup);
   }
-  writeArchive(archive, new Map([
+  const replacements = new Map([
     ['out/main/index.js', mainText],
     ['out/preload/index.mjs', preloadText],
-  ]));
+  ]);
+  if (playlistsPage && playlistsText !== null && playlistsText !== currentPlaylistsText) {
+    replacements.set(playlistsPage.relativePath, playlistsText);
+  }
+  writeArchive(archive, replacements);
   writeFileSync(stateFor(root), `${JSON.stringify({ originalSha256: sha256(readFileSync(backup)), patchedSha256: sha256(readFileSync(archive)), patchedAt: new Date().toISOString() }, null, 2)}\n`);
   return { status: 'patched' };
 };
