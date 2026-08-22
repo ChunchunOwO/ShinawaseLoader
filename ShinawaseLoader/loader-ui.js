@@ -1,4 +1,4 @@
-if (window.__echoExternalLoaderUi?.version >= 16) return 'already';
+if (window.__echoExternalLoaderUi?.version >= 17) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -612,6 +612,7 @@ const renderStatus = async () => {
 let consoleTimer = 0;
 let consolePaused = false;
 let lastLogText = '';
+const consoleMaxLines = 400; // keep the live console from growing without bound
 const consoleStick = (out) => out && (out.scrollHeight - out.scrollTop - out.clientHeight < 32);
 const consoleAppend = (text, className, forceScroll = false) => {
   const out = loaderPanel?.querySelector('[data-console-out]');
@@ -621,6 +622,7 @@ const consoleAppend = (text, className, forceScroll = false) => {
   if (className) line.className = className;
   line.textContent = text;
   out.append(line);
+  while (out.childElementCount > consoleMaxLines) out.firstElementChild.remove();
   if (stick) out.scrollTop = out.scrollHeight;
 };
 const refreshDebugLog = async () => {
@@ -634,7 +636,22 @@ const refreshDebugLog = async () => {
     ? next.slice(prev.length)
     : next;
   lastLogText = text;
-  added.filter(Boolean).forEach((line) => consoleAppend(line, /error|fail/i.test(line) ? 'echo-debug-err' : ''));
+  const lines = added.filter(Boolean);
+  if (!lines.length) return;
+  const out = loaderPanel.querySelector('[data-console-out]');
+  if (!out) return;
+  const stick = consoleStick(out);
+  const visible = lines.length > consoleMaxLines ? lines.slice(-consoleMaxLines) : lines;
+  const fragment = document.createDocumentFragment();
+  visible.forEach((row) => {
+    const line = document.createElement('div');
+    if (/error|fail/i.test(row)) line.className = 'echo-debug-err';
+    line.textContent = row;
+    fragment.append(line);
+  });
+  out.append(fragment);
+  while (out.childElementCount > consoleMaxLines) out.firstElementChild.remove();
+  if (stick) out.scrollTop = out.scrollHeight;
 };
 const consoleHelp = () => [
   'help                 show this list',
@@ -1406,7 +1423,7 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 16,
+  version: 17,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   dispose: () => {

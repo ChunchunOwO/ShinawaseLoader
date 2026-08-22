@@ -1241,7 +1241,7 @@ const injectEnabled = async () => {
   for (const target of targets) {
     if (!(await rendererReadyForMods(target.webSocketDebuggerUrl))) continue;
     const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 15;
+    const uiReloaded = targetState.uiVersion < 17;
     await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
       const extra = window.__echoShinawaseStreaming;
       if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
