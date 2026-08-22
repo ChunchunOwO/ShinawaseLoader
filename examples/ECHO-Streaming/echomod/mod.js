@@ -20,9 +20,9 @@ const locale = String(config.locale || 'zh-CN');
 const chinese = locale.toLowerCase().startsWith('zh');
 const accountText = (zh, en) => chinese ? zh : en;
 const copy = chinese ? {
-  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', readingAlbum: '读取专辑', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO Next 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO Next 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO Next 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索',
+  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', readingAlbum: '读取专辑', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO Next 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO Next 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO Next 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索',
 } : {
-  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', readingAlbum: 'Reading album', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO Next streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO Next to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO Next and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search',
+  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', readingAlbum: 'Reading album', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO Next streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO Next to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO Next and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search',
 };
 
 const lyricsCopy = chinese ? {
@@ -518,13 +518,7 @@ const installNativePlaylistImport = () => {
     lastMissReason = reason;
     log(reason, extra);
   };
-  const first = (root, selectors) => {
-    for (const selector of selectors) {
-      const node = root.querySelector(selector);
-      if (node) return node;
-    }
-    return null;
-  };
+  const buttonMarker = 'data-echo-streaming-import-button';
   // Route transitions keep a hidden copy of the previous page in the DOM
   // (AnimatedOutlet double-buffering), so the page lookup must only accept
   // copies whose surrounding <main> is actually rendered.
@@ -533,104 +527,104 @@ const installNativePlaylistImport = () => {
     const surface = node.closest('main') || node;
     return getComputedStyle(surface).display !== 'none';
   };
-  const findPage = () => {
-    const selectors = [
-      '.playlists-page',
-      '.playlists-page--local-only',
-      '.page-surface[data-route-id="playlists"]',
-      '[data-route-id="playlists"]',
-      'main [aria-label="歌单"]',
-      'main [aria-label="Playlists"]',
-      'main [aria-label="播放清單"]',
-    ];
-    for (const selector of selectors) {
-      for (const node of document.querySelectorAll(selector)) {
-        if (isLivePage(node)) return node;
-      }
+  // Strictly the native playlists page sidebar header; never the mod's own
+  // streaming pages (that caused the control to show up in the wrong place).
+  const findHeader = () => {
+    for (const page of document.querySelectorAll('.playlists-page')) {
+      if (!isLivePage(page)) continue;
+      if (page.closest('.streaming-page, .streaming-hub')) continue;
+      if (pageRoot && pageRoot.contains(page)) continue;
+      const header = page.querySelector('.playlist-sidebar .playlist-sidebar-header');
+      if (header) return header;
     }
     return null;
   };
-  const findHost = (page) => {
-    const header = first(page, ['.playlist-sidebar-header']);
-    if (header) return { host: header, place: 'after', label: 'playlist-sidebar-header' };
-    const list = first(page, ['.playlist-list', '.playlist-sidebar-panel .playlist-list']);
-    if (list) return { host: list, place: 'before', label: 'playlist-list' };
-    const panel = first(page, ['.playlist-sidebar-panel']);
-    if (panel) return { host: panel, place: 'start', label: 'playlist-sidebar-panel' };
-    const sidebar = first(page, ['.playlist-sidebar', 'aside.playlist-sidebar', 'aside']);
-    if (sidebar) return { host: sidebar, place: 'start', label: 'playlist-sidebar' };
-    return { host: page, place: 'start', label: 'playlist-page' };
-  };
-  const attach = (target, place, node) => {
-    if (place === 'after') target.insertAdjacentElement('afterend', node);
-    else if (place === 'before') target.insertAdjacentElement('beforebegin', node);
-    else if (place === 'start') target.insertAdjacentElement('afterbegin', node);
-    else target.append(node);
-  };
-  const createForm = () => {
-    const form = make('form', 'streaming-section playlist-import-box echo-playlist-url-import');
+  // Same inline-SVG shape as the native lucide tool buttons in this header.
+  const lucideSvg = (size, paths) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const cloudDownIcon = (size) => lucideSvg(size, '<path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/>');
+  const closeIcon = (size) => lucideSvg(size, '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
+  const removeForms = () => { for (const node of document.querySelectorAll(`form[${marker}]`)) node.remove(); };
+  // Expanding form that mirrors the native "new local playlist" flow: it uses
+  // the same playlist-create-form / secondary-action / tool-button classes so
+  // the app stylesheet keeps it visually identical and sized to the sidebar.
+  const openForm = (header) => {
+    const existing = header.parentElement?.querySelector(`form[${marker}]`);
+    removeForms();
+    if (existing) return;
+    const form = document.createElement('form');
+    form.className = 'playlist-create-form echo-streaming-import-form';
     form.setAttribute(marker, 'true');
-    form.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:10px 0 12px;margin:0;flex:none;min-width:0';
-    const hint = make('p', '', copy.playlistHint);
-    hint.style.cssText = 'margin:0;color:var(--theme-muted-text,#6c7179);font-size:12px;line-height:1.4';
-    const row = make('div', '');
-    row.style.cssText = 'display:flex;gap:8px;align-items:center;min-width:0';
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = copy.playlistPlaceholder;
     input.setAttribute('aria-label', copy.addPlaylist);
-    input.style.cssText = 'flex:1;min-width:0;min-height:36px;padding:0 10px;border:1px solid var(--theme-field-border,rgba(0,0,0,0.14));border-radius:8px;background:var(--theme-field-bg,rgba(255,255,255,0.82));color:inherit';
-    const button = actionButton(copy.add, 'link', async () => {
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'secondary-action';
+    submit.disabled = true;
+    const submitLabel = document.createElement('span');
+    submitLabel.textContent = copy.add;
+    submit.innerHTML = cloudDownIcon(15);
+    submit.append(submitLabel);
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'tool-button';
+    cancel.setAttribute('aria-label', copy.cancelImport);
+    cancel.title = copy.cancelImport;
+    cancel.innerHTML = closeIcon(15);
+    cancel.addEventListener('click', () => form.remove());
+    input.addEventListener('input', () => { submit.disabled = !input.value.trim(); });
+    input.addEventListener('keydown', (event) => { if (event.key === 'Escape') form.remove(); });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
       const url = input.value.trim();
-      if (!url) return;
+      if (!url || input.disabled) return;
       const stream = streamApi();
       if (!stream?.importPlaylistFromUrl) {
         log('importPlaylistFromUrl missing; streaming bridge is not exposed on this page');
         showChromeNotice(copy.noBridge);
         return;
       }
-      button.disabled = true;
+      input.disabled = true;
+      submit.disabled = true;
+      submitLabel.textContent = copy.adding;
       try {
         const imported = await stream.importPlaylistFromUrl(url);
-        input.value = '';
+        form.remove();
         await openImportedPlaylist(imported);
         showChromeNotice(copy.imported(imported.playlistName, imported.importedCount));
       } catch (error) {
+        input.disabled = false;
+        submit.disabled = false;
+        submitLabel.textContent = copy.add;
         showChromeNotice(error instanceof Error ? error.message : String(error));
-      } finally {
-        button.disabled = false;
       }
-    }, { className: 'secondary-action' });
-    form.addEventListener('submit', (event) => { event.preventDefault(); button.click(); });
-    row.append(input, button);
-    form.append(hint, row);
-    return form;
+    });
+    form.append(input, submit, cancel);
+    header.insertAdjacentElement('afterend', form);
+    input.focus();
   };
   const mount = () => {
-    let hasLiveForm = false;
-    for (const existing of document.querySelectorAll(`[${marker}]`)) {
-      if (isLivePage(existing)) hasLiveForm = true;
-      else existing.remove();
+    for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}]`)) {
+      if (!isLivePage(node)) node.remove();
     }
-    if (hasLiveForm) return true;
-    const page = findPage();
-    if (!page) {
-      miss('playlist page not found; waiting for .playlists-page / [data-route-id=playlists]');
+    const header = findHeader();
+    if (!header) {
+      miss('native playlists sidebar header not found; waiting for .playlists-page .playlist-sidebar-header');
       return false;
     }
-    const target = findHost(page);
-    if (!target?.host) {
-      miss('playlist page found but no injection host', { classes: page.className });
-      return false;
-    }
-    const form = createForm();
-    attach(target.host, target.place, form);
-    if (form.isConnected) {
-      log('injected playlist import control', { host: target.label, place: target.place });
-      return true;
-    }
-    miss('playlist import control was not connected after insert', { host: target.label });
-    return false;
+    if (header.querySelector(`[${buttonMarker}]`)) return true;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tool-button';
+    button.setAttribute(buttonMarker, 'true');
+    button.setAttribute('aria-label', copy.addPlaylist);
+    button.title = copy.addPlaylist;
+    button.innerHTML = cloudDownIcon(17);
+    button.addEventListener('click', () => openForm(header));
+    header.append(button);
+    log('added streaming playlist import button next to the local add button');
+    return true;
   };
   mount();
   const observer = new MutationObserver(() => { mount(); });
@@ -648,6 +642,7 @@ const installNativePlaylistImport = () => {
     window.removeEventListener('app:navigate:route', onRoute);
     window.removeEventListener('popstate', mount);
     window.clearInterval(poll);
+    for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}]`)) node.remove();
   };
 };
 playlistPageUnsubscribe = installNativePlaylistImport();

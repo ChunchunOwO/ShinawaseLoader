@@ -237,7 +237,7 @@ flowchart TB
 | 示例 | 说明 | 清单 |
 | --- | --- | --- |
 | [ECHO-AuxiliaryFix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.0 |
-| [ECHO-Streaming](examples/ECHO-Streaming) | 社区流媒体浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。网易线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.3 |
+| [ECHO-Streaming](examples/ECHO-Streaming) | 社区流媒体浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。网易线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
 | [ECHO-Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.1 |
 
 从仓库根目录打包示例：
