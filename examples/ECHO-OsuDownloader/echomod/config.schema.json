@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ECHO osu!downloader",
+  "type": "object",
+  "properties": {
+    "locale": {
+      "type": "string",
+      "title": "界面语言 / UI language",
+      "description": "zh-CN 或 en-US。",
+      "enum": ["zh-CN", "en-US"],
+      "default": "zh-CN"
+    },
+    "searchLimit": {
+      "type": "integer",
+      "title": "搜索结果数量",
+      "description": "单次谱面搜索返回的最大结果数。",
+      "minimum": 10,
+      "maximum": 100,
+      "default": 40
+    },
+    "sidebarOrder": {
+      "type": "integer",
+      "title": "侧边栏排序",
+      "description": "数值越小越靠前。",
+      "minimum": 1,
+      "maximum": 99,
+      "default": 42
+    }
+  }
+}

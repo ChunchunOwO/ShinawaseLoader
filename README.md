@@ -222,6 +222,7 @@ flowchart TB
 │   └── verify-echo-runtime.mjs
 ├── examples/                  # 官方示例（不随安装复制）
 │   ├── ECHO-AuxiliaryFix/
+│   ├── ECHO-OsuDownloader/
 │   ├── ECHO-Streaming/
 │   ├── ECHO-Together/
 │   └── packages/
@@ -237,7 +238,8 @@ flowchart TB
 | 示例 | 说明 | 清单 |
 | --- | --- | --- |
 | [ECHO-AuxiliaryFix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.0 |
-| [ECHO-Streaming](examples/ECHO-Streaming) | 社区流媒体浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。网易线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
+| [ECHO-OsuDownloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.0 |
+| [ECHO-Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
 | [ECHO-Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.1 |
 
 从仓库根目录打包示例：
@@ -246,6 +248,7 @@ flowchart TB
 .\pack-mod.bat .\examples\ECHO-Streaming\echomod .\examples\packages\ECHO-Streaming.echomod --zip
 .\pack-mod.bat .\examples\ECHO-Together\echomod .\examples\packages\ECHO-Together.echomod --zip
 .\pack-mod.bat .\examples\ECHO-AuxiliaryFix\echomod .\examples\packages\ECHO-AuxiliaryFix.echomod --zip
+.\pack-mod.bat .\examples\ECHO-OsuDownloader\echomod .\examples\packages\ECHO-OsuDownloader.echomod --zip
 ```
 
 ## ❓ 故障排查
