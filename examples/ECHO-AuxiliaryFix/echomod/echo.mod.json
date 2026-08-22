@@ -1,8 +1,9 @@
 {
   "id": "echo.auxiliary-fix",
   "name": "ECHO Auxiliary Fix",
-  "version": "1.0.0",
-  "description": "Stops desktop lyrics and pet crash loops on Steam builds and remaps those windows to auxiliary.html.",
+  "version": "1.1.0",
+  "description": "Keeps Steam desktop lyrics, pet, and mini-player windows on auxiliary.html and stops their crash loops.",
+  "icon": "icon.svg",
   "entry": "mod.js",
   "main": "main.cjs",
   "config": "config.json",

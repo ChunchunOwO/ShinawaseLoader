@@ -364,7 +364,7 @@ const callNative = async (body) => {
     throw new Error('native_invoke_unavailable');
   }
   const allowMemory = memoryApiEnabled && (!packageId || packages.get(packageId)?.record.manifest.native?.memory === true);
-  if ((method === 'read' || method === 'write' || method === 'protect') && !allowMemory) throw new Error('native_memory_disabled');
+  if ((method === 'read' || method === 'write' || method === 'protect' || method === 'scan') && !allowMemory) throw new Error('native_memory_disabled');
   if (method === 'read') {
     if (!addon?.read) throw new Error('native_host_addon_missing');
     const buffer = addon.read(String(payload.module || ''), Number(payload.offset || 0), Number(payload.size || 0));
@@ -378,6 +378,11 @@ const callNative = async (body) => {
   if (method === 'protect') {
     if (!addon?.protect) throw new Error('native_host_addon_missing');
     return { ok: true, ...addon.protect(String(payload.module || ''), Number(payload.offset || 0), Number(payload.size || 0), Number(payload.prot || 1)) };
+  }
+  if (method === 'scan') {
+    if (!addon?.scan) throw new Error('native_host_addon_missing');
+    const matches = addon.scan(String(payload.module || ''), String(payload.pattern || ''), Number(payload.limit || 0));
+    return { ok: true, matches };
   }
   throw new Error(`native_method_unknown:${method}`);
 };
@@ -427,6 +432,23 @@ const startShinawaseNativeHost = async () => {
   started = true;
   mkdirSync(logsRoot, { recursive: true });
   loadElectron();
+  try {
+    const { installAuxiliaryRemap } = hostRequire(join(__dirname, 'auxiliary-remap.cjs'));
+    installAuxiliaryRemap({
+      app: electron?.app,
+      BrowserWindow,
+      session,
+      log: (message) => log('INFO', message),
+    });
+  } catch (error) {
+    log('WARN', 'auxiliary remap failed', error instanceof Error ? error.message : String(error));
+  }
+  try {
+    const { installStreamingPlaybackShim } = hostRequire(join(__dirname, 'playback-shim.cjs'));
+    installStreamingPlaybackShim({ electron, ipcMain, log: (message) => log('INFO', message) });
+  } catch (error) {
+    log('WARN', 'playback shim failed', error instanceof Error ? error.message : String(error));
+  }
   tryLoadAddon();
   registerIpc();
   startServer();

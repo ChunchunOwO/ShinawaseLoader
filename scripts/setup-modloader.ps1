@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [ValidateSet('install', 'update', 'uninstall', 'check', 'launch', 'menu')]
   [string]$Action = 'menu',
@@ -16,7 +16,6 @@ $BaseData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTe
 $UserDataRoot = Join-Path $BaseData 'ShinawaseLoader'
 $SelectionFile = Join-Path $UserDataRoot 'selection.json'
 $RuntimeCache = Join-Path $UserDataRoot 'runtimes'
-$Logo = 'Shinawase'
 $script:Strings = @{
   zh = @{
     choose = '选择语言'
@@ -35,6 +34,23 @@ $script:Strings = @{
     launched = '已启动'
     failed = '失败'
     language = '语言'
+    menuHint = '数字键或 ↑↓ 选中    Enter 确认'
+    extrasTitle = '可选包'
+    extrasHint = '数字键或 ↑↓ 选中    空格 开关    Enter 下一步'
+    pkgStreaming = '流媒体'
+    pkgTogether = 'Together'
+    pkgFix = '修复补丁'
+    progressPrepare = '准备目录'
+    progressCopy = '复制 Loader'
+    progressNode = '准备 Node 运行时'
+    progressInit = '初始化运行时'
+    progressRuntime = '构建隔离运行时'
+    progressHost = '编译 ECHO.modded.exe'
+    progressLaunchers = '写入启动器'
+    progressPackages = '安装可选包'
+    progressLaunch = '启动 ECHO'
+    progressDone = '完成'
+    openingEcho = '正在打开 ECHO...'
   }
   en = @{
     choose = 'Choose language'
@@ -53,6 +69,23 @@ $script:Strings = @{
     launched = 'launched'
     failed = 'failed'
     language = 'language'
+    menuHint = 'Number or arrows to select    Enter to confirm'
+    extrasTitle = 'optional packages'
+    extrasHint = 'Number or arrows    Space toggle    Enter next'
+    pkgStreaming = 'Streaming'
+    pkgTogether = 'Together'
+    pkgFix = 'Auxiliary fix'
+    progressPrepare = 'prepare folders'
+    progressCopy = 'copy loader'
+    progressNode = 'prepare Node runtime'
+    progressInit = 'initialize runtime'
+    progressRuntime = 'build isolated runtime'
+    progressHost = 'compile ECHO.modded.exe'
+    progressLaunchers = 'write launchers'
+    progressPackages = 'install packages'
+    progressLaunch = 'start ECHO'
+    progressDone = 'done'
+    openingEcho = 'Opening ECHO...'
   }
 }
 function Get-LoaderLocale {
@@ -79,16 +112,279 @@ function T([string]$key) {
   if ($table.ContainsKey($key)) { return $table[$key] }
   return $key
 }
+
+function Add-SetupNative {
+  if ('Shinawase.SetupNative' -as [type]) { return }
+  Add-Type -Namespace Shinawase -Name SetupNative -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int nStdHandle);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out int lpMode);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr hConsoleHandle, int dwMode);
+[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+}
+
+function Initialize-SetupConsole {
+  if ($script:ConsoleReady) { return }
+  try { $Host.UI.RawUI.WindowTitle = 'ShinawaseLoader - Setup' } catch {}
+  try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $OutputEncoding = [Console]::OutputEncoding
+  } catch {}
+  try { [Console]::CursorVisible = $false } catch {}
+  try {
+    Add-SetupNative
+    $handle = [Shinawase.SetupNative]::GetStdHandle(-11)
+    $mode = 0
+    if ([Shinawase.SetupNative]::GetConsoleMode($handle, [ref]$mode)) {
+      $script:VtEnabled = [Shinawase.SetupNative]::SetConsoleMode($handle, ($mode -bor 4))
+    }
+  } catch { $script:VtEnabled = $false }
+  $script:ConsoleReady = $true
+}
+
+function Test-SetupOwnedWindow {
+  if ($env:TERM_PROGRAM -or $env:VSCODE_PID -or $env:VSCODE_INJECTION) { return $false }
+  try {
+    $me = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+    $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($me.ParentProcessId)" -ErrorAction Stop
+    $name = [IO.Path]::GetFileNameWithoutExtension([string]$parent.Name).ToLowerInvariant()
+    $cmdLine = [string]$parent.CommandLine
+    if ($name -in @('cursor', 'code', 'devenv', 'windowsterminal')) { return $false }
+    if ($name -in @('powershell', 'pwsh') -and $cmdLine -notmatch 'setup-modloader') { return $false }
+    return $true
+  } catch { return $true }
+}
+
+function Exit-Setup([int]$Code = 0) {
+  try { $Host.UI.RawUI.WindowTitle = 'ShinawaseLoader - Setup' } catch {}
+  if (Test-SetupOwnedWindow) {
+    try {
+      $me = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction SilentlyContinue
+      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($me.ParentProcessId)" -ErrorAction SilentlyContinue
+      $name = [IO.Path]::GetFileNameWithoutExtension([string]$parent.Name).ToLowerInvariant()
+      $cmdLine = [string]$parent.CommandLine
+      if ($name -eq 'cmd' -and $cmdLine -match 'setup-modloader') {
+        Stop-Process -Id $parent.ProcessId -Force -ErrorAction SilentlyContinue
+      }
+    } catch {}
+    try {
+      Add-SetupNative
+      $hwnd = [Shinawase.SetupNative]::GetConsoleWindow()
+      if ($hwnd -ne [IntPtr]::Zero) {
+        [void][Shinawase.SetupNative]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+      }
+    } catch {}
+  }
+  [Environment]::Exit($Code)
+}
+
+function Get-DisplayWidth([string]$Text) {
+  $width = 0
+  foreach ($ch in [regex]::Replace([string]$Text, '\x1b\[[0-9;]*m', '').ToCharArray()) {
+    if ([int][char]$ch -gt 127) { $width += 2 } else { $width += 1 }
+  }
+  return $width
+}
+
+function ConvertTo-ShimmerText([string]$Text, [int]$Phase) {
+  $chars = $Text.ToCharArray()
+  if ($chars.Length -le 0) { return $Text }
+  if (-not $script:VtEnabled) {
+    return $Text
+  }
+  $esc = [char]27
+  $len = $chars.Length
+  $span = [math]::Max(10, $len + 6)
+  $head = $Phase % $span
+  $sb = New-Object System.Text.StringBuilder ($len * 20)
+  for ($i = 0; $i -lt $len; $i++) {
+    $d = [math]::Abs($i - $head)
+    if ($d -gt ($span - $d)) { $d = $span - $d }
+    $t = [math]::Max(0.0, 1.0 - ($d / 4.5))
+    $r = [int](50 + 205 * $t)
+    $g = [int](140 + 115 * $t)
+    $b = [int](175 + 80 * $t)
+    [void]$sb.Append(($esc.ToString() + '[38;2;' + $r + ';' + $g + ';' + $b + 'm' + $chars[$i]))
+  }
+  [void]$sb.Append($esc)
+  [void]$sb.Append('[0m')
+  return $sb.ToString()
+}
+
+function Write-SetupRow([string]$Text, [int]$Width, [string]$Color = 'DarkGray', [switch]$Shimmer, [int]$Phase = 0) {
+  $plain = [regex]::Replace([string]$Text, '\x1b\[[0-9;]*m', '')
+  if ($plain.Length -gt 200) { $plain = $plain.Substring(0, 200) }
+  $rendered = if ($Shimmer) { ConvertTo-ShimmerText $plain $Phase } else { $plain }
+  $pad = [math]::Max(0, $Width - (Get-DisplayWidth $plain))
+  $prev = $null
+  try {
+    $prev = [Console]::ForegroundColor
+    if (-not $Shimmer -or -not $script:VtEnabled) {
+      [Console]::ForegroundColor = [ConsoleColor]::$Color
+    }
+  } catch {}
+  [Console]::Write($rendered)
+  if ($pad -gt 0) { [Console]::Write((' ' * $pad)) }
+  try { if ($null -ne $prev) { [Console]::ForegroundColor = $prev } } catch {}
+  [Console]::WriteLine()
+}
+
+function Write-SetupLine([string]$Text, [string]$Color = 'Gray') {
+  if ($null -eq $Text) { $Text = '' }
+  Write-Host $Text -ForegroundColor $Color
+}
+
+function Get-LogoArt {
+  return @(
+    '███████╗██╗  ██╗██╗███╗   ██╗ █████╗ ██╗    ██╗ █████╗ ███████╗███████╗',
+    '██╔════╝██║  ██║██║████╗  ██║██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝',
+    '███████╗███████║██║██╔██╗ ██║███████║██║ █╗ ██║███████║███████╗█████╗  ',
+    '╚════██║██╔══██║██║██║╚██╗██║██╔══██║██║███╗██║██╔══██║╚════██║██╔══╝  ',
+    '███████║██║  ██║██║██║ ╚████║██║  ██║╚███╔███╔╝██║  ██║███████║███████╗',
+    '╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚══════╝'
+  )
+}
+
+function Get-LogoLines {
+  $art = Get-LogoArt
+  try {
+    if ([Console]::WindowWidth -le $art[0].Length) { return @('  SHINAWASE') }
+  } catch { return @('  SHINAWASE') }
+  return $art
+}
+
+function Write-SetupHeader {
+  param(
+    [string]$Subtitle,
+    [string[]]$Meta
+  )
+  Initialize-SetupConsole
+  Clear-Host
+  $lines = Get-LogoLines
+  try {
+    if ($lines.Count -gt 1) {
+      $top = [Console]::CursorTop
+      [Console]::Write($lines[0])
+      $wrapped = [Console]::CursorTop -ne $top
+      [Console]::SetCursorPosition(0, $top)
+      [Console]::Write((' ' * [math]::Max(1, [Console]::WindowWidth - 1)))
+      [Console]::SetCursorPosition(0, $top)
+      if ($wrapped) { $lines = @('  SHINAWASE') }
+    }
+  } catch {}
+  foreach ($line in $lines) { Write-Host $line -ForegroundColor White }
+  if ($Subtitle) { Write-Host $Subtitle -ForegroundColor DarkGray }
+  Write-Host ''
+  foreach ($line in @($Meta)) { if ($line) { Write-Host $line -ForegroundColor DarkGray } }
+  if ($Meta -and @($Meta).Count) { Write-Host '' }
+}
+
+function Write-SetupItems {
+  param(
+    [object[]]$Items,
+    [int]$Index = 0,
+    [string]$Hint,
+    [int]$Phase = 0
+  )
+  $list = @($Items)
+  $width = 79
+  try { $width = [math]::Max(20, [Console]::WindowWidth - 1) } catch {}
+  for ($i = 0; $i -lt $list.Count; $i++) {
+    $item = $list[$i]
+    $mark = '  '
+    if ($null -ne $item.Checked) { $mark = $(if ($item.Checked) { ' [*] ' } else { ' [ ] ' }) }
+    $text = ('  {0}{1}{2}' -f $item.Key, $mark, $item.Label)
+    if ($i -eq $Index) {
+      if ($script:VtEnabled) {
+        Write-SetupRow $text $width -Color 'Cyan' -Shimmer -Phase $Phase
+      } else {
+        $color = if (([int]($Phase / 6) % 2) -eq 0) { 'White' } else { 'Cyan' }
+        Write-SetupRow $text $width -Color $color
+      }
+    } else {
+      Write-SetupRow $text $width -Color 'DarkGray'
+    }
+  }
+  Write-SetupRow '' $width
+  if ($Hint) { Write-SetupRow ('  ' + $Hint) $width -Color 'DarkGray' } else { Write-SetupRow '' $width }
+}
+
+function Read-MenuKey([int]$TimeoutMs = 40) {
+  $deadline = [Environment]::TickCount + [math]::Max(10, $TimeoutMs)
+  while (-not [Console]::KeyAvailable) {
+    if ([Environment]::TickCount -ge $deadline) { return $null }
+    Start-Sleep -Milliseconds 8
+  }
+  return [Console]::ReadKey($true)
+}
+
+function Get-MenuDigit($key) {
+  $ch = [string]$key.KeyChar
+  if ($ch -match '^[0-9]$') { return $ch }
+  switch ($key.Key) {
+    'D0' { return '0' } 'D1' { return '1' } 'D2' { return '2' } 'D3' { return '3' } 'D4' { return '4' }
+    'D5' { return '5' } 'D6' { return '6' } 'D7' { return '7' } 'D8' { return '8' } 'D9' { return '9' }
+    'NumPad0' { return '0' } 'NumPad1' { return '1' } 'NumPad2' { return '2' } 'NumPad3' { return '3' }
+    'NumPad4' { return '4' } 'NumPad5' { return '5' } 'NumPad6' { return '6' } 'NumPad7' { return '7' }
+    'NumPad8' { return '8' } 'NumPad9' { return '9' }
+  }
+  return $null
+}
+
+function Read-ConsoleMenu {
+  param(
+    [string]$Subtitle,
+    [string[]]$Meta,
+    [string[]]$Labels,
+    [string[]]$Values,
+    [int]$Index = 0,
+    [string]$Hint,
+    [string]$CancelValue
+  )
+  if (-not $Values) {
+    $Values = @()
+    for ($i = 0; $i -lt $Labels.Count; $i++) { $Values += [string]($i + 1) }
+  }
+  $items = @()
+  for ($i = 0; $i -lt $Labels.Count; $i++) { $items += [pscustomobject]@{ Key = $Values[$i]; Label = $Labels[$i]; Checked = $null } }
+  $visible = $true
+  try { $visible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch {}
+  $script:ProgressStarted = $false
+  Write-SetupHeader -Subtitle $Subtitle -Meta $Meta
+  $menuTop = 0
+  $phase = 0
+  try { $menuTop = [Console]::CursorTop } catch {}
+  try {
+    while ($true) {
+      try { [Console]::SetCursorPosition(0, $menuTop) } catch { Write-SetupHeader -Subtitle $Subtitle -Meta $Meta; $menuTop = [Console]::CursorTop }
+      Write-SetupItems -Items $items -Index $Index -Hint $Hint -Phase $phase
+      $key = Read-MenuKey 40
+      if (-not $key) { $phase += 1; continue }
+      switch ($key.Key) {
+        'UpArrow' { $Index = ($Index + $Labels.Count - 1) % $Labels.Count }
+        'DownArrow' { $Index = ($Index + 1) % $Labels.Count }
+        'Enter' { return $Values[$Index] }
+        'Escape' { if ($CancelValue) { return $CancelValue } }
+        default {
+          $digit = Get-MenuDigit $key
+          if ($digit) {
+            $found = [array]::IndexOf(@($Values), $digit)
+            if ($found -ge 0) { $Index = $found }
+          }
+        }
+      }
+    }
+  } finally {
+    try { [Console]::CursorVisible = $visible } catch {}
+  }
+}
+
 function Choose-LoaderLocale {
   $current = Get-LoaderLocale
   if ($current) { $script:Locale = $current; return }
-  Clear-Host
-  Write-Host "$Logo" -ForegroundColor White
-  Write-Host '──────────' -ForegroundColor DarkGray
-  Write-Host '  1  中文'
-  Write-Host '  2  English'
-  $answer = (Read-Host '>').Trim()
-  if ($answer -eq '2' -or $answer -match '^en') { Set-LoaderLocale 'en' } else { Set-LoaderLocale 'zh' }
+  $picked = Read-ConsoleMenu -Meta @('  选择语言 / Choose language') -Labels @('中文', 'English') -Values @('1', '2') -Hint '数字键或 ↑↓ 选中    Enter 确认 / Number or arrows    Enter'
+  if ($picked -eq '2') { Set-LoaderLocale 'en' } else { Set-LoaderLocale 'zh' }
 }
 $script:Locale = 'zh'
 
@@ -158,6 +454,9 @@ function Get-EchoCandidates([string]$Hint) {
     else { Add-UniquePath $roots $Hint }
   }
   $saved = Read-Json $SelectionFile $null
+  if (-not $Hint -and $saved -and $saved.echoExe -and (Test-Path -LiteralPath $saved.echoExe -PathType Leaf)) {
+    return @([IO.Path]::GetFullPath($saved.echoExe))
+  }
   if ($saved -and $saved.echoExe) { Add-UniquePath $found $saved.echoExe }
   foreach ($root in @(
     (Get-Location).Path,
@@ -175,7 +474,7 @@ function Get-EchoCandidates([string]$Hint) {
   foreach ($root in $roots) {
     if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
     try {
-      $items = Get-ChildItem -LiteralPath $root -Filter '*.exe' -File -Recurse -Depth 6 -ErrorAction SilentlyContinue
+      $items = Get-ChildItem -LiteralPath $root -Filter 'ECHO*.exe' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue
       foreach ($item in $items) {
         if ($item.Name -match '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$') { Add-UniquePath $found $item.FullName }
       }
@@ -185,34 +484,64 @@ function Get-EchoCandidates([string]$Hint) {
 }
 
 function Select-EchoExecutable([string]$Hint) {
+  if (-not $Hint) {
+    Clear-Host
+    foreach ($line in Get-LogoLines) { Write-SetupLine $line 'White' }
+    Write-SetupLine ''
+    Write-SetupLine $(if ($script:Locale -eq 'en') { '  looking for ECHO...' } else { '  正在查找 ECHO...' }) 'DarkGray'
+  }
   $candidates = @(Get-EchoCandidates $Hint)
   if ($candidates.Count -eq 1) { return $candidates[0] }
   if (-not $candidates.Count) {
+    Clear-Host
+    foreach ($line in Get-LogoLines) { Write-SetupLine $line 'White' }
+    Write-SetupLine ''
     $manual = Read-Host 'ECHO directory or executable (0 = back)'
     if ($manual -eq '0' -or [string]::IsNullOrWhiteSpace($manual)) { return $null }
     $retry = @(Get-EchoCandidates $manual.Trim())
     if ($retry.Count -eq 1) { return $retry[0] }
     throw "No ECHO executable found under '$manual'."
   }
-  Write-Host ''
-  for ($i = 0; $i -lt $candidates.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $candidates[$i]) -ForegroundColor Gray }
-  Write-Host '  [M] enter another directory    [0] back' -ForegroundColor DarkGray
-  while ($true) {
-    $choice = (Read-Host 'Choose ECHO').Trim()
-    if ($choice -eq '0') { return $null }
-    if ($choice -match '^[mM]$') { return Select-EchoExecutable (Read-Host 'ECHO directory') }
-    $number = 0
-    if ([int]::TryParse($choice, [ref]$number) -and $number -ge 1 -and $number -le $candidates.Count) { return $candidates[$number - 1] }
-    Write-Host 'Invalid choice.' -ForegroundColor Yellow
+  $labels = @($candidates)
+  $values = @()
+  for ($i = 0; $i -lt $candidates.Count; $i++) { $values += [string]($i + 1) }
+  $labels += @((T 'chooseEcho'), (T 'exit'))
+  $values += @('M', '0')
+  $choice = Read-ConsoleMenu -Meta @('ECHO') -Labels $labels -Values $values -Hint (T 'menuHint') -CancelValue '0'
+  if ($choice -eq '0') { return $null }
+  if ($choice -eq 'M') {
+    Clear-Host
+    foreach ($line in Get-LogoLines) { Write-SetupLine $line 'White' }
+    Write-SetupLine ''
+    return Select-EchoExecutable (Read-Host 'ECHO directory')
   }
+  $number = 0
+  if ([int]::TryParse($choice, [ref]$number) -and $number -ge 1 -and $number -le $candidates.Count) { return $candidates[$number - 1] }
+  return $null
 }
 
 function Resolve-EchoExecutable {
   $path = Select-EchoExecutable $EchoRoot
   if (-not $path) { throw 'ECHO selection cancelled.' }
   $path = [IO.Path]::GetFullPath($path)
-  Write-Json $SelectionFile @{ echoExe = $path; selectedAt = (Get-Date).ToUniversalTime().ToString('o') }
+  Write-Json $SelectionFile @{ echoExe = $path; locale = $script:Locale; selectedAt = (Get-Date).ToUniversalTime().ToString('o') }
   return $path
+}
+
+function Write-SetupProgress([int]$Percent, [string]$Label) {
+  Initialize-SetupConsole
+  if (-not $script:ProgressStarted) {
+    Clear-Host
+    foreach ($line in Get-LogoLines) { Write-SetupLine $line 'White' }
+    Write-SetupLine ''
+    try { $script:ProgressRow = [Console]::CursorTop } catch { $script:ProgressRow = 0 }
+    $script:ProgressStarted = $true
+  }
+  try { [Console]::SetCursorPosition(0, $script:ProgressRow) } catch {}
+  $Percent = [math]::Max(0, [math]::Min(100, $Percent))
+  $fill = [int][math]::Floor(28 * $Percent / 100.0)
+  $bar = ('#' * $fill) + ('-' * (28 - $fill))
+  Write-SetupLine (('  [{0}]  {1,3}%  {2}' -f $bar, $Percent, $Label)) 'Cyan'
 }
 
 function Download-File([string]$Uri, [string]$Destination) {
@@ -295,7 +624,7 @@ function Build-ModdedHost([string]$echoRoot, [string]$loaderRoot, [string]$echoE
     (Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe')
   ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
   if (-not $compiler) { throw 'Microsoft C# compiler was not found; cannot create ECHO.modded.exe.' }
-  & $compiler /nologo /target:winexe /optimize+ /win32icon:$icon /out:$target $source
+  & $compiler /nologo /target:winexe /optimize+ /win32icon:$icon /out:$target $source | Out-Null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $target)) { throw 'ECHO.modded.exe compilation failed.' }
   return $target
 }
@@ -336,7 +665,7 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
     catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
   }
   New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'ShinawaseLoader\backups') | Out-Null
-  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot | Out-Host
+  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot | Out-Null
   return $runtimeRoot
 }
 
@@ -346,10 +675,13 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   $modsRoot = Join-Path $echoRoot 'Mods'
   $pluginsRoot = Join-Path $echoRoot 'Plugins'
   $logsRoot = Join-Path $loaderRoot 'Logs'
+  Write-SetupProgress 8 (T 'progressPrepare')
   New-Item -ItemType Directory -Force -Path $loaderRoot, $modsRoot, $pluginsRoot, $logsRoot | Out-Null
   Stop-Loader $loaderRoot
+  Write-SetupProgress 22 (T 'progressCopy')
   Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'loader.config.json', 'Logs', 'backups') } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $loaderRoot $_.Name) -Recurse -Force }
+  Write-SetupProgress 38 (T 'progressNode')
   $node = Get-NodeRuntime $versionInfo $loaderRoot
   $configPath = Join-Path $loaderRoot 'loader.config.json'
   $config = Read-Json $configPath (Read-Json (Join-Path $source 'loader.config.json') @{})
@@ -357,37 +689,35 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   if (-not $config.PSObject.Properties['autoStart']) { $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $false }
   if (-not $config.PSObject.Properties['autoStartMode']) { $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'manual' }
   $config | Add-Member -NotePropertyName loadMode -NotePropertyValue 'external-cdp' -Force
+  if ($script:Locale) { $config | Add-Member -NotePropertyName locale -NotePropertyValue $script:Locale -Force }
   Write-Json $configPath $config
-  & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Host
+  Write-SetupProgress 52 (T 'progressInit')
+  & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Null
   $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $true -Force
   $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'app-asar-bridge' -Force
   Write-Json $configPath $config
+  Write-SetupProgress 70 (T 'progressRuntime')
   Prepare-ModdedRuntime $echoRoot $echoExe $loaderRoot $node | Out-Null
+  Write-SetupProgress 86 (T 'progressHost')
   $moddedHost = Build-ModdedHost $echoRoot $loaderRoot $echoExe
+  Write-SetupProgress 94 (T 'progressLaunchers')
   $escapedRoot = $echoRoot.Replace('%', '%%')
   $launcherSpecs = @(
-    @{ Name = 'start-echo-with-mods.cmd'; Command = 'host'; Description = 'modded host with Steam-aware ECHO child' },
-    @{ Name = 'start-echo-debug.cmd'; Command = 'run --debug --web-console --log-level debug'; Description = 'development and debug logging' },
-    @{ Name = 'start-echo-safe.cmd'; Command = 'run --safe-mode'; Description = 'start ECHO without Mod or Plugin injection' },
-    @{ Name = 'attach-to-echo.cmd'; Command = 'attach'; Description = 'attach Loader to an already running ECHO instance' }
+    @{ Name = 'start-echo-with-mods.cmd'; Command = 'host' },
+    @{ Name = 'start-echo-debug.cmd'; Command = 'run --debug --log-level debug' },
+    @{ Name = 'start-echo-safe.cmd'; Command = 'run --safe-mode' },
+    @{ Name = 'attach-to-echo.cmd'; Command = 'attach' }
   )
   foreach ($spec in $launcherSpecs) {
     $launcherPath = Join-Path $loaderRoot $spec.Name
     if ($spec.Command -eq 'host') {
-      @("@echo off", "setlocal", "cd /d `"$escapedRoot`"", "`"$moddedHost`" %*", "endlocal") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+      @("@echo off", "cd /d `"$escapedRoot`"", "start `"`" `"$moddedHost`" %*") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
     } else {
-      @("@echo off", "setlocal", "cd /d `"$escapedRoot`"", "`"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*", "endlocal") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+      @("@echo off", "cd /d `"$escapedRoot`"", "start `"`" `"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
     }
   }
-  $launcher = Join-Path $loaderRoot 'start-echo-with-mods.cmd'
-  if ($EnableDirectAutoStart) { Write-Host 'Direct ECHO.exe patching is no longer required; use ECHO.modded.exe for isolated loading.' -ForegroundColor DarkGray }
-  Write-Host "Installed ShinawaseLoader $($versionInfo.version)" -ForegroundColor Green
-  Write-Host "ECHO: $echoExe" -ForegroundColor Cyan
-  Write-Host "Modded host: $moddedHost" -ForegroundColor Cyan
-  Write-Host "Start with mods: $launcher" -ForegroundColor Cyan
-  Write-Host "Plugins: $pluginsRoot" -ForegroundColor Cyan
-  Write-Host "Logs: $logsRoot" -ForegroundColor Cyan
-  Write-Host 'Dependency downloads use the user cache; protected install folders may still require Windows permission for the loader itself.' -ForegroundColor DarkGray
+  Write-SetupProgress 100 (T 'progressDone')
+  return @{ Launcher = (Join-Path $loaderRoot 'start-echo-with-mods.cmd'); Node = $node; LoaderRoot = $loaderRoot; EchoRoot = $echoRoot }
 }
 
 function Get-RemoteVersion {
@@ -421,8 +751,109 @@ function Invoke-Install($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStar
       if ([version]$remote.version -gt [version](Read-Version (Join-Path $loaderRoot 'loader-version.json'))) { $remoteSource = Download-RemoteSource }
     }
     $installSource = if ($remoteSource) { $remoteSource.Path } else { $LocalSource }
-    Copy-Loader $installSource $selectedExe $versionInfo $EnableDirectAutoStart
+    return Copy-Loader $installSource $selectedExe $versionInfo $EnableDirectAutoStart
   } finally { if ($remoteSource) { Remove-Item -LiteralPath $remoteSource.Temp -Recurse -Force -ErrorAction SilentlyContinue } }
+}
+
+function Get-ExamplePackagePath([string]$folderName) {
+  $pack = Join-Path $ProjectRoot ("examples\packages\{0}.echomod" -f $folderName)
+  if (Test-Path -LiteralPath $pack) { return $pack }
+  $source = Join-Path $ProjectRoot ("examples\{0}\echomod" -f $folderName)
+  if (-not (Test-Path -LiteralPath $source)) { return $null }
+  New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot 'examples\packages') | Out-Null
+  $node = if (Test-Path (Join-Path $LocalSource 'node.exe')) { Join-Path $LocalSource 'node.exe' } else { 'node' }
+  & $node (Join-Path $ProjectRoot 'scripts\pack-echomod.mjs') $source $pack --zip | Out-Null
+  if (Test-Path -LiteralPath $pack) { return $pack }
+  return $null
+}
+
+function Choose-OptionalPackages {
+  $source = @(
+    @{ Key = '1'; Label = T 'pkgStreaming'; Folder = 'ECHO-Streaming'; Checked = $true },
+    @{ Key = '2'; Label = T 'pkgTogether'; Folder = 'ECHO-Together'; Checked = $true },
+    @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true }
+  )
+  $index = 0
+  $visible = $true
+  try { $visible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch {}
+  $script:ProgressStarted = $false
+  Write-SetupHeader -Meta @('  ' + (T 'extrasTitle'))
+  $menuTop = 0
+  $phase = 0
+  try { $menuTop = [Console]::CursorTop } catch {}
+  try {
+    while ($true) {
+      $rows = @()
+      foreach ($item in $source) { $rows += [pscustomobject]@{ Key = $item.Key; Label = $item.Label; Checked = $item.Checked } }
+      try { [Console]::SetCursorPosition(0, $menuTop) } catch {}
+      Write-SetupItems -Items $rows -Index $index -Hint (T 'extrasHint') -Phase $phase
+      $key = Read-MenuKey 40
+      if (-not $key) { $phase += 1; continue }
+      switch ($key.Key) {
+        'UpArrow' { $index = ($index + $source.Count - 1) % $source.Count }
+        'DownArrow' { $index = ($index + 1) % $source.Count }
+        'Spacebar' { $source[$index].Checked = -not $source[$index].Checked }
+        'Enter' { return @($source | Where-Object { $_.Checked } | ForEach-Object { [pscustomobject]@{ Name = $_.Label; Folder = $_.Folder } }) }
+        'Escape' { return @() }
+        default {
+          $digit = Get-MenuDigit $key
+          if ($digit) {
+            $n = [int]$digit
+            if ($n -ge 1 -and $n -le $source.Count) { $index = $n - 1 }
+          }
+        }
+      }
+    }
+  } finally {
+    try { [Console]::CursorVisible = $visible } catch {}
+  }
+}
+
+function Install-OptionalPackages($selectedExe, $packages) {
+  if (-not $packages -or $packages.Count -eq 0) { return }
+  $echoRoot = Split-Path -Parent $selectedExe
+  $loaderRoot = Join-Path $echoRoot 'ShinawaseLoader'
+  $node = Join-Path $loaderRoot 'node.exe'
+  if (-not (Test-Path -LiteralPath $node)) { $node = 'node' }
+  $loader = Join-Path $loaderRoot 'ShinawaseLoader.mjs'
+  $previousHome = $env:ECHO_MOD_HOME
+  $previousGame = $env:ECHO_GAME_ROOT
+  $env:ECHO_MOD_HOME = $loaderRoot
+  $env:ECHO_GAME_ROOT = $echoRoot
+  try {
+    $done = 0
+    foreach ($package in $packages) {
+      $done += 1
+      $percent = [int](100 * $done / $packages.Count)
+      Write-SetupProgress $percent ((T 'progressPackages') + '  ' + $package.Name)
+      $path = if ($package.Path) { $package.Path } else { Get-ExamplePackagePath $package.Folder }
+      if (-not $path) { throw ("Package not found: {0}" -f $package.Folder) }
+      & $node $loader import $path | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw ("Failed to import {0}" -f $package.Name) }
+    }
+  } finally {
+    $env:ECHO_MOD_HOME = $previousHome
+    $env:ECHO_GAME_ROOT = $previousGame
+  }
+  Write-SetupProgress 100 (T 'progressDone')
+}
+
+function Start-EchoWithProgress($selectedExe) {
+  $root = Split-Path -Parent $selectedExe
+  $modded = Join-Path $root 'ECHO.modded.exe'
+  Write-SetupProgress 35 (T 'progressLaunch')
+  if (-not (Test-Path -LiteralPath $modded)) { throw 'ECHO.modded.exe is missing. Install the loader first.' }
+  Write-SetupProgress 72 (T 'openingEcho')
+  Start-Process -FilePath $modded -WorkingDirectory $root
+  Write-SetupProgress 100 (T 'progressDone')
+}
+
+function Complete-InstallAndLaunch($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStart = $false) {
+  [void](Invoke-Install $selectedExe $Update $EnableDirectAutoStart)
+  $chosen = @(Choose-OptionalPackages)
+  if ($chosen.Count) { Install-OptionalPackages $selectedExe $chosen }
+  Start-EchoWithProgress $selectedExe
+  Exit-Setup 0
 }
 
 function Show-Status($selectedExe) {
@@ -455,45 +886,73 @@ function Invoke-Uninstall($selectedExe) {
 
 function Pause-Menu { [void](Read-Host (T 'pressEnter')) }
 
+function Show-PulseMenu([string]$SelectedPath) {
+  $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
+  Read-ConsoleMenu -Subtitle $version -Meta @((T 'target') + '  ' + $(if ($SelectedPath) { $SelectedPath } else { T 'notSelected' })) -Labels @(
+    (T 'install'),
+    (T 'status'),
+    (T 'launch'),
+    (T 'chooseEcho'),
+    (T 'uninstall'),
+    (T 'isolated'),
+    (T 'exit')
+  ) -Values @('1', '2', '3', '4', '5', '6', '0') -Hint (T 'menuHint') -CancelValue '0'
+}
+
 function Invoke-Menu {
   Choose-LoaderLocale
   $selected = $null
   while ($true) {
-    Clear-Host
-    $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
-    Write-Host "$Logo  $version" -ForegroundColor White
-    Write-Host '──────────' -ForegroundColor DarkGray
-    Write-Host ((T 'target') + '  ' + $(if ($selected) { $selected } else { T 'notSelected' })) -ForegroundColor DarkGray
-    Write-Host ''
-    Write-Host ('  1  ' + (T 'install'))
-    Write-Host ('  2  ' + (T 'status'))
-    Write-Host ('  3  ' + (T 'launch'))
-    Write-Host ('  4  ' + (T 'chooseEcho'))
-    Write-Host ('  5  ' + (T 'uninstall'))
-    Write-Host ('  6  ' + (T 'isolated'))
-    Write-Host ('  0  ' + (T 'exit')) -ForegroundColor DarkGray
-    switch ((Read-Host (T 'select')).Trim()) {
-      '1' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $true ([bool]$PatchApp) } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+    switch (Show-PulseMenu $selected) {
+      '1' {
+        try {
+          if (-not $selected) { $selected = Resolve-EchoExecutable }
+          Complete-InstallAndLaunch $selected $true ([bool]$PatchApp)
+          return
+        } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
+      }
       '2' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Show-Status $selected } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
-      '3' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher; Write-Host 'ECHO launched.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '3' {
+        try {
+          if (-not $selected) { $selected = Resolve-EchoExecutable }
+          $modded = Join-Path (Split-Path -Parent $selected) 'ECHO.modded.exe'
+          if (-not (Test-Path -LiteralPath $modded)) {
+            Complete-InstallAndLaunch $selected $false ([bool]$PatchApp)
+          } else {
+            Start-EchoWithProgress $selected
+            Exit-Setup 0
+          }
+          return
+        } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
+      }
       '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Write-Json $SelectionFile @{ echoExe = $selected; locale = $script:Locale } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '5' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Uninstall $selected; $selected = $null } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
-      '6' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Install $selected $false $true; Write-Host 'Direct ECHO.exe auto start is enabled.' -ForegroundColor Green } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
-      '0' { return }
-      default { Write-Host (T 'invalid') -ForegroundColor Yellow; Pause-Menu }
+      '6' {
+        try {
+          if (-not $selected) { $selected = Resolve-EchoExecutable }
+          Complete-InstallAndLaunch $selected $false $true
+          return
+        } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
+      }
+      '0' { Exit-Setup 0 }
     }
   }
 }
 
 try {
+  Initialize-SetupConsole
   Choose-LoaderLocale
   if ($Action -eq 'menu') { Invoke-Menu; return }
   $selected = Resolve-EchoExecutable
   switch ($Action) {
-    'install' { Invoke-Install $selected $false ([bool]$PatchApp) }
-    'update' { Invoke-Install $selected $true ([bool]$PatchApp) }
+    'install' { Complete-InstallAndLaunch $selected $false ([bool]$PatchApp) }
+    'update' { Complete-InstallAndLaunch $selected $true ([bool]$PatchApp) }
     'check' { Show-Status $selected }
-    'launch' { $root = Split-Path -Parent $selected; $launcher = Join-Path $root 'ShinawaseLoader\start-echo-with-mods.cmd'; if (-not (Test-Path $launcher)) { Invoke-Install $selected $false ([bool]$PatchApp) }; Start-Process -FilePath $launcher }
+    'launch' {
+      $modded = Join-Path (Split-Path -Parent $selected) 'ECHO.modded.exe'
+      if (-not (Test-Path -LiteralPath $modded)) { Complete-InstallAndLaunch $selected $false ([bool]$PatchApp) }
+      else { Start-EchoWithProgress $selected; Exit-Setup 0 }
+    }
     'uninstall' { Invoke-Uninstall $selected }
   }
 } catch {

@@ -389,6 +389,122 @@ static void *resolve_address(const char *module_name, size_t offset, size_t *mod
 #endif
 }
 
+static int hex_nibble(int ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+  return -1;
+}
+
+static int is_pattern_space(char ch) {
+  return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+}
+
+static int parse_scan_pattern(const char *pattern, unsigned char **bytes_out, unsigned char **mask_out, size_t *len_out) {
+  size_t cap = 0;
+  const char *p;
+  unsigned char *bytes;
+  unsigned char *mask;
+  size_t n = 0;
+  if (!pattern || !bytes_out || !mask_out || !len_out) return 0;
+  *bytes_out = NULL;
+  *mask_out = NULL;
+  *len_out = 0;
+  for (p = pattern; *p;) {
+    while (*p && is_pattern_space(*p)) p++;
+    if (!*p) break;
+    cap++;
+    while (*p && !is_pattern_space(*p)) p++;
+  }
+  if (!cap) return 0;
+  bytes = (unsigned char *)malloc(cap);
+  mask = (unsigned char *)malloc(cap);
+  if (!bytes || !mask) {
+    free(bytes);
+    free(mask);
+    return 0;
+  }
+  for (p = pattern; *p;) {
+    char tok[8];
+    size_t tlen = 0;
+    while (*p && is_pattern_space(*p)) p++;
+    if (!*p) break;
+    while (*p && !is_pattern_space(*p)) {
+      if (tlen + 1 < sizeof(tok)) tok[tlen++] = *p;
+      else tlen++;
+      p++;
+    }
+    tok[tlen < sizeof(tok) ? tlen : sizeof(tok) - 1] = 0;
+    if (tlen == 0 || tlen >= sizeof(tok)) {
+      free(bytes);
+      free(mask);
+      return 0;
+    }
+    if ((tlen == 1 && tok[0] == '?') || (tlen == 2 && tok[0] == '?' && tok[1] == '?')) {
+      bytes[n] = 0;
+      mask[n] = 0;
+      n++;
+      continue;
+    }
+    if (tlen == 1) {
+      int lo = hex_nibble((unsigned char)tok[0]);
+      if (lo < 0) {
+        free(bytes);
+        free(mask);
+        return 0;
+      }
+      bytes[n] = (unsigned char)lo;
+      mask[n] = 1;
+      n++;
+      continue;
+    }
+    if (tlen == 2) {
+      int hi = hex_nibble((unsigned char)tok[0]);
+      int lo = hex_nibble((unsigned char)tok[1]);
+      if (hi < 0 || lo < 0) {
+        free(bytes);
+        free(mask);
+        return 0;
+      }
+      bytes[n] = (unsigned char)((hi << 4) | lo);
+      mask[n] = 1;
+      n++;
+      continue;
+    }
+    free(bytes);
+    free(mask);
+    return 0;
+  }
+  if (!n) {
+    free(bytes);
+    free(mask);
+    return 0;
+  }
+  *bytes_out = bytes;
+  *mask_out = mask;
+  *len_out = n;
+  return 1;
+}
+
+#ifdef _WIN32
+static int region_is_readable(DWORD protect) {
+  DWORD page;
+  if (protect & PAGE_GUARD) return 0;
+  page = protect & 0xFF;
+  switch (page) {
+    case PAGE_READONLY:
+    case PAGE_READWRITE:
+    case PAGE_WRITECOPY:
+    case PAGE_EXECUTE_READ:
+    case PAGE_EXECUTE_READWRITE:
+    case PAGE_EXECUTE_WRITECOPY:
+      return 1;
+    default:
+      return 0;
+  }
+}
+#endif
+
 static napi_value js_read(napi_env env, napi_callback_info info) {
   size_t argc = 3;
   napi_value args[3];
@@ -466,6 +582,106 @@ static napi_value js_protect(napi_env env, napi_callback_info info) {
   return out;
 }
 
+static napi_value js_scan(napi_env env, napi_callback_info info) {
+  size_t argc = 3;
+  napi_value args[3];
+  napi_value list;
+  uint32_t limit = 0;
+  char *module_name = NULL;
+  char *pattern = NULL;
+  unsigned char *pat = NULL;
+  unsigned char *mask = NULL;
+  size_t pat_len = 0;
+  napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  if (!memory_api_global) return throw_error(env, "native_memory_disabled");
+  if (argc < 2) return throw_error(env, "native_scan_pattern_invalid");
+  module_name = read_utf8(env, args[0]);
+  pattern = read_utf8(env, args[1]);
+  if (argc >= 3) napi_get_value_uint32(env, args[2], &limit);
+  if (!parse_scan_pattern(pattern, &pat, &mask, &pat_len)) {
+    free(module_name);
+    free(pattern);
+    return throw_error(env, "native_scan_pattern_invalid");
+  }
+  napi_create_array(env, &list);
+#ifdef _WIN32
+  {
+    size_t module_size = 0;
+    const char *mod_arg = (module_name && module_name[0]) ? module_name : NULL;
+    void *base = current_module_base(mod_arg, &module_size);
+    if (base && module_size >= pat_len) {
+      unsigned char *mod_base = (unsigned char *)base;
+      unsigned char *mod_end = mod_base + module_size;
+      unsigned char *cursor = mod_base;
+      uint32_t found = 0;
+      int stop = 0;
+      while (cursor < mod_end && !stop) {
+        MEMORY_BASIC_INFORMATION mbi;
+        unsigned char *region_start;
+        unsigned char *region_end;
+        unsigned char *scan_start;
+        unsigned char *scan_end;
+        unsigned char *next;
+        if (!VirtualQuery(cursor, &mbi, sizeof(mbi))) {
+          cursor += 0x1000;
+          continue;
+        }
+        if (!mbi.RegionSize) {
+          cursor += 0x1000;
+          continue;
+        }
+        region_start = (unsigned char *)mbi.BaseAddress;
+        region_end = region_start + mbi.RegionSize;
+        scan_start = region_start < mod_base ? mod_base : region_start;
+        scan_end = region_end > mod_end ? mod_end : region_end;
+        if (mbi.State == MEM_COMMIT && region_is_readable(mbi.Protect) && scan_end > scan_start) {
+          size_t hay_len = (size_t)(scan_end - scan_start);
+          if (hay_len >= pat_len) {
+            size_t max_i = hay_len - pat_len;
+            size_t i;
+            for (i = 0; i <= max_i; i++) {
+              size_t j;
+              int ok = 1;
+              for (j = 0; j < pat_len; j++) {
+                if (mask[j] && scan_start[i + j] != pat[j]) {
+                  ok = 0;
+                  break;
+                }
+              }
+              if (ok) {
+                char addr_text[32];
+                unsigned char *addr = scan_start + i;
+                napi_value item, addr_v, offset_v;
+                snprintf(addr_text, sizeof(addr_text), "0x%p", (void *)addr);
+                napi_create_object(env, &item);
+                napi_create_string_utf8(env, addr_text, NAPI_AUTO_LENGTH, &addr_v);
+                napi_create_int64(env, (int64_t)(addr - mod_base), &offset_v);
+                napi_set_named_property(env, item, "address", addr_v);
+                napi_set_named_property(env, item, "offset", offset_v);
+                napi_set_element(env, list, found, item);
+                found++;
+                if (limit > 0 && found >= limit) {
+                  stop = 1;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        next = (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
+        if (next <= cursor) next = cursor + 0x1000;
+        cursor = next;
+      }
+    }
+  }
+#endif
+  free(module_name);
+  free(pattern);
+  free(pat);
+  free(mask);
+  return list;
+}
+
 static napi_value init_addon(napi_env env, napi_value exports) {
   struct { const char *name; napi_callback fn; } methods[] = {
     { "load", js_load },
@@ -475,6 +691,7 @@ static napi_value init_addon(napi_env env, napi_value exports) {
     { "read", js_read },
     { "write", js_write },
     { "protect", js_protect },
+    { "scan", js_scan },
   };
   for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) {
     napi_value fn;

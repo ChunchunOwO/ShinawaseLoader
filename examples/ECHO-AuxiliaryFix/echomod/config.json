@@ -1,3 +1,4 @@
 {
-  "disableBrokenFlags": true
+  "remapWindows": true,
+  "disableBrokenFlags": false
 }

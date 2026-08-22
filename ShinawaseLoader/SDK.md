@@ -11,7 +11,7 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `player`: ShinawaseLoader's independently mounted player runtime (`window.__echoExternalPlayer`). It binds to ECHO's public playback API and queue. Use `player.status/play/pause/stop/seek/next/previous/playTrack/append/replaceQueue`. The same surface is also at `GET/POST /api/player`.
 - `extend`: independently mounted renderer extension runtime (`window.__echoExternalExtend`). Use it to inject CSS, wrap public `window.echo` methods, listen to app events, hide native nav items, or replace a native route with a Mod page. Disablers returned by `css/hook/on/replaceRoute/hideNav/hide/observe` run automatically when the package is disabled.
 - `main`: in-process Electron main-process RPC. A package `main` script (for example `main.cjs`) runs inside ECHO after the asar-bridge starts `native-host.cjs`. Use `main.invoke(method, payload)` from the renderer.
-- `native`: in-process native host. Declared `.node` addons and host DLLs are loaded inside ECHO, not by remote process injection. Use `native.status/modules/invoke`. Current-process memory helpers require `native.memory: true` plus `nativeMemoryApi`.
+- `native`: in-process native host. Declared `.node` addons and host DLLs are loaded inside ECHO, not by remote process injection. Use `native.status/modules/invoke`. Current-process memory helpers (`scan`, `read`/`write`/`protect`, typed readers) require `native.memory: true` plus `nativeMemoryApi`.
 - `sdk.status()`: Loader runtime status. `sdk.list(path)`, `sdk.get(path)`, and `sdk.call(path, ...args)` discover and call public `window.echo` paths without hard-coding a specific ECHO version.
 - `settings.get()` / `settings.set(patch)`: per-package browser storage.
 - `assetUrl(path)` / `loadAsset(path, options)`: serve packaged HTML, CSS, images, WASM, or data assets.
@@ -79,3 +79,23 @@ A package may declare:
 `GET /api/native/status`, `POST /api/native/call`, and `POST /api/native/reload` proxy the in-process host. If the asar-bridge is not installed, those endpoints report `native_host_unavailable`.
 
 Separately launched loopback helpers remain valid when a package does not need to live inside ECHO.
+
+## Native memory & DLL development
+
+Enable current-process memory APIs with `native.memory: true` in the package manifest (and leave `nativeMemoryApi` on in `loader.config.json`). Then `echoExternalMod.native` can inspect ECHO's own modules:
+
+- `modules()` lists loaded modules as `{ name, base, size }`. `moduleInfo(name)` returns one entry (case-insensitive) or `null`.
+- `scan({ module, pattern, limit })` searches a module for an AOB signature. `module` empty means the main exe. `pattern` is space-separated hex bytes; `??` or `?` is a wildcard (`"48 8B ?? ?? E8"`). `limit` 0 means no cap. Results are `{ address, offset }`.
+- `read({ module, offset, size })`, `write({ module, offset, data })`, and `protect({ module, offset, size, prot })` are offset-based from the module base. `data` is base64.
+- Typed helpers (little-endian): `readBytes` / `writeBytes`, `readInt32` / `writeInt32`, `readUInt32` / `writeUInt32`, `readFloat` / `writeFloat`, `readDouble` / `writeDouble`, `readBigInt64` / `writeBigInt64` (BigInt as string on read; write accepts BigInt or a numeric string), `readBigUint64`, `readPointer` (`"0x…"`), `readString(module, offset, size)` (UTF-8, cut at the first NUL).
+
+```js
+const native = echoExternalMod.native;
+const module = (await native.moduleInfo('ECHO.exe'))?.name || '';
+const { matches } = await native.scan({ module, pattern: '48 8B ?? ?? E8', limit: 8 });
+const hit = matches[0];
+const bytes = await native.readBytes(module, hit.offset, 5);
+bytes[0] = 0x90;
+await native.protect({ module, offset: hit.offset, size: 5, prot: 7 });
+await native.writeBytes(module, hit.offset, bytes);
+```

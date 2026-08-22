@@ -69,15 +69,43 @@ type EchoExternalExtend = {
   observe(selector: string, callback: (node: Element) => void): () => void;
 };
 
+type EchoNativeModuleInfo = {
+  name: string;
+  base: string;
+  size: number;
+};
+
+type EchoNativeScanMatch = {
+  address: string;
+  offset: number;
+};
+
 type EchoExternalNative = {
   version: 1;
   mode: 'in-process-asar-bridge';
   status(): Promise<Record<string, unknown>>;
-  modules(): Promise<Record<string, unknown>>;
+  modules(): Promise<{ modules?: EchoNativeModuleInfo[] } & Record<string, unknown>>;
+  moduleInfo(name?: string): Promise<EchoNativeModuleInfo | null>;
+  scan(input: { module?: string; pattern?: string; limit?: number }): Promise<{ matches?: EchoNativeScanMatch[] } & Record<string, unknown>>;
   invoke(method: string, payload?: unknown): Promise<unknown>;
   read(input: { module: string; offset: number; size: number }): Promise<{ data: string; size: number }>;
   write(input: { module: string; offset: number; data: string }): Promise<{ written: number }>;
   protect(input: { module: string; offset: number; size: number; prot: number }): Promise<{ oldProt: number }>;
+  readBytes(module: string, offset: number, size: number): Promise<Uint8Array>;
+  readInt32(module: string, offset: number): Promise<number>;
+  readUInt32(module: string, offset: number): Promise<number>;
+  readFloat(module: string, offset: number): Promise<number>;
+  readDouble(module: string, offset: number): Promise<number>;
+  readBigInt64(module: string, offset: number): Promise<string>;
+  readBigUint64(module: string, offset: number): Promise<string>;
+  readPointer(module: string, offset: number): Promise<string>;
+  readString(module: string, offset: number, size: number): Promise<string>;
+  writeBytes(module: string, offset: number, bytes: Uint8Array | ArrayLike<number>): Promise<{ written: number }>;
+  writeInt32(module: string, offset: number, value: number): Promise<{ written: number }>;
+  writeUInt32(module: string, offset: number, value: number): Promise<{ written: number }>;
+  writeFloat(module: string, offset: number, value: number): Promise<{ written: number }>;
+  writeDouble(module: string, offset: number, value: number): Promise<{ written: number }>;
+  writeBigInt64(module: string, offset: number, value: bigint | string | number): Promise<{ written: number }>;
 };
 
 type EchoExternalMain = {

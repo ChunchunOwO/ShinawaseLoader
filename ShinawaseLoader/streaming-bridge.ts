@@ -25,4 +25,7 @@ export const registerShinawaseStreamingBridge = (): void => {
   (globalThis as typeof globalThis & {
     __shinawaseResolveStreamingPlayback?: (request: unknown) => Promise<unknown>;
   }).__shinawaseResolveStreamingPlayback = (request) => getStreamingService().resolvePlayback(request as never);
+  try {
+    require('./playback-shim.cjs').installStreamingPlaybackShim();
+  } catch {}
 };

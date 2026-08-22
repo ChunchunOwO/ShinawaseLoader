@@ -5,8 +5,7 @@ import { basename, dirname, extname, join, normalize, relative, resolve } from '
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { createInterface } from 'node:readline';
+import { createHash, randomUUID } from 'node:crypto';
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 
@@ -27,13 +26,58 @@ const c = {
   white: '\x1b[97m',
   gray: '\x1b[90m',
 };
-const printLogo = () => {
-  console.log(`${c.white}${c.bold}Shinawase${c.reset}  ${c.gray}${loaderVersion}${c.reset}`);
-  console.log(`${c.gray}──────────${c.reset}`);
+const printLogo = (subtitle = loaderVersion) => {
+  const art = [
+    '███████╗██╗  ██╗██╗███╗   ██╗ █████╗ ██╗    ██╗ █████╗ ███████╗███████╗',
+    '██╔════╝██║  ██║██║████╗  ██║██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝',
+    '███████╗███████║██║██╔██╗ ██║███████║██║ █╗ ██║███████║███████╗█████╗  ',
+    '╚════██║██╔══██║██║██║╚██╗██║██╔══██║██║███╗██║██╔══██║╚════██║██╔══╝  ',
+    '███████║██║  ██║██║██║ ╚████║██║  ██║╚███╔███╔╝██║  ██║███████║███████╗',
+    '╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚══════╝',
+  ];
+  for (const line of art) console.log(`${c.white}${line}${c.reset}`);
+  if (subtitle) console.log(`${c.gray}${subtitle}${c.reset}`);
 };
 
+const readChoice = (items, hint) => new Promise((resolve) => {
+  if (!process.stdin.isTTY) return resolve(items[0]?.value);
+  let index = 0;
+  const draw = () => {
+    process.stdout.write('\x1b[2J\x1b[H');
+    printLogo();
+    process.stdout.write('\n');
+    items.forEach((item, i) => {
+      const tone = i === index ? `${c.cyan}${c.bold}` : c.gray;
+      process.stdout.write(`  ${item.key}  ${tone}${item.label}${c.reset}\n`);
+    });
+    if (hint) process.stdout.write(`\n${c.gray}  ${hint}${c.reset}\n`);
+  };
+  const cleanup = () => {
+    try { process.stdin.setRawMode(false); } catch {}
+    process.stdin.removeListener('data', onData);
+  };
+  const onData = (buf) => {
+    const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+    if (bytes[0] === 3) { cleanup(); process.exit(130); }
+    if (bytes[0] === 13 || bytes[0] === 10) { cleanup(); process.stdout.write('\n'); return resolve(items[index].value); }
+    if (bytes[0] === 27 && bytes[1] === 91) {
+      if (bytes[2] === 65) index = (index + items.length - 1) % items.length;
+      if (bytes[2] === 66) index = (index + 1) % items.length;
+      draw();
+      return;
+    }
+    const digit = String.fromCharCode(bytes[0]);
+    const found = items.findIndex((item) => String(item.key) === digit);
+    if (found >= 0) { index = found; draw(); }
+  };
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on('data', onData);
+  draw();
+});
+
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.4.0';
+const loaderVersion = '1.5.1';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
 const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));
@@ -121,12 +165,18 @@ const autoStartModeValue = String(loaderConfig.autoStartMode || (loaderConfig.au
 const autoStartMode = new Set(['manual', 'app-asar-bridge']).has(autoStartModeValue) ? autoStartModeValue : 'manual';
 const autoStart = loaderConfig.autoStart === true && autoStartMode === 'app-asar-bridge';
 const safeMode = hasFlag('--safe-mode', '--no-mods') || String(process.env.ECHO_MOD_SAFE_MODE || '').toLowerCase() === 'true' || loaderConfig.safeMode === true;
-const debugMode = hasFlag('--debug', '--debug-mode') || String(process.env.ECHO_MOD_DEBUG || '').toLowerCase() === 'true' || loaderConfig.debugMode === true;
+let debugMode = hasFlag('--debug', '--debug-mode') || String(process.env.ECHO_MOD_DEBUG || '').toLowerCase() === 'true' || loaderConfig.debugMode === true;
 const injectIntervalMs = clamp(option('--inject-interval', process.env.ECHO_MOD_INJECT_INTERVAL || loaderConfig.injectIntervalMs), 1000, 60000, 5000);
 const startupDelayMs = clamp(option('--startup-delay', process.env.ECHO_MOD_STARTUP_DELAY || loaderConfig.startupDelayMs), 0, 30000, 500);
 const requestedLogLevel = String(option('--log-level', process.env.ECHO_MOD_LOG_LEVEL || loaderConfig.logLevel || (debugMode ? 'debug' : 'info'))).toUpperCase();
 configuredLogLevel = Object.hasOwn(logRanks, requestedLogLevel) ? requestedLogLevel : (debugMode ? 'DEBUG' : 'INFO');
-const enableWebConsole = hasFlag('--web-console') || debugMode || String(process.env.ECHO_ENABLE_WEB_CONSOLE || '').toLowerCase() === 'true' || loaderConfig.enableWebConsole === true;
+const setDebugMode = (enabled) => {
+  debugMode = enabled === true;
+  configuredLogLevel = debugMode ? 'DEBUG' : (Object.hasOwn(logRanks, requestedLogLevel) && requestedLogLevel !== 'DEBUG' ? requestedLogLevel : 'INFO');
+  writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), debugMode, logLevel: configuredLogLevel.toLowerCase() });
+  log('INFO', `debug ${debugMode ? 'on' : 'off'}`);
+  return debugMode;
+};
 const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.port || defaultPort));
 const debugPort = Number(option('--debug-port', process.env.ECHO_MOD_DEBUG_PORT || loaderConfig.debugPort || defaultDebugPort));
 const nativeHostEnabled = !safeMode && loaderConfig.nativeHost !== false && !hasFlag('--no-native-host');
@@ -147,19 +197,14 @@ const persistLocale = (value) => {
 const detectLocale = () => normalizeLocale(option('--locale', process.env.ECHO_LOADER_LOCALE || loaderConfig.locale || readJson(selectionPath, {}).locale || process.env.LANG));
 let locale = detectLocale();
 const t = (key) => (i18nCopy[locale || 'zh'] || i18nCopy.zh)[key] || key;
-const promptLocale = () => new Promise((resolve) => {
-  if (!process.stdin.isTTY) return resolve(persistLocale(process.env.LANG?.toLowerCase().startsWith('zh') ? 'zh' : 'en'));
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  console.log(`${c.white}${c.bold}Shinawase${c.reset}`);
-  console.log(`${c.gray}──────────${c.reset}`);
-  console.log('  1  中文');
-  console.log('  2  English');
-  rl.question('> ', (answer) => {
-    rl.close();
-    const picked = String(answer).trim() === '2' || /^en/i.test(String(answer)) ? 'en' : 'zh';
-    resolve(persistLocale(picked));
-  });
-});
+const promptLocale = async () => {
+  if (!process.stdin.isTTY) return persistLocale(process.env.LANG?.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+  const picked = await readChoice(
+    [{ key: '1', label: '中文', value: 'zh' }, { key: '2', label: 'English', value: 'en' }],
+    '1 / 2    arrows    Enter',
+  );
+  return persistLocale(picked);
+};
 const loaderStats = { startedAt: Date.now(), injects: 0, lastInjectAt: null, lastError: null };
 
 mkdirSync(installedRoot, { recursive: true });
@@ -224,14 +269,20 @@ const writeModConfig = (id, config) => {
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('mod_config_object_required');
   writeJson(configPath(id, manifest), config);
 };
+const iconMime = new Map([
+  ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.ico', 'image/x-icon'],
+]);
 const iconDataUrl = (id, manifest) => {
   if (!manifest?.icon) return null;
   const record = findPackage(id);
   if (!record) return null;
   const iconPath = join(record.directory, safeRelative(manifest.icon));
-  if (!existsSync(iconPath) || extname(iconPath).toLowerCase() !== '.svg') return null;
-  return `data:image/svg+xml;base64,${readFileSync(iconPath).toString('base64')}`;
+  const mime = iconMime.get(extname(iconPath).toLowerCase());
+  if (!existsSync(iconPath) || !mime) return null;
+  return `data:${mime};base64,${readFileSync(iconPath).toString('base64')}`;
 };
+const sourceSignature = (source, manifest, id) => createHash('sha256').update(`${source}\n${JSON.stringify(externalContext(id, manifest))}`).digest('hex');
 const modSummaries = () => {
   const state = readState();
   return Object.keys(state.mods).sort().flatMap((id) => {
@@ -517,8 +568,9 @@ const injectLoaderUi = async (target) => {
     '(() => {',
     `const LOADER_PORT = ${Number(port)};`,
     `const LOADER_VERSION = ${JSON.stringify(loaderVersion)};`,
-    `const LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
-    `const T = ${JSON.stringify(i18nCopy[locale || 'zh'] || i18nCopy.zh)};`,
+    `let LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
+    `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
+    `let T = LOCALES[LOADER_LOCALE] || LOCALES.zh;`,
     uiSource,
     '})()',
   ].join('\n');
@@ -958,7 +1010,7 @@ const removeInjected = async (id) => {
 const injectIntoTarget = async (target, id, manifest, source) => {
   const context = JSON.stringify(externalContext(id, manifest));
   const sourceLiteral = JSON.stringify(source);
-  const signatureLiteral = JSON.stringify(`${source}\n${context}`);
+  const signatureLiteral = JSON.stringify(sourceSignature(source, manifest, id));
   const expression = `(async () => {
     const id = ${JSON.stringify(id)}, ctx = ${context}, source = ${sourceLiteral}, signature = ${signatureLiteral};
     window.__echoExternalMods = window.__echoExternalMods || {};
@@ -1075,6 +1127,23 @@ const injectIntoTarget = async (target, id, manifest, source) => {
         read: (input) => request('/api/native/call', { body: { method: 'read', packageId: id, payload: input } }),
         write: (input) => request('/api/native/call', { body: { method: 'write', packageId: id, payload: input } }),
         protect: (input) => request('/api/native/call', { body: { method: 'protect', packageId: id, payload: input } }),
+        scan: (input) => request('/api/native/call', { body: { method: 'scan', packageId: id, payload: input } }),
+        moduleInfo: async (name) => { const r = await request('/api/native/call', { body: { method: 'modules', packageId: id } }); return (r.modules || []).find(m => String(m.name).toLowerCase() === String(name||'').toLowerCase()) || null; },
+        readBytes: async (module, offset, size) => { const r = await request('/api/native/call', { body: { method: 'read', packageId: id, payload: { module, offset, size } } }); const bin = atob(r.data || ''); const bytes = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return bytes; },
+        readInt32: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 4); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(0, true); },
+        readUInt32: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 4); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true); },
+        readFloat: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 4); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat32(0, true); },
+        readDouble: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 8); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat64(0, true); },
+        readBigInt64: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 8); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigInt64(0, true).toString(); },
+        readBigUint64: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 8); return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(0, true).toString(); },
+        readPointer: async (module, offset) => { const bytes = await bridge.native.readBytes(module, offset, 8); return '0x' + new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(0, true).toString(16); },
+        readString: async (module, offset, size) => { const bytes = await bridge.native.readBytes(module, offset, size); let end = 0; while (end < bytes.length && bytes[end] !== 0) end++; return new TextDecoder('utf-8').decode(bytes.subarray(0, end)); },
+        writeBytes: (module, offset, bytes) => { let bin=''; const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); for (let i=0;i<arr.length;i++) bin += String.fromCharCode(arr[i]); return request('/api/native/call', { body: { method: 'write', packageId: id, payload: { module, offset, data: btoa(bin) } } }); },
+        writeInt32: (module, offset, value) => { const bytes = new Uint8Array(4); new DataView(bytes.buffer).setInt32(0, value, true); return bridge.native.writeBytes(module, offset, bytes); },
+        writeUInt32: (module, offset, value) => { const bytes = new Uint8Array(4); new DataView(bytes.buffer).setUint32(0, value, true); return bridge.native.writeBytes(module, offset, bytes); },
+        writeFloat: (module, offset, value) => { const bytes = new Uint8Array(4); new DataView(bytes.buffer).setFloat32(0, value, true); return bridge.native.writeBytes(module, offset, bytes); },
+        writeDouble: (module, offset, value) => { const bytes = new Uint8Array(8); new DataView(bytes.buffer).setFloat64(0, value, true); return bridge.native.writeBytes(module, offset, bytes); },
+        writeBigInt64: (module, offset, value) => { const bytes = new Uint8Array(8); new DataView(bytes.buffer).setBigInt64(0, typeof value === 'bigint' ? value : BigInt(value), true); return bridge.native.writeBytes(module, offset, bytes); },
       },
       main: {
         version: 1,
@@ -1128,19 +1197,34 @@ const injectionPlan = (id, stateEntry) => {
   if (!existsSync(entry)) {
     if (!manifest.main && !manifest.native) return null;
     const source = '/* shinawase native-only package */';
-    return { id, manifest, source, signature: `${source}\n${JSON.stringify(externalContext(id, manifest))}` };
+    return { id, manifest, source, signature: sourceSignature(source, manifest, id) };
   }
   const source = modEntrySource(id, manifest, entry);
-  return { id, manifest, source, signature: `${source}\n${JSON.stringify(externalContext(id, manifest))}` };
+  return { id, manifest, source, signature: sourceSignature(source, manifest, id) };
 };
 const targetInjectionState = async (target) => {
   const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(() => ({
     uiVersion: Number(window.__echoExternalLoaderUi?.version || 0),
     playerVersion: Number(window.__echoExternalPlayer?.version || 0),
     extendVersion: Number(window.__echoExternalExtend?.version || 0),
-    mods: Object.fromEntries(Object.entries(window.__echoExternalMods || {}).map(([id, value]) => [id, String(value?.signature || '')]))
+    mods: Object.fromEntries(Object.entries(window.__echoExternalMods || {}).map(([id, value]) => [id, String(value?.signature || '').slice(0, 64)]))
   }))()`);
   return result?.result?.value || { uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} };
+};
+
+const rendererReadyForMods = async (webSocketDebuggerUrl) => {
+  try {
+    const result = await cdpEvaluate(webSocketDebuggerUrl, `(() => {
+      const href = String(location.href || '');
+      if (/auxiliary\\.html/i.test(href) || /[?&](desktopLyrics|pet|miniPlayer)=1/i.test(href)) return false;
+      const splash = document.querySelector('.echo-startup-shell');
+      if (splash && document.documentElement.dataset.echoStartup !== 'ready') return false;
+      return Boolean(document.querySelector('.app-shell'));
+    })()`);
+    return result?.result?.value === true;
+  } catch {
+    return false;
+  }
 };
 
 const injectEnabled = async () => {
@@ -1154,8 +1238,9 @@ const injectEnabled = async () => {
     log('INFO', `ECHO targets=${targets.length}, enabledPackages=${plans.length}`);
   }
   for (const target of targets) {
+    if (!(await rendererReadyForMods(target.webSocketDebuggerUrl))) continue;
     const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 8;
+    const uiReloaded = targetState.uiVersion < 15;
     await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
       const extra = window.__echoShinawaseStreaming;
       if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
@@ -1494,356 +1579,61 @@ const readRequest = async (request) => {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 };
 
-const webUiHtml = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShinawaseLoader · Web 控制台</title>
-  <style>
-    :root {
-      --bg: #090d16;
-      --card-bg: rgba(18, 24, 38, 0.75);
-      --border: rgba(255, 255, 255, 0.1);
-      --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.35);
-      --success: #34d399;
-      --danger: #fb7185;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
-      background: radial-gradient(circle at 50% 0%, #172554 0%, var(--bg) 65%);
-      color: var(--text); min-height: 100vh; padding: 32px 20px;
-    }
-    .container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-    header {
-      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
-      padding-bottom: 20px; border-bottom: 1px solid var(--border);
-    }
-    .brand-row { display: flex; align-items: center; gap: 12px; }
-    .brand-icon {
-      width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #38bdf8, #818cf8);
-      display: grid; place-items: center; font-size: 20px; font-weight: 900; color: #090d16;
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-    .brand-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-    .brand-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
-    .header-actions { display: flex; gap: 10px; align-items: center; }
-
-    .btn {
-      padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
-      background: rgba(30, 41, 59, 0.7); color: #fff; font: 600 13px inherit;
-      cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; text-decoration: none;
-    }
-    .btn:hover { background: rgba(51, 65, 85, 0.9); border-color: rgba(255, 255, 255, 0.25); transform: translateY(-1px); }
-    .btn:active { transform: scale(0.98); }
-    .btn.primary {
-      background: linear-gradient(135deg, #4f46e5, #3b82f6); border-color: rgba(129, 140, 248, 0.4);
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
-    }
-    .btn.primary:hover { box-shadow: 0 6px 22px rgba(79, 70, 229, 0.6); }
-    .btn.danger { background: rgba(225, 29, 72, 0.15); border-color: rgba(244, 63, 94, 0.3); color: var(--danger); }
-    .btn.danger:hover { background: rgba(225, 29, 72, 0.28); }
-
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-    .stat-card {
-      background: var(--card-bg); border: 1px solid var(--border); backdrop-filter: blur(16px);
-      border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 14px;
-    }
-    .stat-icon { font-size: 24px; width: 44px; height: 44px; border-radius: 10px; background: rgba(255,255,255,0.05); display: grid; place-items: center; }
-    .stat-num { font-size: 20px; font-weight: 700; color: #fff; }
-    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-
-    .dropzone {
-      border: 2px dashed rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.04);
-      border-radius: 14px; padding: 24px; text-align: center; color: var(--muted);
-      cursor: pointer; transition: all 0.2s ease;
-    }
-    .dropzone:hover, .dropzone.dragover {
-      background: rgba(56, 189, 248, 0.12); border-color: var(--accent); color: #fff;
-      transform: scale(1.005);
-    }
-    .dropzone-title { font-size: 15px; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
-
-    .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-    .filter-group { display: flex; gap: 6px; }
-    .filter-chip { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; background: rgba(255,255,255,0.06); color: var(--muted); border: 1px solid transparent; transition: all 0.15s; }
-    .filter-chip.active { background: rgba(56, 189, 248, 0.18); color: var(--accent); border-color: rgba(56, 189, 248, 0.35); }
-    .search-input { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #fff; outline: none; font-size: 13px; width: 220px; }
-
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-    .card {
-      background: var(--card-bg); border: 1px solid var(--border); backdrop-filter: blur(20px);
-      border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;
-      transition: all 0.2s ease;
-    }
-    .card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.22); box-shadow: 0 12px 30px rgba(0,0,0,0.4); }
-    .card.disabled { opacity: 0.7; }
-    .card-top { display: flex; gap: 12px; align-items: flex-start; }
-    .card-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); flex-shrink: 0; display: grid; place-items: center; overflow: hidden; }
-    .card-icon img { width: 100%; height: 100%; object-fit: contain; }
-    .card-info { flex: 1; min-width: 0; }
-    .card-title { font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-id { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: ui-monospace, monospace; }
-    .card-desc { font-size: 12px; color: #cbd5e1; line-height: 1.45; min-height: 36px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-    .card-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); }
-    .switch-wrap { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-    .switch { width: 36px; height: 20px; border-radius: 20px; background: rgba(255,255,255,0.15); position: relative; transition: all 0.2s; }
-    .switch.active { background: var(--success); box-shadow: 0 0 10px rgba(52, 211, 153, 0.4); }
-    .switch-knob { width: 14px; height: 14px; border-radius: 50%; background: #fff; position: absolute; left: 3px; top: 3px; transition: all 0.2s; }
-    .switch.active .switch-knob { left: 19px; }
-
-    .toast {
-      position: fixed; right: 24px; bottom: 24px; z-index: 9999;
-      background: rgba(15, 23, 42, 0.95); color: #fff; padding: 12px 20px; border-radius: 10px;
-      font-weight: 600; font-size: 13px; border: 1px solid var(--border); box-shadow: 0 12px 36px rgba(0,0,0,0.5);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <div class="brand-row">
-        <div class="brand-icon">✦</div>
-        <div>
-          <div class="brand-title">ShinawaseLoader Web 控制台</div>
-          <div class="brand-subtitle">ECHO 外部模组加载系统 · 端口 ${port}</div>
-        </div>
-      </div>
-      <div class="header-actions">
-        <button class="btn primary" onclick="launchEcho()">🚀 启动 ECHO</button>
-        <button class="btn" onclick="reinjectMods()">🔄 重新注入</button>
-        <button class="btn" onclick="refresh()">刷新</button>
-      </div>
-    </header>
-
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-icon">📦</div>
-        <div>
-          <div class="stat-num" id="stat-total">0</div>
-          <div class="stat-label">已安装模组</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🟢</div>
-        <div>
-          <div class="stat-num" id="stat-active">0</div>
-          <div class="stat-label">已启用模组</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🔌</div>
-        <div>
-          <div class="stat-num">${port}</div>
-          <div class="stat-label">Loader 端口</div>
-        </div>
-      </div>
-    </div>
-
-    <input type="file" id="file" accept=".echomod,.echo,application/json,application/zip" style="display:none" onchange="uploadMod(this.files[0])">
-    <div class="dropzone" id="dropzone" onclick="document.getElementById('file').click()">
-      <div class="dropzone-title">📥 点击选择或拖放 .echomod / .echo 文件到此处</div>
-      <div>快速安装并部署外部模组至 ECHO</div>
-    </div>
-
-    <div class="toolbar">
-      <div class="filter-group">
-        <div class="filter-chip active" onclick="setFilter('all', this)">全部</div>
-        <div class="filter-chip" onclick="setFilter('active', this)">已启用</div>
-        <div class="filter-chip" onclick="setFilter('inactive', this)">已停用</div>
-      </div>
-      <input type="text" class="search-input" id="search" placeholder="搜索模组..." oninput="render()">
-    </div>
-
-    <div class="grid" id="mods-grid"></div>
-  </div>
-
-  <script>
-    const $ = s => document.querySelector(s);
-    let allMods = [];
-    let activeFilter = 'all';
-
-    function toast(text) {
-      const el = document.createElement('div');
-      el.className = 'toast';
-      el.textContent = text;
-      document.body.append(el);
-      setTimeout(() => el.remove(), 3000);
-    }
-
-    async function api(path, opt) {
-      const res = await fetch(path, opt);
-      const val = await res.json();
-      if (!res.ok) throw new Error(val.error || '请求失败');
-      return val;
-    }
-
-    function esc(s) {
-      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-    }
-
-    function setFilter(filter, el) {
-      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-      el.classList.add('active');
-      activeFilter = filter;
-      render();
-    }
-
-    function render() {
-      const query = ($('#search').value || '').toLowerCase();
-      const filtered = allMods.filter(m => {
-        if (activeFilter === 'active' && !m.enabled) return false;
-        if (activeFilter === 'inactive' && m.enabled) return false;
-        if (query) return (m.name||'').toLowerCase().includes(query) || (m.id||'').toLowerCase().includes(query);
-        return true;
-      });
-
-      $('#stat-total').textContent = allMods.length;
-      $('#stat-active').textContent = allMods.filter(m => m.enabled).length;
-
-      $('#mods-grid').innerHTML = filtered.map(m => \`
-        <article class="card \${m.enabled ? '' : 'disabled'}">
-          <div class="card-top">
-            <div class="card-icon">
-              \${m.iconDataUrl ? '<img src="' + m.iconDataUrl + '">' : '✦'}
-            </div>
-            <div class="card-info">
-              <div class="card-title">\${esc(m.name)}</div>
-              <div class="card-id">\${esc(m.id)} · v\${esc(m.version)}</div>
-            </div>
-          </div>
-          <div class="card-desc">\${esc(m.description || '暂无简介')}</div>
-          <div class="card-bottom">
-            <div class="switch-wrap" onclick="toggleMod('\${esc(m.id)}', \${!m.enabled})">
-              <div class="switch \${m.enabled ? 'active' : ''}">
-                <div class="switch-knob"></div>
-              </div>
-              <span style="font-size:12px;font-weight:600">\${m.enabled ? '已启用' : '已停用'}</span>
-            </div>
-            <button class="btn danger" onclick="removeMod('\${esc(m.id)}')">卸载</button>
-          </div>
-        </article>
-      \`).join('') || '<div style="color:var(--muted);grid-column:1/-1;text-align:center;padding:40px">尚未安装符合条件的模组。</div>';
-    }
-
-    async function refresh() {
-      try {
-        const data = await api('/api/mods');
-        allMods = data.mods || [];
-        render();
-      } catch (e) { toast('刷新失败: ' + e.message); }
-    }
-
-    async function toggleMod(id, enable) {
-      try {
-        await api('/api/mod/' + encodeURIComponent(id) + '/' + (enable ? 'enable' : 'disable'), { method: 'POST' });
-        toast((enable ? '已启用 ' : '已停用 ') + id);
-        refresh();
-      } catch (e) { toast('操作失败: ' + e.message); }
-    }
-
-    async function removeMod(id) {
-      if (confirm('确认卸载模组 ' + id + ' 吗？')) {
-        try {
-          await api('/api/mod/' + encodeURIComponent(id), { method: 'DELETE' });
-          toast('已卸载 ' + id);
-          refresh();
-        } catch (e) { toast('卸载失败: ' + e.message); }
-      }
-    }
-
-    async function uploadMod(file) {
-      if (!file) return;
-      toast('正在上传 ' + file.name + '...');
-      try {
-        const buf = await file.arrayBuffer();
-        let bin = '';
-        const bytes = new Uint8Array(buf);
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        await api('/api/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: btoa(bin) }),
-        });
-        toast('✔ 模组安装成功！');
-        $('#file').value = '';
-        refresh();
-      } catch (e) { toast('安装失败: ' + e.message); }
-    }
-
-    async function launchEcho() {
-      try {
-        const r = await api('/api/launch', { method: 'POST' });
-        toast('已启动 ECHO: ' + r.executable);
-      } catch (e) { toast('启动失败: ' + e.message); }
-    }
-
-    async function reinjectMods() {
-      try {
-        const r = await api('/api/reinject', { method: 'POST' });
-        toast('✔ 已向 ' + r.targets + ' 个窗口重新注入模组');
-      } catch (e) { toast('注入失败: ' + e.message); }
-    }
-
-    const dropzone = $('#dropzone');
-    dropzone.ondragover = e => { e.preventDefault(); dropzone.classList.add('dragover'); };
-    dropzone.ondragleave = () => dropzone.classList.remove('dragover');
-    dropzone.ondrop = e => {
-      e.preventDefault();
-      dropzone.classList.remove('dragover');
-      const file = e.dataTransfer?.files?.[0];
-      if (file) uploadMod(file);
-    };
-
-    refresh();
-  </script>
-</body>
-</html>`;
-
-const webUiDisabledHtml = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <title>ShinawaseLoader · Web 控制台未开启</title>
-  <style>
-    body { font-family: -apple-system, system-ui, sans-serif; background: #0b0f17; color: #f1f5f9; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-    .box { max-width: 520px; background: rgba(18, 24, 38, 0.85); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 28px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
-    .icon { font-size: 40px; margin-bottom: 12px; }
-    h1 { font-size: 20px; margin-bottom: 8px; color: #38bdf8; }
-    p { font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 10px 0; }
-    code { background: rgba(0,0,0,0.4); padding: 3px 6px; border-radius: 4px; color: #e2e8f0; font-family: ui-monospace, monospace; }
-  </style>
-</head>
-<body>
-  <div class="box">
-    <div class="icon">🔒</div>
-    <h1>Web 控制台默认处于关闭状态</h1>
-    <p>ShinawaseLoader 后端 API 及游戏内注入 Mod 管理器运行正常。</p>
-    <p>如需开启独立 Web 管理控制台，请在 <code>loader.config.json</code> 中将 <code>"enableWebConsole": true</code>，或启动时附加 <code>--web-console</code> 参数。</p>
-  </div>
-</body>
-</html>`;
+const readLogTail = (file, tail = 80) => {
+  try {
+    const raw = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    return raw.split(/\r?\n/).filter(Boolean).slice(-Math.max(1, tail)).join('\n');
+  } catch { return ''; }
+};
+const runConsoleCommand = async (line) => {
+  const parts = String(line || '').trim().split(/\s+/);
+  const cmd = String(parts.shift() || '').toLowerCase();
+  if (!cmd || cmd === 'help') {
+    return [
+      'help                 show this list',
+      'status               loader ports and packages',
+      'inject               reinject enabled mods',
+      'debug [on|off]       toggle debug logging',
+      'log [n]              tail loader.log',
+      'error [n]            tail errors.log',
+      'packages             installed packages',
+      'clear                clear this console',
+    ].join('\n');
+  }
+  if (cmd === 'status') {
+    return JSON.stringify({
+      loaderVersion, port, debugPort, inspectPort, debugMode, locale: locale || 'zh',
+      packages: modSummaries().map((item) => (item.enabled ? '* ' : '  ') + (item.name || item.id)),
+    }, null, 2);
+  }
+  if (cmd === 'inject' || cmd === 'reinject') return 'injected targets=' + (await requestInjection('console'));
+  if (cmd === 'debug') {
+    const enabled = parts[0] ? !['off', '0', 'false'].includes(String(parts[0]).toLowerCase()) : !debugMode;
+    setDebugMode(enabled);
+    return 'debug ' + (debugMode ? 'on' : 'off');
+  }
+  if (cmd === 'log') return readLogTail(logFilePath, Number(parts[0]) || 80) || '(empty)';
+  if (cmd === 'error' || cmd === 'errors') return readLogTail(errorLogPath, Number(parts[0]) || 80) || '(empty)';
+  if (cmd === 'packages') {
+    return modSummaries().map((item) => (item.enabled ? 'on ' : 'off') + '  ' + (item.name || item.id) + '  ' + (item.version || '')).join('\n') || '(none)';
+  }
+  if (cmd === 'locale') return String(locale || 'zh');
+  return 'unknown command: ' + cmd;
+};
 
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://127.0.0.1:${port}`);
     if (request.method === 'OPTIONS') return jsonResponse(response, 204, {});
     if (request.method === 'GET' && url.pathname === '/') {
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return response.end(enableWebConsole ? webUiHtml : webUiDisabledHtml);
+      return jsonResponse(response, 200, { ok: true, service: 'ShinawaseLoader', version: loaderVersion });
     }
     if (request.method === 'GET' && url.pathname === '/api/status') {
       const togetherRelay = isTogetherEnabled() && togetherRelayServer
         ? { port: togetherRelayPort, url: `http://127.0.0.1:${togetherRelayPort}` }
         : null;
       return jsonResponse(response, 200, {
-        ok: true, loaderVersion, root, gameRoot, enableWebConsole, port, debugPort,
+        ok: true, loaderVersion, root, gameRoot, port, debugPort,
         loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
         nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort, locale: locale || 'zh',
         debugMode, stats: loaderStats,
@@ -1854,7 +1644,7 @@ const server = createServer(async (request, response) => {
       });
     }
     if (request.method === 'GET' && url.pathname === '/api/echoes') return jsonResponse(response, 200, { echoes: discoverEchoes() });
-    if (request.method === 'GET' && url.pathname === '/api/sdk') return jsonResponse(response, 200, { version: 1, mode: 'external-cdp', player: { version: 1, mode: 'external-cdp' }, extend: { version: 1, mode: 'external-cdp' }, native: { version: 1, mode: 'in-process-asar-bridge', enabled: nativeHostEnabled, memoryApi: nativeMemoryApi }, main: { version: 1, mode: 'in-process-asar-bridge' }, ...await sdkStatus() });
+    if (request.method === 'GET' && url.pathname === '/api/sdk') return jsonResponse(response, 200, { version: 1, mode: 'external-cdp', player: { version: 1, mode: 'external-cdp' }, extend: { version: 1, mode: 'external-cdp' }, native: { version: 1, mode: 'in-process-asar-bridge', enabled: nativeHostEnabled, memoryApi: nativeMemoryApi, memory: nativeMemoryApi, scan: true }, main: { version: 1, mode: 'in-process-asar-bridge' }, ...await sdkStatus() });
     if (request.method === 'GET' && url.pathname === '/api/native/status') {
       try { return jsonResponse(response, 200, await callNativeHost({ method: 'status' })); }
       catch (error) { return jsonResponse(response, 200, { ok: false, enabled: nativeHostEnabled, error: error instanceof Error ? error.message : String(error), hint: 'Enable app-asar-bridge so the in-process native host can start inside ECHO.' }); }
@@ -1873,6 +1663,10 @@ const server = createServer(async (request, response) => {
       } catch {}
       return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath, file: kind, text });
     }
+    if (request.method === 'POST' && url.pathname === '/api/console') {
+      const body = await readRequest(request);
+      return jsonResponse(response, 200, { ok: true, output: await runConsoleCommand(body.command) });
+    }
     if (request.method === 'POST' && url.pathname === '/api/locale') {
       const body = await readRequest(request);
       locale = persistLocale(body.locale);
@@ -1880,8 +1674,7 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && url.pathname === '/api/debug') {
       const body = await readRequest(request);
-      const enabled = body.enabled === true;
-      writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), debugMode: enabled, enableWebConsole: enabled || loaderConfig.enableWebConsole });
+      const enabled = setDebugMode(body.enabled === true);
       return jsonResponse(response, 200, { ok: true, debugMode: enabled });
     }
     if (request.method === 'POST' && url.pathname === '/api/perf') {
@@ -2077,7 +1870,6 @@ const run = async () => {
     console.log(`${c.gray}${t('inspect')}${c.reset}  ${inspectPort}`);
     console.log(`${c.gray}${t('native')}${c.reset}   ${nativeHostEnabled ? nativePort : t('off')}`);
     if (togetherRelayServer) console.log(`${c.gray}${t('together')}${c.reset} ${togetherRelayPort}`);
-    console.log(`${c.gray}${t('console')}${c.reset}  ${enableWebConsole ? t('on') : t('off')}`);
   });
 
   if (isAttach) {
