@@ -504,26 +504,91 @@ const cancelNotice = () => { state.noticeOpen = false; state.noticeConsent = '';
 const loadInitial = async () => { let settings = {}; try { settings = await appApi()?.getSettings?.() || {}; } catch {} state.downloadEnabled = settings.downloadsFeatureUnlocked === true; state.accepted = config.requireConsent === false || settings.streamingPlaylistImportNoticeAccepted === true; state.ready = true; render(); if (!state.accepted) { state.noticeOpen = false; return; } try { await loadProviders(); await Promise.all([loadFavorites(), loadJobs(), loadAccountStatuses().catch(() => undefined)]); bindAccountStatuses(); } catch (error) { state.accountErrors.__global = error instanceof Error ? error.message : String(error); } render(); if (state.query && !state.result) await runSearch(1, 'replace'); };
 const bindAccountStatuses = () => { try { accountUnsubscribe?.(); } catch {} const api = accountApi(); if (!api?.onStatusesChanged) return; accountUnsubscribe = api.onStatusesChanged((statuses) => { if (Array.isArray(statuses)) state.accountStatuses = statuses; void loadProviders(true).catch(() => undefined); refreshAccountPage(); }); };
 const installNativePlaylistImport = () => {
-  const mount = () => {
-    const page = document.querySelector('.playlists-page') || document.querySelector('.page-surface[data-route-id="playlists"]');
-    const sidebar = page?.querySelector('.playlist-sidebar');
-    if (!sidebar || sidebar.querySelector('[data-echo-streaming-playlist-import]')) return;
-    const stream = streamApi();
-    if (!stream?.importPlaylistFromUrl) return;
-    const form = make('form', 'echo-playlist-url-import');
-    form.dataset.echoStreamingPlaylistImport = 'true';
-    form.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:10px 12px 16px;margin-top:auto;flex:none';
+  const marker = 'data-echo-streaming-playlist-import';
+  const log = (message, extra) => {
+    if (extra !== undefined) console.info('[ECHO-Streaming]', message, extra);
+    else console.info('[ECHO-Streaming]', message);
+  };
+  let lastMissAt = 0;
+  let lastMissReason = '';
+  const miss = (reason, extra) => {
+    const now = Date.now();
+    if (reason === lastMissReason && now - lastMissAt < 4000) return;
+    lastMissAt = now;
+    lastMissReason = reason;
+    log(reason, extra);
+  };
+  const first = (root, selectors) => {
+    for (const selector of selectors) {
+      const node = root.querySelector(selector);
+      if (node) return node;
+    }
+    return null;
+  };
+  // Route transitions keep a hidden copy of the previous page in the DOM
+  // (AnimatedOutlet double-buffering), so the page lookup must only accept
+  // copies whose surrounding <main> is actually rendered.
+  const isLivePage = (node) => {
+    if (!node || !node.isConnected) return false;
+    const surface = node.closest('main') || node;
+    return getComputedStyle(surface).display !== 'none';
+  };
+  const findPage = () => {
+    const selectors = [
+      '.playlists-page',
+      '.playlists-page--local-only',
+      '.page-surface[data-route-id="playlists"]',
+      '[data-route-id="playlists"]',
+      'main [aria-label="歌单"]',
+      'main [aria-label="Playlists"]',
+      'main [aria-label="播放清單"]',
+    ];
+    for (const selector of selectors) {
+      for (const node of document.querySelectorAll(selector)) {
+        if (isLivePage(node)) return node;
+      }
+    }
+    return null;
+  };
+  const findHost = (page) => {
+    const header = first(page, ['.playlist-sidebar-header']);
+    if (header) return { host: header, place: 'after', label: 'playlist-sidebar-header' };
+    const list = first(page, ['.playlist-list', '.playlist-sidebar-panel .playlist-list']);
+    if (list) return { host: list, place: 'before', label: 'playlist-list' };
+    const panel = first(page, ['.playlist-sidebar-panel']);
+    if (panel) return { host: panel, place: 'start', label: 'playlist-sidebar-panel' };
+    const sidebar = first(page, ['.playlist-sidebar', 'aside.playlist-sidebar', 'aside']);
+    if (sidebar) return { host: sidebar, place: 'start', label: 'playlist-sidebar' };
+    return { host: page, place: 'start', label: 'playlist-page' };
+  };
+  const attach = (target, place, node) => {
+    if (place === 'after') target.insertAdjacentElement('afterend', node);
+    else if (place === 'before') target.insertAdjacentElement('beforebegin', node);
+    else if (place === 'start') target.insertAdjacentElement('afterbegin', node);
+    else target.append(node);
+  };
+  const createForm = () => {
+    const form = make('form', 'streaming-section playlist-import-box echo-playlist-url-import');
+    form.setAttribute(marker, 'true');
+    form.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:10px 0 12px;margin:0;flex:none;min-width:0';
     const hint = make('p', '', copy.playlistHint);
     hint.style.cssText = 'margin:0;color:var(--theme-muted-text,#6c7179);font-size:12px;line-height:1.4';
     const row = make('div', '');
-    row.style.cssText = 'display:flex;gap:8px;align-items:center';
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;min-width:0';
     const input = document.createElement('input');
-    input.type = 'url';
+    input.type = 'text';
     input.placeholder = copy.playlistPlaceholder;
+    input.setAttribute('aria-label', copy.addPlaylist);
     input.style.cssText = 'flex:1;min-width:0;min-height:36px;padding:0 10px;border:1px solid var(--theme-field-border,rgba(0,0,0,0.14));border-radius:8px;background:var(--theme-field-bg,rgba(255,255,255,0.82));color:inherit';
     const button = actionButton(copy.add, 'link', async () => {
       const url = input.value.trim();
       if (!url) return;
+      const stream = streamApi();
+      if (!stream?.importPlaylistFromUrl) {
+        log('importPlaylistFromUrl missing; streaming bridge is not exposed on this page');
+        showChromeNotice(copy.noBridge);
+        return;
+      }
       button.disabled = true;
       try {
         const imported = await stream.importPlaylistFromUrl(url);
@@ -539,20 +604,54 @@ const installNativePlaylistImport = () => {
     form.addEventListener('submit', (event) => { event.preventDefault(); button.click(); });
     row.append(input, button);
     form.append(hint, row);
-    if (getComputedStyle(sidebar).flexDirection !== 'column') {
-      sidebar.style.display = 'flex';
-      sidebar.style.flexDirection = 'column';
+    return form;
+  };
+  const mount = () => {
+    let hasLiveForm = false;
+    for (const existing of document.querySelectorAll(`[${marker}]`)) {
+      if (isLivePage(existing)) hasLiveForm = true;
+      else existing.remove();
     }
-    const list = sidebar.querySelector('.playlist-list');
-    if (list?.parentElement === sidebar) list.insertAdjacentElement('afterend', form);
-    else sidebar.append(form);
+    if (hasLiveForm) return true;
+    const page = findPage();
+    if (!page) {
+      miss('playlist page not found; waiting for .playlists-page / [data-route-id=playlists]');
+      return false;
+    }
+    const target = findHost(page);
+    if (!target?.host) {
+      miss('playlist page found but no injection host', { classes: page.className });
+      return false;
+    }
+    const form = createForm();
+    attach(target.host, target.place, form);
+    if (form.isConnected) {
+      log('injected playlist import control', { host: target.label, place: target.place });
+      return true;
+    }
+    miss('playlist import control was not connected after insert', { host: target.label });
+    return false;
   };
   mount();
-  const observer = new MutationObserver(mount);
+  const observer = new MutationObserver(() => { mount(); });
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  return () => observer.disconnect();
+  const onRoute = (event) => {
+    const route = event?.detail;
+    if (route && route !== 'playlists') return;
+    window.setTimeout(mount, 50);
+  };
+  window.addEventListener('app:navigate:route', onRoute);
+  window.addEventListener('popstate', mount);
+  const poll = window.setInterval(mount, 1500);
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('app:navigate:route', onRoute);
+    window.removeEventListener('popstate', mount);
+    window.clearInterval(poll);
+  };
 };
-const installListeners = () => { if (downloadApi()?.onJobsUpdated) downloadUnsubscribe = downloadApi().onJobsUpdated((jobs) => { state.downloadJobs = Array.isArray(jobs) ? jobs : []; indexDownloadJobs(state.downloadJobs); state.downloadJobs.forEach(notifyDownloadJob); render(); }); bindAccountStatuses(); playlistPageUnsubscribe = installNativePlaylistImport(); statusTimer = window.setInterval(() => { if (disposed) return; const key = playCurrentStableKey(); if (key !== state.currentStableKey) { state.currentStableKey = key; render(); } }, 1000); };
+playlistPageUnsubscribe = installNativePlaylistImport();
+const installListeners = () => { if (downloadApi()?.onJobsUpdated) downloadUnsubscribe = downloadApi().onJobsUpdated((jobs) => { state.downloadJobs = Array.isArray(jobs) ? jobs : []; indexDownloadJobs(state.downloadJobs); state.downloadJobs.forEach(notifyDownloadJob); render(); }); bindAccountStatuses(); statusTimer = window.setInterval(() => { if (disposed) return; const key = playCurrentStableKey(); if (key !== state.currentStableKey) { state.currentStableKey = key; render(); } }, 1000); };
 
-const disposeSidebar = external.sidebar.register({ id: 'main', label: manifest.name || copy.streaming, icon: '♫', order: Number(manifest.sidebarOrder) || 40, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); cancelPlaybackPrepare(); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); accountUnsubscribe = null; downloadUnsubscribe = null; playlistPageUnsubscribe = null; pageRoot = null; }; } });
+const disposeSidebar = external.sidebar.register({ id: 'main', label: manifest.name || copy.streaming, icon: '♫', order: Number(manifest.sidebarOrder) || 40, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); cancelPlaybackPrepare(); accountUnsubscribe?.(); downloadUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); accountUnsubscribe = null; downloadUnsubscribe = null; pageRoot = null; }; } });
 return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); cancelPlaybackPrepare(); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); disposeSidebar?.(); };

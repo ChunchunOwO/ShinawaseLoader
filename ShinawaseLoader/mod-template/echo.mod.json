@@ -7,5 +7,6 @@
   "icon": "icon.svg",
   "entry": "mod.js",
   "config": "config.json",
-  "configSchema": "config.schema.json"
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js"
 }

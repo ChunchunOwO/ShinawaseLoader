@@ -12,3 +12,7 @@ ShinawaseLoader/echo-native-host.node
 ShinawaseLoader/node.exe
 Packages/template-self-test.echomod
 /backup.zip
+/shinawaseloader-*-sourcecode.zip
+/dev-preview/
+/.tmp-asar/
+/ShinawaseLoader/node_modules/

@@ -1,4 +1,5 @@
 {
   "enabledFeature": true,
-  "message": "Hello from an external ECHO mod"
+  "message": "Hello from an external ECHO mod",
+  "accent": "auto"
 }

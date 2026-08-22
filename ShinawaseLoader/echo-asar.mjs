@@ -218,6 +218,52 @@ const applyStreamingQualityPassthrough = (text) => {
   return next;
 };
 
+// Electron 37 on Windows crashes natively (0xC0000005) when always-on-top is
+// applied to a transparent+frameless window during its first moments of life:
+// both `alwaysOnTop: true` in the constructor options and a synchronous
+// setAlwaysOnTop() right after construction kill the whole process. ECHO's
+// pet, desktop-lyrics and mini-player windows all do exactly that, which turns
+// enabling those features into a crash loop (the enable flag persists before
+// the crash). Verified live: the same call is safe once the window is a few
+// hundred milliseconds old. The fix constructs without alwaysOnTop, stamps the
+// window's creation time, and makes the applyXxxAlwaysOnTop helpers defer the
+// raise until the window is at least 600ms old.
+const applyAuxiliaryWindowCrashFix = (text) => {
+  if (text.includes('__shinawaseBornAt')) return text;
+  const fatalCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: true,\n    webPreferences: {';
+  const safeCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: false,\n    webPreferences: {';
+  let next = text;
+  while (next.includes(fatalCtor)) next = next.replace(fatalCtor, safeCtor);
+  for (const assignment of ['petWindow = window;', 'desktopLyricsWindow = window;', 'miniPlayerWindow = window;']) {
+    const anchor = `  ${assignment}\n  window.setMenuBarVisibility(false);`;
+    if (next.includes(anchor)) {
+      next = next.replace(anchor, `  ${assignment}\n  window.__shinawaseBornAt = Date.now();\n  window.setMenuBarVisibility(false);`);
+    }
+  }
+  const raiseBody = (extra) => '{\n'
+    + '  const raise = () => {\n'
+    + '    if (window.isDestroyed()) return;\n'
+    + '    window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n'
+    + '    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n'
+    + `${extra}`
+    + '  };\n'
+    + '  const delay = Math.max(0, 600 - (Date.now() - (window.__shinawaseBornAt || 0)));\n'
+    + '  if (delay === 0) raise(); else setTimeout(raise, delay);\n'
+    + '};';
+  const helpers = [
+    ['const applyPetAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n};',
+      `const applyPetAlwaysOnTop = (window) => ${raiseBody('')}`],
+    ['const applyMiniPlayerAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n};',
+      `const applyMiniPlayerAlwaysOnTop = (window) => ${raiseBody('')}`],
+    ['const applyDesktopLyricsAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n  window.moveTop();\n};',
+      `const applyDesktopLyricsAlwaysOnTop = (window) => ${raiseBody('    window.moveTop();\n')}`],
+  ];
+  for (const [from, to] of helpers) {
+    if (next.includes(from)) next = next.replace(from, to);
+  }
+  return next;
+};
+
 const patchPlayback = (text) => {
   if (text.includes(playbackMarker)) return applyStreamingQualityPassthrough(text);
   const validation = 'if (provider2 !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Music streaming playback is not available in the Steam distribution.");\n    }';
@@ -312,7 +358,7 @@ const patch = (root) => {
   const currentPreloadText = current.bytes.subarray(current.dataStart + Number(preload.info.offset), current.dataStart + Number(preload.info.offset) + Number(preload.info.size)).toString('utf8');
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
-  const mainText = patchPlayback(mainWithNative);
+  const mainText = applyAuxiliaryWindowCrashFix(patchPlayback(mainWithNative));
   const preloadText = patchPreload(currentPreloadText);
   if (mainText === currentText && preloadText === currentPreloadText) return { status: 'already-patched' };
   const backup = backupFor(root);

@@ -1,6 +1,18 @@
 const __shinawaseModule = require('node:module');
 const __shinawasePath = require('node:path');
-const __shinawaseBridgeUrl = require('node:url').pathToFileURL(__shinawasePath.join(process.env.ECHO_MOD_HOME || __dirname, 'streaming-bridge.cjs')).href;
+const __shinawaseFs = require('node:fs');
+const __shinawaseBridgeUrl = require('node:url').pathToFileURL(__shinawasePath.join(__dirname, 'streaming-bridge.cjs')).href;
+const __shinawaseReadWasm = (fileName) => {
+  const dirs = [__dirname, process.env.ECHO_MOD_HOME, __shinawasePath.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', '@clamber_l', 'crypto', 'dist')].filter(Boolean);
+  const seen = new Set();
+  for (const dir of dirs) {
+    const file = __shinawasePath.join(dir, fileName);
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (__shinawaseFs.existsSync(file)) return __shinawaseFs.readFileSync(file);
+  }
+  throw new Error('[ShinawaseLoader] wasm not found: ' + fileName + ' searched ' + [...seen].join(' | '));
+};
 process.env.NODE_PATH = [process.env.NODE_PATH, __shinawasePath.join(process.resourcesPath || '', 'app.asar', 'node_modules'), __shinawasePath.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules')].filter(Boolean).join(__shinawasePath.delimiter);
 __shinawaseModule.Module._initPaths();
 var __create = Object.create;
@@ -82025,7 +82037,7 @@ async function __wbg_init(module_or_path) {
     }
   }
   if (typeof module_or_path === "undefined") {
-    module_or_path = new URL("um_wasm_bg.wasm", __shinawaseBridgeUrl);
+    module_or_path = __shinawaseReadWasm("um_wasm_bg.wasm");
   }
   const imports = __wbg_get_imports();
   if (typeof module_or_path === "string" || typeof Request === "function" && module_or_path instanceof Request || typeof URL === "function" && module_or_path instanceof URL) {
@@ -82035,16 +82047,7 @@ async function __wbg_init(module_or_path) {
   return __wbg_finalize_init(instance, module2);
 }
 function loader() {
-  {
-    const url = new URL("um_wasm_bg.wasm", __shinawaseBridgeUrl);
-    const wasm2 = url.protocol === "file:" ? import(
-      /* @vite-ignore */
-      "node:fs/promises"
-    ).then((fs2) => fs2.readFile(url)).catch((err2) => {
-      console.log("read wasm failed", err2);
-    }) : void 0;
-    return __wbg_init({ module_or_path: wasm2 }).then(() => (initPanicHook(), true));
-  }
+  return __wbg_init({ module_or_path: __shinawaseReadWasm("um_wasm_bg.wasm") }).then(() => (initPanicHook(), true));
 }
 var wasm, cachedTextDecoder, cachedUint8ArrayMemory0, WASM_VECTOR_LEN, cachedTextEncoder, encodeString, cachedDataViewMemory0, AudioTypeResultFinalization, AudioTypeResult, JooxFileFinalization, KWMDecipherFinalization, KWMDecipherV1Finalization, KuGouFinalization, KuGou, KuGouHeaderFinalization, KuGouHeader, KuwoHeaderFinalization, Migu3DFinalization, NCMFileFinalization, QMC2Finalization, QMCFooterFinalization, QingTingFMFinalization, XiamiFinalization, XmlyPCFinalization, ready;
 var init_loader = __esm({
@@ -140201,13 +140204,249 @@ var init_audioPublicApi = __esm({
   }
 });
 
-// ShinawaseLoader/.streaming-bridge-2600.ts
-var streaming_bridge_2600_exports = {};
-__export(streaming_bridge_2600_exports, {
+// ShinawaseLoader/playback-shim.cjs
+var require_playback_shim = __commonJS({
+  "ShinawaseLoader/playback-shim.cjs"(exports2, module2) {
+    "use strict";
+    var http = require("node:http");
+    var https = require("node:https");
+    var { randomBytes: randomBytes6 } = require("node:crypto");
+    var CHANNELS = {
+      play: "playback:play-media-item",
+      resolve: "playback:resolve-media-item",
+      prepare: "playback:prepare-media-item"
+    };
+    var SKIP = /* @__PURE__ */ new Set(["m3u8", "spotify"]);
+    var invokeMap = (ipcMain6) => {
+      if (ipcMain6?._invokeHandlers instanceof Map) return ipcMain6._invokeHandlers;
+      for (const key of Object.getOwnPropertyNames(ipcMain6 || {})) {
+        try {
+          const value = ipcMain6[key];
+          if (value instanceof Map) return value;
+        } catch {
+        }
+      }
+      return null;
+    };
+    var streamingItem = (raw) => {
+      const item = raw && typeof raw === "object" ? raw.item : null;
+      if (!item || item.mediaType !== "streaming" || !item.provider || SKIP.has(String(item.provider))) return null;
+      return item;
+    };
+    var resolvePlayback = async (item, forceRefresh) => {
+      const resolve30 = globalThis.__shinawaseResolveStreamingPlayback;
+      if (typeof resolve30 !== "function") throw new Error("streaming_bridge_not_ready");
+      const source = await resolve30({
+        provider: item.provider,
+        providerTrackId: item.providerTrackId,
+        quality: item.quality || item.streamingQuality,
+        forceRefresh: forceRefresh === true
+      });
+      if (!source?.url) throw new Error("streaming_source_unavailable");
+      return source;
+    };
+    var resolvePlaybackRetry = async (item, forceRefresh) => {
+      try {
+        return await resolvePlayback(item, forceRefresh);
+      } catch (error) {
+        if (forceRefresh === true) throw error;
+        return resolvePlayback(item, true);
+      }
+    };
+    var staleStatus = (code) => code === 404 || code === 403 || code === 410;
+    var installProxy = () => {
+      if (globalThis.__shinawaseMediaProxy) return globalThis.__shinawaseMediaProxy;
+      const tokens = /* @__PURE__ */ new Map();
+      const pipeUpstream = (req, res, entry, retried) => {
+        let target;
+        try {
+          target = new URL(entry.url);
+        } catch {
+          res.statusCode = 502;
+          res.end();
+          return;
+        }
+        const headers = { ...entry.headers || {} };
+        if (req.headers.range) headers.Range = req.headers.range;
+        const lib = target.protocol === "https:" ? https : http;
+        const upstream = lib.request(entry.url, { method: "GET", headers }, (up) => {
+          if (staleStatus(up.statusCode) && entry.item && retried !== true) {
+            up.resume();
+            resolvePlayback(entry.item, true).then((source) => {
+              entry.url = source.url;
+              entry.headers = source.headers && typeof source.headers === "object" ? source.headers : {};
+              pipeUpstream(req, res, entry, true);
+            }).catch(() => {
+              if (!res.headersSent) res.statusCode = 404;
+              res.end();
+            });
+            return;
+          }
+          const pass = {};
+          for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "content-disposition"]) {
+            if (up.headers[name]) pass[name] = up.headers[name];
+          }
+          res.writeHead(up.statusCode || 502, pass);
+          up.pipe(res);
+        });
+        upstream.on("error", () => {
+          if (!res.headersSent) res.statusCode = 502;
+          res.end();
+        });
+        req.on("close", () => upstream.destroy());
+        upstream.end();
+      };
+      const server = http.createServer((req, res) => {
+        const token = String(req.url || "/").split("?")[0].replace(/^\//, "").split("/")[0];
+        const entry = tokens.get(token);
+        if (!entry || entry.expires < Date.now()) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        pipeUpstream(req, res, entry, false);
+      });
+      server.listen(0, "127.0.0.1");
+      const api = {
+        urlFor(source, item) {
+          const token = randomBytes6(12).toString("hex");
+          tokens.set(token, {
+            url: source.url,
+            headers: source.headers && typeof source.headers === "object" ? source.headers : {},
+            item: item || null,
+            expires: Date.now() + 12 * 60 * 1e3
+          });
+          const addr = server.address();
+          return `http://127.0.0.1:${addr.port}/${token}`;
+        }
+      };
+      globalThis.__shinawaseMediaProxy = api;
+      return api;
+    };
+    var stripStreamingChain = (options) => {
+      if (!options || typeof options !== "object") return options;
+      const next = { ...options };
+      if (next.nextItem?.mediaType === "streaming") next.nextItem = null;
+      if (Array.isArray(next.upcomingItems)) {
+        next.upcomingItems = next.upcomingItems.filter((row) => row?.mediaType !== "streaming");
+      }
+      return next;
+    };
+    var asLocalRequest = (raw, item, source) => {
+      const proxy = installProxy();
+      return {
+        ...raw && typeof raw === "object" ? raw : {},
+        item: {
+          mediaType: "local",
+          path: proxy.urlFor(source, item),
+          trackId: String(item.trackId || item.stableKey || item.id || `${item.provider}:${item.providerTrackId}`),
+          title: item.title || "",
+          artist: item.artist || "",
+          album: item.album || "",
+          albumArtist: item.albumArtist || null,
+          duration: Number(item.duration) || null,
+          coverThumb: item.coverThumb || null
+        },
+        automix: stripStreamingChain(raw?.automix),
+        gapless: stripStreamingChain(raw?.gapless)
+      };
+    };
+    var asResolvedSource = (item, source) => {
+      const proxy = installProxy();
+      return {
+        filePath: proxy.urlFor(source, item),
+        inputHeaders: void 0,
+        mimeType: source.mimeType || null,
+        durationSeconds: Number(item.duration) || null,
+        probe: {
+          durationSeconds: Number(item.duration) || void 0,
+          codec: source.codec || void 0,
+          bitrate: source.bitrate || void 0
+        }
+      };
+    };
+    var wrappedChannels = /* @__PURE__ */ new Set();
+    var wrapChannel = (ipcMain6, channel, wrapper) => {
+      if (wrappedChannels.has(channel)) return true;
+      const map2 = invokeMap(ipcMain6);
+      const current = map2?.get(channel);
+      if (typeof current !== "function") return false;
+      ipcMain6.removeHandler(channel);
+      ipcMain6.handle(channel, (event, ...args) => wrapper(current, event, ...args));
+      wrappedChannels.add(channel);
+      return true;
+    };
+    var installStreamingPlaybackShim = (host = {}) => {
+      if (globalThis.__shinawasePlaybackShim?.ok) return globalThis.__shinawasePlaybackShim;
+      const electron11 = host.electron || (() => {
+        try {
+          return require("electron");
+        } catch {
+          return null;
+        }
+      })();
+      const ipcMain6 = host.ipcMain || electron11?.ipcMain;
+      const result = { ok: false, play: false, resolve: false, prepare: false };
+      if (!ipcMain6) {
+        globalThis.__shinawasePlaybackShim = result;
+        return result;
+      }
+      result.play = wrapChannel(ipcMain6, CHANNELS.play, async (original, event, raw) => {
+        const item = streamingItem(raw);
+        if (!item) return original(event, raw);
+        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+        return original(event, asLocalRequest(raw, item, source));
+      });
+      result.resolve = wrapChannel(ipcMain6, CHANNELS.resolve, async (original, event, raw) => {
+        const item = streamingItem(raw);
+        if (!item) return original(event, raw);
+        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+        return asResolvedSource(item, source);
+      });
+      result.prepare = wrapChannel(ipcMain6, CHANNELS.prepare, async (original, event, raw) => {
+        const item = streamingItem(raw);
+        if (!item) return original(event, raw);
+        try {
+          const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+          return original(event, asLocalRequest(raw, item, source));
+        } catch {
+          return void 0;
+        }
+      });
+      result.ok = result.play && result.resolve;
+      host.log?.(`playback shim play=${result.play} resolve=${result.resolve} prepare=${result.prepare}`);
+      globalThis.__shinawasePlaybackShim = result;
+      if (!result.ok && !globalThis.__shinawasePlaybackShimRetry) {
+        globalThis.__shinawasePlaybackShimRetry = true;
+        const started = Date.now();
+        const timer = setInterval(() => {
+          if (Date.now() - started > 15e3) {
+            clearInterval(timer);
+            globalThis.__shinawasePlaybackShimRetry = false;
+            return;
+          }
+          const again = installStreamingPlaybackShim(host);
+          if (again?.ok) {
+            clearInterval(timer);
+            globalThis.__shinawasePlaybackShimRetry = false;
+          }
+        }, 400);
+      }
+      return result;
+    };
+    module2.exports = { installStreamingPlaybackShim };
+    exports2.installStreamingPlaybackShim = installStreamingPlaybackShim;
+  }
+});
+
+// ShinawaseLoader/.streaming-bridge-31932.ts
+var streaming_bridge_31932_exports = {};
+__export(streaming_bridge_31932_exports, {
   registerShinawaseStreamingBridge: () => registerShinawaseStreamingBridge
 });
-module.exports = __toCommonJS(streaming_bridge_2600_exports);
+module.exports = __toCommonJS(streaming_bridge_31932_exports);
 var import_electron44 = require("electron");
+var import_node_module6 = require("node:module");
 init_ipcChannels();
 
 // ../ECHOSteam-main/src/main/ipc/accountIpc.ts
@@ -164443,7 +164682,7 @@ var registerStreamingIpc = () => {
   });
 };
 
-// ShinawaseLoader/.streaming-bridge-2600.ts
+// ShinawaseLoader/.streaming-bridge-31932.ts
 var registered = false;
 var removeHandlers = (channels) => {
   for (const channel of channels) {
@@ -164461,7 +164700,36 @@ var registerShinawaseStreamingBridge = () => {
   registerAccountIpc();
   registerDownloadsIpc();
   registerQobuzIpc();
-  globalThis.__shinawaseResolveStreamingPlayback = (request) => getStreamingService().resolvePlayback(request);
+  globalThis.__shinawaseResolveStreamingPlayback = (request) => {
+    const service = getStreamingService();
+    const payload = request && typeof request === "object" ? request : {};
+    if (payload.forceRefresh === true) {
+      try {
+        service.invalidatePlayback(payload);
+      } catch {
+      }
+    }
+    return service.resolvePlayback(payload);
+  };
+  try {
+    require_playback_shim().installStreamingPlaybackShim();
+  } catch {
+  }
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const loadNcm = (0, import_node_module6.createRequire)(__shinawaseBridgeUrl);
+        const entryPath = loadNcm.resolve("@neteasecloudmusicapienhanced/api");
+        loadNcm(entryPath);
+        const { dirname: dirname35, join: join42 } = loadNcm("node:path");
+        const generateConfig = loadNcm(join42(dirname35(entryPath), "generateConfig.js"));
+        await generateConfig();
+        console.log("[ShinawaseBridge] NCM enhanced client ready (xeapi key provisioned)");
+      } catch (error) {
+        console.warn("[ShinawaseBridge] NCM warm-up failed:", error instanceof Error ? error.message : String(error));
+      }
+    })();
+  }, 4e3);
 };
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {

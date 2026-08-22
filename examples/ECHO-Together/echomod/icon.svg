@@ -1,6 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="ECHO Together">
-  <rect width="96" height="96" rx="20" fill="#0f172a"/>
-  <circle cx="34" cy="48" r="17" fill="#38bdf8"/>
-  <circle cx="62" cy="48" r="17" fill="#f59e0b" opacity=".95"/>
-  <path d="M29 48h38M34 34v28M62 34v28" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="echoTogBg" x1="6" y1="2" x2="40" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9F1239"/>
+      <stop offset=".46" stop-color="#E11D48"/>
+      <stop offset="1" stop-color="#EA580C"/>
+    </linearGradient>
+    <linearGradient id="echoTogSheen" x1="24" y1="1" x2="24" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".26"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="echoTogClip">
+      <rect width="48" height="48" rx="11"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#echoTogClip)">
+    <!-- glass tile -->
+    <rect width="48" height="48" rx="11" fill="url(#echoTogBg)"/>
+    <rect width="48" height="48" rx="11" fill="url(#echoTogSheen)"/>
+    <circle cx="13" cy="10" r="15" fill="#fff" opacity=".14"/>
+    <circle cx="16" cy="13" r="3.6" fill="#fff" opacity=".22"/>
+    <circle cx="37" cy="40" r="11" fill="#fff" opacity=".07"/>
+    <!-- overlapping avatars: evenodd lens is the shared session -->
+    <path fill="#fff" fill-rule="evenodd" d="M17.4 26.4m-10.4 0a10.4 10.4 0 1 1 20.8 0a10.4 10.4 0 1 1-20.8 0M30.6 26.4m-10.4 0a10.4 10.4 0 1 1 20.8 0a10.4 10.4 0 1 1-20.8 0"/>
+    <!-- shared waveform sits in the colored lens -->
+    <g fill="#fff">
+      <rect x="21.1" y="23.2" width="1.85" height="6.2" rx=".92"/>
+      <rect x="23.08" y="20.4" width="1.85" height="9" rx=".92"/>
+      <rect x="25.06" y="22.2" width="1.85" height="7.2" rx=".92"/>
+    </g>
+    <!-- sync link -->
+    <path d="M19.2 14.4c2.6-2.8 7-2.8 9.6 0" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/>
+    <circle cx="24" cy="12.2" r="1.25" fill="#fff"/>
+  </g>
+  <!-- rim: keeps the tile readable on light and dark lists -->
+  <rect x=".65" y=".65" width="46.7" height="46.7" rx="10.35" fill="none" stroke="#fff" stroke-opacity=".24"/>
 </svg>

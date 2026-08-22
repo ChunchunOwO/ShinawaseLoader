@@ -99,3 +99,72 @@ bytes[0] = 0x90;
 await native.protect({ module, offset: hit.offset, size: 5, prot: 7 });
 await native.writeBytes(module, hit.offset, bytes);
 ```
+
+## Custom config UI
+
+A package may ship its own configuration page instead of using the Mods-page schema form.
+
+Add a package-relative script path to `echo.mod.json`:
+
+```json
+{
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js"
+}
+```
+
+When the user opens Config, the loader fetches `GET /api/mod/:id/config` and, if `manifest.configUi` is a string, loads that file from `GET /api/mod/:id/file/:path`. The script runs as an async function whose only argument is `echoConfigUi`. Returning a cleanup function is optional; the loader calls it when the modal closes.
+
+File and config routes work for installed packages even when the package is disabled, so a custom config page can still open and save.
+
+### echoConfigUi
+
+| Member | Signature | Notes |
+| --- | --- | --- |
+| `root` | `HTMLElement` | Modal body. The custom page may replace its contents. |
+| `modId` | `string` | Installed package id. |
+| `manifest` | `object` | Package manifest. |
+| `schema` | `object \| null` | Parsed `configSchema`, if any. |
+| `config` | `object` | Deep clone of the current config (`structuredClone`, JSON fallback). |
+| `save(next)` | `(next) => Promise<object>` | `PUT /api/mod/:id/config`. Toasts on success and returns the saved config. Does **not** close the modal. |
+| `close()` | `() => void` | Close the modal. |
+| `toast(message, type?)` | `(message, type?) => void` | Loader toast. `type` is `info`, `success`, `error`, or `warn`. |
+| `onSave(handler)` | `(handler) => void` | Shows the default Save button. Clicking it `await`s `handler()`. A returned plain object is PUT then the modal closes; a void/null return only closes. |
+| `assetUrl(path)` | `(path) => string` | URL for a packaged file. |
+| `loadAsset(path, options?)` | `(path, { binary }?) => Promise<string \| ArrayBuffer>` | Fetch a packaged file as text or binary. |
+
+If `onSave` is never called, the default Save button stays hidden. The page should call `save(next)` itself. When the handler returns a plain object, the loader PUTs it and closes; when it returns nothing, the loader only closes.
+
+### Example
+
+```js
+const { root, manifest, schema, config, save, close, toast, assetUrl } = echoConfigUi;
+const draft = { ...config };
+
+root.innerHTML = `
+  <label>${schema?.properties?.message?.title || 'Message'}
+    <input data-message value="">
+  </label>
+  <button type="button" data-save>Save</button>
+  <button type="button" data-close>Close</button>
+`;
+root.querySelector('[data-message]').value = draft.message || '';
+root.querySelector('[data-save]').onclick = async () => {
+  draft.message = root.querySelector('[data-message]').value;
+  await save(draft);
+  toast('Saved', 'success');
+};
+root.querySelector('[data-close]').onclick = () => close();
+
+// Optional: echoConfigUi.onSave(() => draft) shows the loader Save button and closes after PUT.
+// Optional: echoConfigUi.loadAsset('icon.svg') or assetUrl('icon.svg') for packaged files.
+
+return () => { root.replaceChildren(); };
+```
+
+### Fallback
+
+If `configUi` is missing, the script cannot be fetched, or the script throws, ShinawaseLoader falls back to the schema auto-form (or a JSON editor when there is no schema). A toast and error banner explain the fallback.
+
+A successful `PUT /api/mod/:id/config` already calls `requestInjection('config')`, so the loader reinjects enabled packages after save.

@@ -17,6 +17,33 @@ type EchoExternalModPageContext = {
   toast(message: string): void;
 };
 
+type EchoExternalConfigUiContext = {
+  /** Modal body element. The custom page may take over this node completely. */
+  root: HTMLElement;
+  /** Installed package id. */
+  modId: string;
+  /** Package manifest (`echo.mod.json`). */
+  manifest: Record<string, unknown>;
+  /** Parsed `configSchema`, or `null` when the package has none. */
+  schema: Record<string, unknown> | null;
+  /** Deep-cloned current `config.json` object. */
+  config: Record<string, unknown>;
+  /** PUT `/api/mod/:id/config`. Toasts on success and returns the saved config. Does not close the modal. */
+  save(next: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /** Close the configuration modal. */
+  close(): void;
+  /** Show a loader toast. `type` may be `info`, `success`, `error`, or `warn`. */
+  toast(message: string, type?: string): void;
+  /** Register a footer Save handler. A returned plain object is PUT then the modal closes; a void/null return only closes. */
+  onSave(handler: () => Record<string, unknown> | void | Promise<Record<string, unknown> | void>): void;
+  /** Package-relative asset URL served by `GET /api/mod/:id/file/:path`. */
+  assetUrl(path: string): string;
+  /** Fetch a packaged asset as text, or as `ArrayBuffer` when `options.binary` is true. */
+  loadAsset(path: string, options?: { binary?: boolean }): Promise<string | ArrayBuffer>;
+};
+
+declare const echoConfigUi: EchoExternalConfigUiContext;
+
 type EchoExternalModSdk = {
   version: 1;
   mode: 'external-cdp';

@@ -1,0 +1,8 @@
+{
+  "name": "shinawase-loader-runtime",
+  "private": true,
+  "description": "Runtime dependencies for the ShinawaseLoader streaming bridge. Installed next to streaming-bridge.cjs so the bundled providers can hot-load them.",
+  "dependencies": {
+    "@neteasecloudmusicapienhanced/api": "^4.40.1"
+  }
+}

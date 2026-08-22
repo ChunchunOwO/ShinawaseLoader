@@ -693,6 +693,24 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   Write-Json $configPath $config
   Write-SetupProgress 52 (T 'progressInit')
   & $node (Join-Path $loaderRoot 'ShinawaseLoader.mjs') init | Out-Null
+  # The streaming bridge needs @neteasecloudmusicapienhanced/api installed next
+  # to streaming-bridge.cjs (see ShinawaseLoader/package.json); without it the
+  # netease provider falls back to raw HTTP endpoints that now return 404.
+  if (Test-Path -LiteralPath (Join-Path $loaderRoot 'package.json')) {
+    Write-SetupProgress 58 'streaming bridge deps (npm install)'
+    $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npmCmd) { $npmCmd = Get-Command npm -ErrorAction SilentlyContinue }
+    if ($npmCmd) {
+      try {
+        Push-Location $loaderRoot
+        & $npmCmd.Source install --omit=dev --no-audit --no-fund 2>&1 | Out-Null
+      } catch {
+        Write-Host "npm install failed: $($_.Exception.Message) - netease streaming stays degraded until dependencies are installed." -ForegroundColor Yellow
+      } finally { Pop-Location }
+    } else {
+      Write-Host 'npm not found - run "npm install --omit=dev" inside the ShinawaseLoader folder to enable netease streaming playback.' -ForegroundColor Yellow
+    }
+  }
   $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $true -Force
   $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'app-asar-bridge' -Force
   Write-Json $configPath $config

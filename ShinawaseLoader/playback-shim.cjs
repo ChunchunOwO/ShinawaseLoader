@@ -41,17 +41,21 @@ const resolvePlayback = async (item, forceRefresh) => {
   return source;
 };
 
+const resolvePlaybackRetry = async (item, forceRefresh) => {
+  try {
+    return await resolvePlayback(item, forceRefresh);
+  } catch (error) {
+    if (forceRefresh === true) throw error;
+    return resolvePlayback(item, true);
+  }
+};
+
+const staleStatus = (code) => code === 404 || code === 403 || code === 410;
+
 const installProxy = () => {
   if (globalThis.__shinawaseMediaProxy) return globalThis.__shinawaseMediaProxy;
   const tokens = new Map();
-  const server = http.createServer((req, res) => {
-    const token = String(req.url || '/').split('?')[0].replace(/^\//, '').split('/')[0];
-    const entry = tokens.get(token);
-    if (!entry || entry.expires < Date.now()) {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
+  const pipeUpstream = (req, res, entry, retried) => {
     let target;
     try { target = new URL(entry.url); } catch {
       res.statusCode = 502;
@@ -62,6 +66,18 @@ const installProxy = () => {
     if (req.headers.range) headers.Range = req.headers.range;
     const lib = target.protocol === 'https:' ? https : http;
     const upstream = lib.request(entry.url, { method: 'GET', headers }, (up) => {
+      if (staleStatus(up.statusCode) && entry.item && retried !== true) {
+        up.resume();
+        resolvePlayback(entry.item, true).then((source) => {
+          entry.url = source.url;
+          entry.headers = source.headers && typeof source.headers === 'object' ? source.headers : {};
+          pipeUpstream(req, res, entry, true);
+        }).catch(() => {
+          if (!res.headersSent) res.statusCode = 404;
+          res.end();
+        });
+        return;
+      }
       const pass = {};
       for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'content-disposition']) {
         if (up.headers[name]) pass[name] = up.headers[name];
@@ -75,14 +91,25 @@ const installProxy = () => {
     });
     req.on('close', () => upstream.destroy());
     upstream.end();
+  };
+  const server = http.createServer((req, res) => {
+    const token = String(req.url || '/').split('?')[0].replace(/^\//, '').split('/')[0];
+    const entry = tokens.get(token);
+    if (!entry || entry.expires < Date.now()) {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    pipeUpstream(req, res, entry, false);
   });
   server.listen(0, '127.0.0.1');
   const api = {
-    urlFor(source) {
+    urlFor(source, item) {
       const token = randomBytes(12).toString('hex');
       tokens.set(token, {
         url: source.url,
         headers: source.headers && typeof source.headers === 'object' ? source.headers : {},
+        item: item || null,
         expires: Date.now() + 12 * 60 * 1000,
       });
       const addr = server.address();
@@ -109,7 +136,7 @@ const asLocalRequest = (raw, item, source) => {
     ...(raw && typeof raw === 'object' ? raw : {}),
     item: {
       mediaType: 'local',
-      path: proxy.urlFor(source),
+      path: proxy.urlFor(source, item),
       trackId: String(item.trackId || item.stableKey || item.id || `${item.provider}:${item.providerTrackId}`),
       title: item.title || '',
       artist: item.artist || '',
@@ -126,7 +153,7 @@ const asLocalRequest = (raw, item, source) => {
 const asResolvedSource = (item, source) => {
   const proxy = installProxy();
   return {
-    filePath: proxy.urlFor(source),
+    filePath: proxy.urlFor(source, item),
     inputHeaders: undefined,
     mimeType: source.mimeType || null,
     durationSeconds: Number(item.duration) || null,
@@ -164,20 +191,20 @@ const installStreamingPlaybackShim = (host = {}) => {
   result.play = wrapChannel(ipcMain, CHANNELS.play, async (original, event, raw) => {
     const item = streamingItem(raw);
     if (!item) return original(event, raw);
-    const source = await resolvePlayback(item, raw?.forceRefresh);
+    const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
     return original(event, asLocalRequest(raw, item, source));
   });
   result.resolve = wrapChannel(ipcMain, CHANNELS.resolve, async (original, event, raw) => {
     const item = streamingItem(raw);
     if (!item) return original(event, raw);
-    const source = await resolvePlayback(item, raw?.forceRefresh);
+    const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
     return asResolvedSource(item, source);
   });
   result.prepare = wrapChannel(ipcMain, CHANNELS.prepare, async (original, event, raw) => {
     const item = streamingItem(raw);
     if (!item) return original(event, raw);
     try {
-      const source = await resolvePlayback(item, raw?.forceRefresh);
+      const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
       return original(event, asLocalRequest(raw, item, source));
     } catch {
       return undefined;

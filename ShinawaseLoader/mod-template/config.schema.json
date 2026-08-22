@@ -9,6 +9,13 @@
       "type": "string",
       "title": "Message",
       "description": "Shown by the sample mod."
+    },
+    "accent": {
+      "type": "string",
+      "title": "Accent",
+      "description": "Color used by the sample badge.",
+      "enum": ["auto", "violet", "teal"],
+      "default": "auto"
     }
   }
 }
