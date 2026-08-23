@@ -1,6 +1,17 @@
 # Examples
 
-These folders are official sample packages for development. They are not part of the installed Loader and are not copied by `setup-modloader.bat`.
+Official sample packages. Source folders are not copied by `setup-modloader.bat`; the installer **optional packages** step can import the built `.echomod` files into the game `Mods` folder. Names match `echo.mod.json`.
+
+| Name | Folder | Package |
+| --- | --- | --- |
+| ECHO Streaming | [ECHO-Streaming](ECHO-Streaming) | `examples/packages/ECHO-Streaming.echomod` |
+| ECHO Together | [ECHO-Together](ECHO-Together) | `examples/packages/ECHO-Together.echomod` |
+| ECHO Auxiliary Fix | [ECHO-AuxiliaryFix](ECHO-AuxiliaryFix) | `examples/packages/ECHO-AuxiliaryFix.echomod` |
+| ECHO osu!downloader | [ECHO-OsuDownloader](ECHO-OsuDownloader) | `examples/packages/ECHO-OsuDownloader.echomod` |
+| ECHO AudioBand | [ECHO-AudioBand](ECHO-AudioBand) | `examples/packages/ECHO-AudioBand.echomod` |
+| ECHO MV | [ECHO-MV](ECHO-MV) | `examples/packages/ECHO-MV.echomod` |
+
+Rebuild from the repository root:
 
 ```powershell
 .\pack-mod.bat .\examples\ECHO-Streaming\echomod .\examples\packages\ECHO-Streaming.echomod --zip
@@ -11,4 +22,4 @@ These folders are official sample packages for development. They are not part of
 .\pack-mod.bat .\examples\ECHO-MV\echomod .\examples\packages\ECHO-MV.echomod --zip
 ```
 
-Drop the built `.echomod` into the game `Mods` folder after setup.
+Drop a built `.echomod` into the game `Mods` folder, or import it from the in-app Mods page.

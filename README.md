@@ -56,6 +56,8 @@ cd ShinawaseLoader
 .\setup-modloader.bat -Action menu
 ```
 
+安装结束后会进入 **可选包**：默认勾选全部官方示例（ECHO Streaming、ECHO Together、ECHO Auxiliary Fix、ECHO osu!downloader、ECHO AudioBand、ECHO MV）。空格开关，Enter 导入到游戏 `Mods`。
+
 安装后，请使用游戏目录下 `ShinawaseLoader` 中的启动器（Steam 快捷方式不会走 inspector bootstrap）：
 
 | 启动器 | 用途 |
@@ -84,10 +86,11 @@ cd ShinawaseLoader
 
 任选其一：
 
-1. 用 Loader 启动 ECHO 后，打开应用内 **Mods** 页，导入 `.echomod` / `.echo`（也支持拖放）。
-2. 把包文件丢进游戏目录的 `Mods` 或 `Plugins` 文件夹，渲染进程就绪后会注入已启用的包。
+1. 安装 Loader 时在 **可选包** 勾选官方示例（默认全选），脚本会把对应 `.echomod` 导入游戏 `Mods`。
+2. 用 Loader 启动 ECHO 后，打开应用内 **Mods** 页，导入 `.echomod` / `.echo`（也支持拖放）。
+3. 把包文件丢进游戏目录的 `Mods` 或 `Plugins` 文件夹，渲染进程就绪后会注入已启用的包。
 
-成品示例包在 [`examples/packages/`](examples/packages/)。`examples/` 源码目录不会被 `setup-modloader.bat` 复制进安装位置。
+成品示例包在 [`examples/packages/`](examples/packages/)。`examples/` 源码目录不会被复制进安装位置，只有勾选的可选包会被导入。
 
 ## 🛠️ Mod 开发
 
@@ -235,16 +238,16 @@ flowchart TB
 
 ## 🧩 示例 Mod
 
-源码在 [`examples/`](examples/)，打包说明见 [`examples/README.md`](examples/README.md)。成品包在 [`examples/packages/`](examples/packages/)。
+源码在 [`examples/`](examples/)，打包说明见 [`examples/README.md`](examples/README.md)。成品包在 [`examples/packages/`](examples/packages/)。安装脚本「可选包」里的名字与下表一致，默认全选。
 
-| 示例 | 说明 | 清单 |
+| 名称 | 说明 | 清单 |
 | --- | --- | --- |
-| [ECHO-AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.0 |
-| [ECHO-AuxiliaryFix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.0 |
-| [ECHO-MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条 MV 入口按钮、原版 MV 面板与 MV 设置抽屉，Bilibili 搜索/应用内播放（WBI 签名 + `echo-mv://` 主进程代理）、YouTube 搜索、本地 MV 文件绑定、随音乐同步。含 `main.cjs`。 | `echo.mv` · 1.0.0 |
-| [ECHO-OsuDownloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.0 |
-| [ECHO-Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
-| [ECHO-Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.1 |
+| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
+| [ECHO Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.1 |
+| [ECHO Auxiliary Fix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.0 |
+| [ECHO osu!downloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.0 |
+| [ECHO AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.0 |
+| [ECHO MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条 MV 按钮打开设置抽屉，「启用 MV」总开关切换歌词页 MV 视图；Bilibili 搜索/应用内播放（WBI + `echo-mv://` 代理）、YouTube 搜索、本地 MV 绑定、随音乐同步。含 `main.cjs`。 | `echo.mv` · 1.0.0 |
 
 从仓库根目录打包示例：
 
