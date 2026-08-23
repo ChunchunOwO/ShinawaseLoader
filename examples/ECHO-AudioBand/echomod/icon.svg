@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="echoAbBg" x1="6" y1="2" x2="40" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B4F8A"/>
+      <stop offset=".48" stop-color="#1D7BD6"/>
+      <stop offset="1" stop-color="#4DA3FF"/>
+    </linearGradient>
+    <linearGradient id="echoAbSheen" x1="24" y1="1" x2="24" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".26"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="echoAbClip">
+      <rect width="48" height="48" rx="11"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#echoAbClip)">
+    <rect width="48" height="48" rx="11" fill="url(#echoAbBg)"/>
+    <rect width="48" height="48" rx="11" fill="url(#echoAbSheen)"/>
+    <circle cx="13" cy="10" r="15" fill="#fff" opacity=".14"/>
+    <circle cx="16" cy="13" r="3.6" fill="#fff" opacity=".22"/>
+    <circle cx="37" cy="40" r="11" fill="#fff" opacity=".07"/>
+    <g fill="#fff">
+      <rect x="14.2" y="22.4" width="3.2" height="8.2" rx="1.6"/>
+      <rect x="19.6" y="16.6" width="3.2" height="14" rx="1.6"/>
+      <rect x="25" y="19.4" width="3.2" height="11.2" rx="1.6"/>
+    </g>
+    <path d="M32.2 17.6v12.2L42 23.7z" fill="#fff"/>
+    <rect x="7" y="35.2" width="34" height="7.2" rx="2.2" fill="#fff" opacity=".92"/>
+    <g fill="#1D7BD6">
+      <rect x="10.4" y="38.2" width="2" height="2.4" rx="1"/>
+      <rect x="13.4" y="36.8" width="2" height="3.8" rx="1"/>
+      <rect x="16.4" y="37.4" width="2" height="3.2" rx="1"/>
+      <path d="M33.2 36.8v4.4L37.2 39z"/>
+    </g>
+  </g>
+  <rect x=".65" y=".65" width="46.7" height="46.7" rx="10.35" fill="none" stroke="#fff" stroke-opacity=".24"/>
+</svg>

@@ -221,7 +221,9 @@ flowchart TB
 │   ├── cdp-eval.mjs
 │   └── verify-echo-runtime.mjs
 ├── examples/                  # 官方示例（不随安装复制）
+│   ├── ECHO-AudioBand/
 │   ├── ECHO-AuxiliaryFix/
+│   ├── ECHO-MV/
 │   ├── ECHO-OsuDownloader/
 │   ├── ECHO-Streaming/
 │   ├── ECHO-Together/
@@ -237,7 +239,9 @@ flowchart TB
 
 | 示例 | 说明 | 清单 |
 | --- | --- | --- |
+| [ECHO-AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.0 |
 | [ECHO-AuxiliaryFix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.0 |
+| [ECHO-MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条 MV 入口按钮、原版 MV 面板与 MV 设置抽屉，Bilibili 搜索/应用内播放（WBI 签名 + `echo-mv://` 主进程代理）、YouTube 搜索、本地 MV 文件绑定、随音乐同步。含 `main.cjs`。 | `echo.mv` · 1.0.0 |
 | [ECHO-OsuDownloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.0 |
 | [ECHO-Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。 | `echo.community-streaming` · 1.1.4 |
 | [ECHO-Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.1 |
@@ -249,6 +253,8 @@ flowchart TB
 .\pack-mod.bat .\examples\ECHO-Together\echomod .\examples\packages\ECHO-Together.echomod --zip
 .\pack-mod.bat .\examples\ECHO-AuxiliaryFix\echomod .\examples\packages\ECHO-AuxiliaryFix.echomod --zip
 .\pack-mod.bat .\examples\ECHO-OsuDownloader\echomod .\examples\packages\ECHO-OsuDownloader.echomod --zip
+.\pack-mod.bat .\examples\ECHO-AudioBand\echomod .\examples\packages\ECHO-AudioBand.echomod --zip
+.\pack-mod.bat .\examples\ECHO-MV\echomod .\examples\packages\ECHO-MV.echomod --zip
 ```
 
 ## ❓ 故障排查

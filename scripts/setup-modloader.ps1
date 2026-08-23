@@ -37,9 +37,12 @@ $script:Strings = @{
     menuHint = '数字键或 ↑↓ 选中    Enter 确认'
     extrasTitle = '可选包'
     extrasHint = '数字键或 ↑↓ 选中    空格 开关    Enter 下一步'
-    pkgStreaming = '流媒体'
-    pkgTogether = 'Together'
-    pkgFix = '修复补丁'
+    pkgStreaming = 'ECHO Streaming'
+    pkgTogether = 'ECHO Together'
+    pkgFix = 'ECHO Auxiliary Fix'
+    pkgOsu = 'ECHO osu!downloader'
+    pkgAudioBand = 'ECHO AudioBand'
+    pkgMv = 'ECHO MV'
     progressPrepare = '准备目录'
     progressCopy = '复制 Loader'
     progressNode = '准备 Node 运行时'
@@ -72,9 +75,12 @@ $script:Strings = @{
     menuHint = 'Number or arrows to select    Enter to confirm'
     extrasTitle = 'optional packages'
     extrasHint = 'Number or arrows    Space toggle    Enter next'
-    pkgStreaming = 'Streaming'
-    pkgTogether = 'Together'
-    pkgFix = 'Auxiliary fix'
+    pkgStreaming = 'ECHO Streaming'
+    pkgTogether = 'ECHO Together'
+    pkgFix = 'ECHO Auxiliary Fix'
+    pkgOsu = 'ECHO osu!downloader'
+    pkgAudioBand = 'ECHO AudioBand'
+    pkgMv = 'ECHO MV'
     progressPrepare = 'prepare folders'
     progressCopy = 'copy loader'
     progressNode = 'prepare Node runtime'
@@ -789,7 +795,10 @@ function Choose-OptionalPackages {
   $source = @(
     @{ Key = '1'; Label = T 'pkgStreaming'; Folder = 'ECHO-Streaming'; Checked = $true },
     @{ Key = '2'; Label = T 'pkgTogether'; Folder = 'ECHO-Together'; Checked = $true },
-    @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true }
+    @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true },
+    @{ Key = '4'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
+    @{ Key = '5'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
+    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true }
   )
   $index = 0
   $visible = $true

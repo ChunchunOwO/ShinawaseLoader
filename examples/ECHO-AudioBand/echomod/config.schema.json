@@ -1,0 +1,137 @@
+{
+  "type": "object",
+  "properties": {
+    "locale": {
+      "type": "string",
+      "title": "界面语言 / UI language",
+      "description": "auto 跟随系统；zh-CN 或 en-US 强制语言。",
+      "enum": ["auto", "zh-CN", "en-US"],
+      "default": "auto"
+    },
+    "widgetWidth": {
+      "type": "integer",
+      "title": "组件宽度 / Widget width",
+      "description": "任务栏条宽度（像素）。",
+      "minimum": 200,
+      "maximum": 800,
+      "default": 360
+    },
+    "alignment": {
+      "type": "string",
+      "title": "水平对齐 / Alignment",
+      "description": "相对任务栏条：靠左、居中或靠右（靠右默认避开托盘时钟）。",
+      "enum": ["left", "center", "right"],
+      "default": "right"
+    },
+    "offsetX": {
+      "type": "integer",
+      "title": "水平偏移 / Horizontal offset",
+      "description": "靠左时始终生效；靠右时仅在关闭自动避开托盘、助手不可用或对齐不是靠右时使用。 / Horizontal inset for left alignment; for right alignment only when auto-avoid is off, unavailable, or alignment is not right.",
+      "minimum": 0,
+      "maximum": 600,
+      "default": 180
+    },
+    "offsetY": {
+      "type": "integer",
+      "title": "垂直偏移 / Vertical offset",
+      "description": "相对任务栏条的额外垂直偏移。",
+      "minimum": -80,
+      "maximum": 80,
+      "default": 0
+    },
+    "monitor": {
+      "type": "string",
+      "title": "显示器 / Monitor",
+      "description": "primary 为主屏，或显示器索引（0 起）。",
+      "default": "primary"
+    },
+    "customHeight": {
+      "type": "integer",
+      "title": "回退高度 / Fallback height",
+      "description": "垂直任务栏或自动隐藏时，浮动条的高度。",
+      "minimum": 28,
+      "maximum": 80,
+      "default": 48
+    },
+    "showAlbumArt": {
+      "type": "boolean",
+      "title": "显示封面 / Show album art",
+      "default": true
+    },
+    "showControls": {
+      "type": "boolean",
+      "title": "显示控制按钮 / Show controls",
+      "default": true
+    },
+    "showProgress": {
+      "type": "boolean",
+      "title": "显示进度条 / Show progress",
+      "default": true
+    },
+    "showTime": {
+      "type": "boolean",
+      "title": "显示时间 / Show time",
+      "description": "在艺人行右侧显示 mm:ss / mm:ss。",
+      "default": false
+    },
+    "theme": {
+      "type": "string",
+      "title": "主题 / Theme",
+      "description": "组件跟随系统深浅色（auto）；或强制深色 / 浅色。 / auto follows the Windows taskbar light/dark theme.",
+      "enum": ["auto", "dark", "light"],
+      "default": "auto"
+    },
+    "accentColor": {
+      "type": "string",
+      "title": "强调色 / Accent color",
+      "description": "进度条与按钮悬停颜色。",
+      "default": "#4da3ff"
+    },
+    "backgroundOpacity": {
+      "type": "integer",
+      "title": "背景不透明度 / Background opacity",
+      "description": "0–100。",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 88
+    },
+    "scrollingText": {
+      "type": "boolean",
+      "title": "滚动标题 / Scrolling text",
+      "description": "标题或艺人溢出时使用跑马灯。",
+      "default": true
+    },
+    "autoHideWhenStopped": {
+      "type": "boolean",
+      "title": "停止时自动隐藏 / Auto-hide when stopped",
+      "description": "停止且无标题连续超过 8 秒后隐藏组件。",
+      "default": false
+    },
+    "pollIntervalMs": {
+      "type": "integer",
+      "title": "轮询间隔 / Poll interval (ms)",
+      "description": "从 ECHO 读取播放状态的间隔。",
+      "minimum": 250,
+      "maximum": 5000,
+      "default": 1000
+    },
+    "autoAvoidTray": {
+      "type": "boolean",
+      "title": "自动避开托盘 / Auto-avoid tray",
+      "description": "靠右叠放时根据系统托盘位置自动让位；关闭后改用水平偏移。 / When right-aligned, sit left of the system tray; otherwise offsetX is used.",
+      "default": true
+    },
+    "seamlessMode": {
+      "type": "boolean",
+      "title": "无缝融合任务栏 / Seamless taskbar look",
+      "description": "直角、不透明、填满任务栏条，视觉上如同嵌入任务栏（不改变窗口层级）。 / Square, opaque, fills the taskbar strip for an embedded look without reparenting.",
+      "default": false
+    },
+    "hoverPreview": {
+      "type": "boolean",
+      "title": "悬停封面预览 / Hover album-art preview",
+      "description": "鼠标悬停封面时弹出大图与曲目信息。 / Show a large cover popup when hovering album art.",
+      "default": true
+    }
+  }
+}

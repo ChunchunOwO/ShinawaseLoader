@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="echoMvBg" x1="6" y1="2" x2="42" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B1FA8"/>
+      <stop offset=".5" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="echoMvSheen" x1="24" y1="1" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="echoMvClip">
+      <rect width="48" height="48" rx="11"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#echoMvClip)">
+    <rect width="48" height="48" rx="11" fill="url(#echoMvBg)"/>
+    <rect width="48" height="48" rx="11" fill="url(#echoMvSheen)"/>
+    <rect x="8" y="16" width="32" height="24" rx="3.2" fill="#fff" opacity=".94"/>
+    <g transform="rotate(-18 24 12)">
+      <rect x="8" y="8" width="32" height="8.4" rx="1.6" fill="#1F1238"/>
+      <rect x="10.2" y="9.6" width="4.4" height="5.2" rx="0.8" fill="#F4E8A8" transform="skewX(-18)"/>
+      <rect x="16.6" y="9.6" width="4.4" height="5.2" rx="0.8" fill="#F4E8A8" transform="skewX(-18)"/>
+      <rect x="23" y="9.6" width="4.4" height="5.2" rx="0.8" fill="#F4E8A8" transform="skewX(-18)"/>
+      <rect x="29.4" y="9.6" width="4.4" height="5.2" rx="0.8" fill="#F4E8A8" transform="skewX(-18)"/>
+    </g>
+    <path d="M21.2 22.6v11.2l10.2-5.6z" fill="#7C3AED"/>
+    <rect x="12" y="35.2" width="8" height="1.6" rx="0.8" fill="#7C3AED" opacity=".35"/>
+    <rect x="21.2" y="35.2" width="14.8" height="1.6" rx="0.8" fill="#7C3AED" opacity=".2"/>
+  </g>
+  <rect x=".65" y=".65" width="46.7" height="46.7" rx="10.35" fill="none" stroke="#fff" stroke-opacity=".28"/>
+</svg>

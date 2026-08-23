@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "youtubeApiKey": {
+      "type": "string",
+      "title": "YouTube Data API Key",
+      "description": "用于搜索可嵌入的 YouTube MV。留空则不搜索 YouTube（不报错）。解析结果只能外部打开，不能在应用内播放。",
+      "default": ""
+    },
+    "bilibiliCookie": {
+      "type": "string",
+      "title": "Bilibili Cookie",
+      "description": "可选。原样放入 Cookie 请求头，例如 SESSDATA=xxx。用于 1080p+ / 大会员清晰度；无 Cookie 时高档会标记 requiresAccount 并尝试降级。",
+      "default": ""
+    },
+    "debugLog": {
+      "type": "boolean",
+      "title": "调试日志",
+      "description": "打开后在 Loader 日志中输出搜索词、WBI、解析档位等冗余信息。不要在日志里粘贴完整 Cookie。",
+      "default": false
+    }
+  }
+}
