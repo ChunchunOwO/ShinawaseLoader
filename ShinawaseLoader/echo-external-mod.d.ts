@@ -17,6 +17,53 @@ type EchoExternalModPageContext = {
   toast(message: string): void;
 };
 
+type EchoLoaderUiSettings = {
+  /** Loader UI spacing. */
+  density: 'comfortable' | 'compact';
+  /** `#rrggbb` accent override for loader-owned surfaces, or `''` for the ECHO theme accent. */
+  accentColor: string;
+  /** Loader UI animations and transitions. */
+  animations: boolean;
+  /** Mods page layout. */
+  cardLayout: 'list' | 'grid';
+  /** Show mod descriptions on cards. */
+  showModDescriptions: boolean;
+  /** Show the version badge on cards. */
+  showModVersions: boolean;
+  /** Show the package-id badge on cards. */
+  showModIds: boolean;
+  /** Persist Mods page filter and sort across sessions. */
+  rememberFilters: boolean;
+  /** Mods page sort order. */
+  modSort: 'name' | 'recent' | 'enabled';
+  /** Mods page filter chip. */
+  modFilter: 'all' | 'active' | 'inactive';
+};
+
+type EchoExternalConfigUiFormHandle = {
+  /** Detached element containing the rendered fields. Append it anywhere inside `root`. */
+  element: HTMLElement;
+  /** Read the current values as a config object. */
+  read(): Record<string, unknown>;
+};
+
+type EchoExternalConfigUiFieldHandle = {
+  /** Detached element containing the rendered field. */
+  element: HTMLElement;
+  /** Read the current field value. */
+  read(): unknown;
+};
+
+type EchoExternalConfigUiHelpers = {
+  /**
+   * Render the loader's schema auto-form (switches, enum menus, numeric limits, JSON fallback).
+   * Defaults to the package `configSchema` and current config when called without arguments.
+   */
+  form(schema?: Record<string, unknown> | null, config?: Record<string, unknown>): EchoExternalConfigUiFormHandle;
+  /** Render one loader-styled field from a JSON-schema property spec. */
+  field(key: string, spec?: Record<string, unknown>, value?: unknown): EchoExternalConfigUiFieldHandle;
+};
+
 type EchoExternalConfigUiContext = {
   /** Modal body element. The custom page may take over this node completely. */
   root: HTMLElement;
@@ -40,6 +87,12 @@ type EchoExternalConfigUiContext = {
   assetUrl(path: string): string;
   /** Fetch a packaged asset as text, or as `ArrayBuffer` when `options.binary` is true. */
   loadAsset(path: string, options?: { binary?: boolean }): Promise<string | ArrayBuffer>;
+  /** Object built from the `default` values in `configSchema` properties. */
+  defaults(): Record<string, unknown>;
+  /** Snapshot of the loader's appearance settings (accent, density, layout, ...). */
+  loaderSettings(): EchoLoaderUiSettings;
+  /** Loader-styled form builders that reuse the schema auto-form. */
+  ui: EchoExternalConfigUiHelpers;
 };
 
 declare const echoConfigUi: EchoExternalConfigUiContext;
@@ -152,6 +205,14 @@ type EchoExternalMod = {
   main: EchoExternalMain;
   sdk: EchoExternalModSdk;
   settings: { get(): Record<string, unknown>; set(patch: Record<string, unknown>): Record<string, unknown> };
+  loaderSettings: {
+    /** GET `/api/ui-settings`. */
+    get(): Promise<EchoLoaderUiSettings>;
+    /** PUT `/api/ui-settings`. Applies live when the loader UI is mounted. */
+    set(patch: Partial<EchoLoaderUiSettings>): Promise<EchoLoaderUiSettings>;
+    /** Listen for `shinawase:ui-settings`. The disposer runs automatically when the package is disabled. */
+    onChange(handler: (settings: EchoLoaderUiSettings) => void): () => void;
+  };
   assetUrl(path: string): string;
   loadAsset(path: string, options?: { binary?: boolean }): Promise<string | ArrayBuffer>;
   sidebar: { register(page: EchoExternalSidebarPage): () => void };

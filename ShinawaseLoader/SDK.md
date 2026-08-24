@@ -14,6 +14,7 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `native`: in-process native host. Declared `.node` addons and host DLLs are loaded inside ECHO, not by remote process injection. Use `native.status/modules/invoke`. Current-process memory helpers (`scan`, `read`/`write`/`protect`, typed readers) require `native.memory: true` plus `nativeMemoryApi`.
 - `sdk.status()`: Loader runtime status. `sdk.list(path)`, `sdk.get(path)`, and `sdk.call(path, ...args)` discover and call public `window.echo` paths without hard-coding a specific ECHO version.
 - `settings.get()` / `settings.set(patch)`: per-package browser storage.
+- `loaderSettings.get()` / `loaderSettings.set(patch)` / `loaderSettings.onChange(handler)`: the loader's shared appearance settings (accent color, density, card layout, badge visibility). `set` applies live when the loader UI is mounted; changes fire the `shinawase:ui-settings` window event. `onChange` disposers run automatically when the package is disabled.
 - `assetUrl(path)` / `loadAsset(path, options)`: serve packaged HTML, CSS, images, WASM, or data assets.
 - `sidebar.register({ id, label, icon, order, render })`: add a page in the ShinawaseLoader sidebar group.
 - `fetchJson(url, options)`, `uploadFile(input)`: Loader-mediated HTTP helpers.
@@ -42,6 +43,32 @@ echoExternalMod.extend.replaceRoute('community', {
 ```
 
 `GET /api/sdk` reports `extend.version`, `native`, and `main` when those runtimes are available.
+
+## Loader UI settings
+
+The Loader page has an Appearance section. Every option persists in `loader.config.json` under `ui` and applies immediately without reinjection:
+
+| Key | Values | Effect |
+| --- | --- | --- |
+| `density` | `comfortable` (default), `compact` | Spacing and control sizes on loader-owned pages. |
+| `accentColor` | `''` (default) or `#rrggbb` | Overrides `--theme-accent` on loader-owned surfaces only; empty follows the ECHO theme. |
+| `animations` | `true` (default), `false` | Loader UI animations and transitions. |
+| `cardLayout` | `list` (default), `grid` | Mods page card arrangement. |
+| `showModDescriptions` | `true` (default), `false` | Description line on mod cards. |
+| `showModVersions` | `true` (default), `false` | Version badge on mod cards. |
+| `showModIds` | `true` (default), `false` | Package-id badge on mod cards. |
+| `rememberFilters` | `true` (default), `false` | Persist the Mods page filter chip and sort order across sessions. |
+| `modSort` | `name` (default), `recent`, `enabled` | Mods page sort: by name, by install time, or enabled first. |
+| `modFilter` | `all` (default), `active`, `inactive` | Last selected filter chip (used when `rememberFilters` is on). |
+
+HTTP surface:
+
+- `GET /api/ui-settings` returns `{ ui, defaults }`.
+- `PUT /api/ui-settings` merges a partial `{ ui: { ... } }` (or a bare settings object), sanitizes it, persists it, and returns the result.
+- `GET /api/settings/export` returns a `shinawase-loader-settings` document with the full `loader.config.json` surface plus `locale` and `ui`. The Appearance section's Export button downloads it as JSON.
+- `POST /api/settings/import` accepts an exported document (or a bare `settings` object). `ui`, `locale`, and `debugMode` apply live; other keys (ports, load mode, injection timings, native host) are written to `loader.config.json` and reported in `requiresRestart`.
+
+Mods read the same settings through `echoExternalMod.loaderSettings` and can subscribe via `loaderSettings.onChange(handler)` or the `shinawase:ui-settings` window event, for example to match a custom page to the user's accent color or density.
 
 ## Package locations
 
@@ -133,8 +160,23 @@ File and config routes work for installed packages even when the package is disa
 | `onSave(handler)` | `(handler) => void` | Shows the default Save button. Clicking it `await`s `handler()`. A returned plain object is PUT then the modal closes; a void/null return only closes. |
 | `assetUrl(path)` | `(path) => string` | URL for a packaged file. |
 | `loadAsset(path, options?)` | `(path, { binary }?) => Promise<string \| ArrayBuffer>` | Fetch a packaged file as text or binary. |
+| `defaults()` | `() => object` | Config object built from the `default` values in `configSchema` properties. |
+| `loaderSettings()` | `() => object` | Snapshot of the loader appearance settings (see "Loader UI settings"). |
+| `ui.form(schema?, config?)` | `(schema?, config?) => { element, read }` | Renders the loader's schema auto-form (switches, enum menus, numeric limits, JSON fallback) into a detached element. Defaults to the package schema and current config. `read()` returns the values as a config object. |
+| `ui.field(key, spec?, value?)` | `(key, spec?, value?) => { element, read }` | Renders one loader-styled field from a JSON-schema property spec. `read()` returns the field value. |
 
 If `onSave` is never called, the default Save button stays hidden. The page should call `save(next)` itself. When the handler returns a plain object, the loader PUTs it and closes; when it returns nothing, the loader only closes.
+
+`ui.form` and `ui.field` let a custom page mix the auto-form with hand-built controls while keeping loader styling:
+
+```js
+const { root, schema, config, ui, defaults, onSave } = echoConfigUi;
+const form = ui.form(schema, config);
+const extra = ui.field('nickname', { type: 'string', title: 'Nickname' }, config.nickname);
+root.append(form.element, extra.element);
+onSave(() => ({ ...config, ...form.read(), nickname: extra.read() }));
+// defaults() -> { accent: 'auto', ... } from schema default values.
+```
 
 ### Example
 
