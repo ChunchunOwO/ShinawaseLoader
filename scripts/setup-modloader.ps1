@@ -43,6 +43,7 @@ $script:Strings = @{
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
+    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = '准备目录'
     progressCopy = '复制 Loader'
     progressNode = '准备 Node 运行时'
@@ -81,6 +82,7 @@ $script:Strings = @{
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
+    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = 'prepare folders'
     progressCopy = 'copy loader'
     progressNode = 'prepare Node runtime'
@@ -798,7 +800,8 @@ function Choose-OptionalPackages {
     @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true },
     @{ Key = '4'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
     @{ Key = '5'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
-    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true }
+    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true },
+    @{ Key = '7'; Label = T 'pkgWallpaper'; Folder = 'ECHO-WallpaperBridge'; Checked = $true }
   )
   $index = 0
   $visible = $true

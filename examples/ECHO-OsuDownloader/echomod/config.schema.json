@@ -13,10 +13,10 @@
     "searchLimit": {
       "type": "integer",
       "title": "搜索结果数量",
-      "description": "单次谱面搜索返回的最大结果数。",
-      "minimum": 10,
-      "maximum": 100,
-      "default": 40
+      "description": "单次谱面搜索返回的最大结果数（下载桥接上限为 20）。",
+      "minimum": 5,
+      "maximum": 20,
+      "default": 20
     },
     "sidebarOrder": {
       "type": "integer",

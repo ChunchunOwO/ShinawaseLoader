@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ECHO Auxiliary Fix",
+  "type": "object",
+  "properties": {
+    "locale": {
+      "type": "string",
+      "title": "提示语言 / Notice language",
+      "description": "auto 跟随 ECHO 界面语言。仅影响注入成功后的提示文本。/ auto follows the ECHO UI language. Only affects the one-time toast.",
+      "enum": ["auto", "zh-CN", "en-US"],
+      "default": "auto"
+    }
+  }
+}

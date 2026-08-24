@@ -31,6 +31,8 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 | `bilibiliCookie` | `""` | 原样作为 Cookie 头（如 `SESSDATA=...`），用于高码率 |
 | `debugLog` | `false` | 冗余日志（不会打印完整 Cookie） |
 
+Mods 页的「配置」使用自定义配置页（`config-ui.js`）：API Key 与 Cookie 以密码框显示，可点击「显示 / 隐藏」切换。
+
 MV 面板里的选项（自动搜索、清晰度上限、沉浸背景等）走 `mv.getSettings` / `mv.setSettings`，与 Loader 的 `config.json` 分开。
 
 ## 协议

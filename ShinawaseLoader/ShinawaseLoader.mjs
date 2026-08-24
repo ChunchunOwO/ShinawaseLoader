@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, rmSync, copyFileSync, renameSync, watch } from 'node:fs';
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, lstatSync, writeFileSync, rmSync, copyFileSync, renameSync, watch } from 'node:fs';
 import { createServer } from 'node:http';
 import { basename, dirname, extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,11 @@ let configuredLogLevel = 'INFO';
 const readJson = (file, fallback) => {
   try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/u, '')); } catch { return fallback; }
 };
+// Cheap change token used to validate mtime-keyed caches without re-reading file contents.
+const fileToken = (file) => {
+  const stats = statSync(file, { throwIfNoEntry: false });
+  return stats ? `${stats.mtimeMs}:${stats.size}` : 'missing';
+};
 const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -115,18 +120,52 @@ const formatLogValue = (value) => {
   if (typeof value === 'string') return value;
   try { return JSON.stringify(value); } catch { return String(value); }
 };
+let logsDirReady = false;
 const log = (level, message, ...values) => {
   const normalizedLevel = String(level || 'INFO').toUpperCase();
   const severity = normalizedLevel.endsWith(':ERROR') ? 'ERROR' : normalizedLevel.endsWith(':WARN') ? 'WARN' : normalizedLevel.endsWith(':DEBUG') ? 'DEBUG' : normalizedLevel.endsWith(':INFO') || normalizedLevel.endsWith(':LOG') ? 'INFO' : normalizedLevel;
   if ((logRanks[severity] || logRanks.INFO) < (logRanks[configuredLogLevel] || logRanks.INFO)) return;
   const line = `[${new Date().toISOString()}] [${normalizedLevel}] ${message}${values.length ? ` ${values.map(formatLogValue).join(' ')}` : ''}`;
   try {
-    mkdirSync(logsRoot, { recursive: true });
+    if (!logsDirReady) {
+      mkdirSync(logsRoot, { recursive: true });
+      logsDirReady = true;
+    }
     appendFileSync(logFilePath, `${line}\n`, 'utf8');
     if (severity === 'ERROR') appendFileSync(errorLogPath, `${line}\n`, 'utf8');
-  } catch {}
+  } catch { logsDirReady = false; }
   const method = severity === 'ERROR' ? console.error : severity === 'WARN' ? console.warn : console.log;
   method(line);
+};
+
+const defaultUiSettings = Object.freeze({
+  density: 'comfortable',
+  accentColor: '',
+  animations: true,
+  cardLayout: 'list',
+  showModDescriptions: true,
+  showModVersions: true,
+  showModIds: true,
+  rememberFilters: true,
+  modSort: 'name',
+  modFilter: 'all',
+});
+const sanitizeUiSettings = (value) => {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const pick = (key, allowed) => (allowed.includes(input[key]) ? input[key] : defaultUiSettings[key]);
+  const bool = (key) => (typeof input[key] === 'boolean' ? input[key] : defaultUiSettings[key]);
+  return {
+    density: pick('density', ['comfortable', 'compact']),
+    accentColor: typeof input.accentColor === 'string' && /^#[0-9a-f]{6}$/iu.test(input.accentColor) ? input.accentColor.toLowerCase() : '',
+    animations: bool('animations'),
+    cardLayout: pick('cardLayout', ['list', 'grid']),
+    showModDescriptions: bool('showModDescriptions'),
+    showModVersions: bool('showModVersions'),
+    showModIds: bool('showModIds'),
+    rememberFilters: bool('rememberFilters'),
+    modSort: pick('modSort', ['name', 'recent', 'enabled']),
+    modFilter: pick('modFilter', ['all', 'active', 'inactive']),
+  };
 };
 
 const loaderConfig = readJson(loaderConfigPath, {
@@ -145,7 +184,15 @@ const loaderConfig = readJson(loaderConfigPath, {
   nativeHost: true,
   nativePort: 17863,
   nativeMemoryApi: true,
+  ui: { ...defaultUiSettings },
 });
+
+let uiSettings = sanitizeUiSettings(loaderConfig.ui);
+const persistUiSettings = (patch) => {
+  uiSettings = sanitizeUiSettings({ ...uiSettings, ...(patch && typeof patch === 'object' ? patch : {}) });
+  writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), ui: uiSettings });
+  return uiSettings;
+};
 
 const args = process.argv.slice(2);
 const command = args[0] && !args[0].startsWith('-') ? args.shift() : 'serve';
@@ -207,6 +254,50 @@ const promptLocale = async () => {
 };
 const loaderStats = { startedAt: Date.now(), injects: 0, lastInjectAt: null, lastError: null };
 
+const exportableConfigKeys = [
+  'autoStart', 'autoStartMode', 'enableWebConsole', 'showConsole', 'port', 'debugPort', 'loadMode',
+  'safeMode', 'debugMode', 'injectIntervalMs', 'startupDelayMs', 'logLevel', 'nativeHost', 'nativePort',
+  'nativeMemoryApi', 'inspectPort',
+];
+const exportLoaderSettings = () => {
+  const config = readJson(loaderConfigPath, loaderConfig);
+  const settings = {};
+  for (const key of exportableConfigKeys) if (config[key] !== undefined) settings[key] = config[key];
+  return {
+    type: 'shinawase-loader-settings',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    loaderVersion,
+    settings: { ...settings, locale: locale || 'zh', ui: uiSettings },
+  };
+};
+const importLoaderSettings = (payload) => {
+  const wrapper = payload && typeof payload === 'object' ? payload : null;
+  const source = wrapper && wrapper.settings && typeof wrapper.settings === 'object' ? wrapper.settings : wrapper;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('settings_import_invalid');
+  const applied = [];
+  const requiresRestart = [];
+  const config = readJson(loaderConfigPath, loaderConfig);
+  for (const key of exportableConfigKeys) {
+    if (source[key] === undefined || JSON.stringify(config[key]) === JSON.stringify(source[key])) continue;
+    config[key] = source[key];
+    if (key === 'debugMode') applied.push(key);
+    else requiresRestart.push(key);
+  }
+  writeJson(loaderConfigPath, config);
+  if (typeof source.debugMode === 'boolean' && source.debugMode !== debugMode) setDebugMode(source.debugMode);
+  if (typeof source.locale === 'string' && normalizeLocale(source.locale)) {
+    if (normalizeLocale(source.locale) !== (locale || 'zh')) applied.push('locale');
+    locale = persistLocale(source.locale);
+  }
+  if (source.ui && typeof source.ui === 'object') {
+    persistUiSettings(source.ui);
+    applied.push('ui');
+  }
+  log('INFO', `settings imported applied=[${applied.join(',')}] restart=[${requiresRestart.join(',')}]`);
+  return { ok: true, applied, requiresRestart, locale: locale || 'zh', ui: uiSettings };
+};
+
 mkdirSync(installedRoot, { recursive: true });
 mkdirSync(installedPluginsRoot, { recursive: true });
 mkdirSync(dropRoot, { recursive: true });
@@ -255,11 +346,11 @@ const readModConfig = (id) => {
   if (!manifest) throw new Error('mod_not_installed');
   return readJson(configPath(id, manifest), {});
 };
-const readModConfigSchema = (id, manifest = readManifest(id)) => {
+const readModConfigSchema = (id, manifest = readManifest(id), knownRecord = null) => {
   if (!manifest?.configSchema) return null;
   if (typeof manifest.configSchema === 'object') return manifest.configSchema;
   if (typeof manifest.configSchema !== 'string') return null;
-  const record = findPackage(id);
+  const record = knownRecord || findPackage(id);
   return record ? readJson(join(record.directory, safeRelative(manifest.configSchema)), null) : null;
 };
 const writeModConfig = (id, config) => {
@@ -273,16 +364,22 @@ const iconMime = new Map([
   ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'],
   ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.ico', 'image/x-icon'],
 ]);
-const iconDataUrl = (id, manifest) => {
+const iconCache = new Map();
+const iconDataUrl = (id, manifest, knownRecord = null) => {
   if (!manifest?.icon) return null;
-  const record = findPackage(id);
+  const record = knownRecord || findPackage(id);
   if (!record) return null;
   const iconPath = join(record.directory, safeRelative(manifest.icon));
   const mime = iconMime.get(extname(iconPath).toLowerCase());
-  if (!existsSync(iconPath) || !mime) return null;
-  return `data:${mime};base64,${readFileSync(iconPath).toString('base64')}`;
+  if (!mime) return null;
+  const token = fileToken(iconPath);
+  if (token === 'missing') return null;
+  const cached = iconCache.get(iconPath);
+  if (cached?.token === token) return cached.dataUrl;
+  const dataUrl = `data:${mime};base64,${readFileSync(iconPath).toString('base64')}`;
+  iconCache.set(iconPath, { token, dataUrl });
+  return dataUrl;
 };
-const sourceSignature = (source, manifest, id) => createHash('sha256').update(`${source}\n${JSON.stringify(externalContext(id, manifest))}`).digest('hex');
 const modSummaries = () => {
   const state = readState();
   return Object.keys(state.mods).sort().flatMap((id) => {
@@ -297,11 +394,12 @@ const modSummaries = () => {
       name: manifest.name || id,
       version: manifest.version || '1.0.0',
       description: manifest.description || '',
-      iconDataUrl: iconDataUrl(id, manifest),
+      iconDataUrl: iconDataUrl(id, manifest, record),
       configFile: manifest.config || 'config.json',
-      configSchema: readModConfigSchema(id, manifest),
+      configSchema: readModConfigSchema(id, manifest, record),
       configUi: typeof manifest.configUi === 'string' ? manifest.configUi : null,
       enabled: state.mods[id].enabled === true,
+      importedAt: typeof entry.importedAt === 'string' ? entry.importedAt : null,
       directory: record.directory,
       main: Boolean(manifest.main || manifest.native?.main),
       native: Boolean(manifest.native || manifest.main),
@@ -506,10 +604,16 @@ const scanDropRoot = (location) => {
   }
 };
 const startDropWatcher = () => {
-  if (dropWatchers.length) return;
+  if (dropWatchers.length || dropTimers.length) return;
   for (const location of dropLocations) {
-    try { dropWatchers.push(watch(location.root, (_event, fileName) => void processDropFile(location, String(fileName || '')))); } catch (error) { log('WARN', `drop watcher unavailable for ${location.kind}: ${error.message}`); }
-    dropTimers.push(setInterval(() => scanDropRoot(location), 2000));
+    let watching = false;
+    try {
+      dropWatchers.push(watch(location.root, (_event, fileName) => void processDropFile(location, String(fileName || ''))));
+      watching = true;
+    } catch (error) { log('WARN', `drop watcher unavailable for ${location.kind}: ${error.message}`); }
+    // fs.watch delivers drops immediately; the rescan is only a safety net, so
+    // it can run rarely. Fall back to a tight 2s scan only when watch failed.
+    dropTimers.push(setInterval(() => scanDropRoot(location), watching ? 15000 : 2000));
     scanDropRoot(location);
     log('INFO', `watching ${location.root} for .echomod/.echo files`);
   }
@@ -517,38 +621,58 @@ const startDropWatcher = () => {
 
 let echoProcess = null;
 let watchTimer = null;
-let lastTargets = new Set();
+let watchActive = false;
 let lastInjectedTargetCount = -1;
-const cdpEvaluate = async (webSocketUrl, expression) => {
+let lastCycleTargetCount = 0;
+let lastCycleReadyCount = 0;
+const cdpTimeoutMs = 15000;
+// One WebSocket per target that is reused for every evaluation in an injection
+// cycle. A single dispatcher resolves calls by id (instead of one listener per
+// in-flight call re-parsing every frame), and a close handler rejects pending
+// calls immediately rather than letting them run into the 15s timeout.
+const openCdpSession = async (webSocketUrl) => {
   const socket = new WebSocket(webSocketUrl);
-  const timeoutMs = 15000;
+  const pending = new Map();
+  let sequence = 0;
   const withTimeout = (work, label) => new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(label)), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(label)), cdpTimeoutMs);
     Promise.resolve(work).then((value) => { clearTimeout(timer); resolvePromise(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
   await withTimeout(new Promise((resolvePromise, reject) => {
     socket.addEventListener('open', () => resolvePromise(), { once: true });
     socket.addEventListener('error', () => reject(new Error('cdp_socket_error')), { once: true });
   }), 'cdp_connect_timeout');
-  let sequence = 0;
+  socket.addEventListener('message', (event) => {
+    let message;
+    try { message = JSON.parse(String(event.data)); } catch { return; }
+    const entry = pending.get(message.id);
+    if (!entry) return;
+    pending.delete(message.id);
+    if (message.error) entry.reject(new Error(message.error.message || entry.method)); else entry.resolve(message.result);
+  });
+  const failAll = (reason) => {
+    for (const entry of pending.values()) entry.reject(new Error(reason));
+    pending.clear();
+  };
+  socket.addEventListener('close', () => failAll('cdp_socket_closed'), { once: true });
+  socket.addEventListener('error', () => failAll('cdp_socket_error'));
   const call = (method, params) => withTimeout(new Promise((resolvePromise, reject) => {
     const id = ++sequence;
-    const onMessage = (event) => {
-      let message;
-      try { message = JSON.parse(String(event.data)); } catch (error) { reject(error); return; }
-      if (message.id !== id) return;
-      socket.removeEventListener('message', onMessage);
-      if (message.error) reject(new Error(message.error.message || method)); else resolvePromise(message.result);
-    };
-    socket.addEventListener('message', onMessage);
-    socket.send(JSON.stringify({ id, method, params }));
+    pending.set(id, { resolve: resolvePromise, reject, method });
+    try { socket.send(JSON.stringify({ id, method, params })); } catch (error) { pending.delete(id); reject(error); }
   }), `cdp_${method}_timeout`);
-  try {
-    await call('Runtime.enable', {});
-    const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
-    if (result?.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'echo_renderer_evaluation_failed');
-    return result;
-  } finally { socket.close(); }
+  return {
+    async evaluate(expression) {
+      const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+      if (result?.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'echo_renderer_evaluation_failed');
+      return result;
+    },
+    close: () => { try { socket.close(); } catch {} },
+  };
+};
+const cdpEvaluate = async (webSocketUrl, expression) => {
+  const session = await openCdpSession(webSocketUrl);
+  try { return await session.evaluate(expression); } finally { session.close(); }
 };
 const cdpTargets = async () => {
   const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
@@ -563,23 +687,33 @@ const externalContext = (id, manifest) => ({
   baseUrl: `http://127.0.0.1:${port}`,
 });
 
-const injectLoaderUi = async (target) => {
-  const uiSource = readFileSync(join(loaderDir, 'loader-ui.js'), 'utf8');
-  const expression = [
-    '(() => {',
-    `const LOADER_PORT = ${Number(port)};`,
-    `const LOADER_VERSION = ${JSON.stringify(loaderVersion)};`,
-    `let LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
-    `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
-    `let T = LOCALES[LOADER_LOCALE] || LOCALES.zh;`,
-    uiSource,
-    '})()',
-  ].join('\n');
-  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
+const loaderUiPath = join(loaderDir, 'loader-ui.js');
+let uiExpressionCache = null;
+const injectLoaderUi = async (session) => {
+  // The wrapper embeds locale copy and UI settings, so the cache token has to
+  // cover all inputs that change the generated expression, not just the file.
+  const token = `${fileToken(loaderUiPath)}:${locale || 'zh'}:${JSON.stringify(uiSettings)}`;
+  if (uiExpressionCache?.token !== token) {
+    const uiSource = readFileSync(loaderUiPath, 'utf8');
+    uiExpressionCache = {
+      token,
+      expression: [
+        '(() => {',
+        `const LOADER_PORT = ${Number(port)};`,
+        `const LOADER_VERSION = ${JSON.stringify(loaderVersion)};`,
+        `let LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
+        `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
+        `let T = LOCALES[LOADER_LOCALE] || LOCALES.zh;`,
+        `const LOADER_UI_SETTINGS = ${JSON.stringify(uiSettings)};`,
+        uiSource,
+        '})()',
+      ].join('\n'),
+    };
+  }
+  return session.evaluate(uiExpressionCache.expression);
 };
 
-const injectPlayerRuntime = async (target) => {
-  const expression = `(() => {
+const playerRuntimeExpression = `(() => {
     if (window.__echoExternalPlayer?.version >= 1) return 'already';
     const findQueue = () => {
       const root = window.__echoReactRoot?._internalRoot?.current;
@@ -789,11 +923,9 @@ const injectPlayerRuntime = async (target) => {
     window.__echoExternalPlayer = player;
     return 'installed';
   })()`;
-  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
-};
+const injectPlayerRuntime = (session) => session.evaluate(playerRuntimeExpression);
 
-const injectExtendRuntime = async (target) => {
-  const expression = `(() => {
+const extendRuntimeExpression = `(() => {
     if (window.__echoExternalExtend?.version >= 1) return 'already';
     const blocked = new Set(['__proto__', 'constructor', 'prototype', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__']);
     const hooks = new Map();
@@ -888,6 +1020,37 @@ const injectExtendRuntime = async (target) => {
         if (!surface.dataset.echoExternalHidden) surface.style.removeProperty('display');
       });
     };
+    // ECHO Next removed the per-route [data-workshop-icon] nav hooks the CSS
+    // hiding relied on, but exposes native sidebar route hiding through the
+    // sidebarHiddenRouteIds app setting. Apply both: the CSS path still covers
+    // legacy ECHO builds, the settings patch covers ECHO Next. Only routes this
+    // runtime hid itself are ever restored, so user-hidden routes stay hidden.
+    const nativeNavOwned = new Set();
+    const readNativeHiddenRoutes = async (app) => {
+      const settings = await app.getSettings();
+      return Array.isArray(settings?.sidebarHiddenRouteIds) ? settings.sidebarHiddenRouteIds.map(String) : [];
+    };
+    const hideNativeNav = async (id) => {
+      const app = window.echo?.app;
+      if (!id || typeof app?.getSettings !== 'function' || typeof app?.setSettings !== 'function') return;
+      try {
+        const hidden = await readNativeHiddenRoutes(app);
+        if (hidden.includes(id)) return;
+        const next = await app.setSettings({ sidebarHiddenRouteIds: [...hidden, id] });
+        const applied = Array.isArray(next?.sidebarHiddenRouteIds) ? next.sidebarHiddenRouteIds.map(String) : [];
+        if (applied.includes(id)) nativeNavOwned.add(id);
+      } catch {}
+    };
+    const showNativeNav = async (id) => {
+      const app = window.echo?.app;
+      if (!id || !nativeNavOwned.has(id) || typeof app?.getSettings !== 'function' || typeof app?.setSettings !== 'function') return;
+      nativeNavOwned.delete(id);
+      try {
+        const hidden = await readNativeHiddenRoutes(app);
+        if (!hidden.includes(id)) return;
+        await app.setSettings({ sidebarHiddenRouteIds: hidden.filter((routeId) => routeId !== id) });
+      } catch {}
+    };
     const extend = {
       version: 1,
       mode: 'external-cdp',
@@ -953,11 +1116,14 @@ const injectExtendRuntime = async (target) => {
         const id = safeId(routeId);
         hiddenNav.add(id);
         syncNavCss();
+        void hideNativeNav(id);
         return () => extend.showNav(id);
       },
       showNav(routeId) {
-        hiddenNav.delete(safeId(routeId));
+        const id = safeId(routeId);
+        hiddenNav.delete(id);
         syncNavCss();
+        void showNativeNav(id);
       },
       hide(selector) {
         const key = String(selector || '');
@@ -989,8 +1155,7 @@ const injectExtendRuntime = async (target) => {
     window.__echoExternalExtend = extend;
     return 'installed';
   })()`;
-  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
-};
+const injectExtendRuntime = (session) => session.evaluate(extendRuntimeExpression);
 
 const removeInjected = async (id) => {
   let targets = [];
@@ -1008,12 +1173,9 @@ const removeInjected = async (id) => {
   }
 };
 
-const injectIntoTarget = async (target, id, manifest, source) => {
-  const context = JSON.stringify(externalContext(id, manifest));
-  const sourceLiteral = JSON.stringify(source);
-  const signatureLiteral = JSON.stringify(sourceSignature(source, manifest, id));
+const injectIntoTarget = async (session, plan) => {
   const expression = `(async () => {
-    const id = ${JSON.stringify(id)}, ctx = ${context}, source = ${sourceLiteral}, signature = ${signatureLiteral};
+    const id = ${JSON.stringify(plan.id)}, ctx = ${plan.contextJson}, source = ${JSON.stringify(plan.source)}, signature = ${JSON.stringify(plan.signature)};
     window.__echoExternalMods = window.__echoExternalMods || {};
     const old = window.__echoExternalMods[id];
     if (old?.signature === signature) return { status: 'already' };
@@ -1151,6 +1313,20 @@ const injectIntoTarget = async (target, id, manifest, source) => {
         mode: 'in-process-asar-bridge',
         invoke: (method, payload) => request('/api/native/call', { body: { method: 'main.invoke', packageId: id, payload: { method, payload } } }),
       },
+      loaderSettings: {
+        get: async () => (await request('/api/ui-settings', { method: 'GET' })).ui,
+        set: async (patch) => {
+          const applier = window.__echoExternalLoaderUi?.setUiSettings;
+          if (typeof applier === 'function') return applier(patch);
+          return (await request('/api/ui-settings', { method: 'PUT', body: { ui: patch } })).ui;
+        },
+        onChange: (handler) => {
+          if (typeof handler !== 'function') return () => {};
+          const listener = (event) => { try { handler(event.detail); } catch (error) { modConsole.error('loaderSettings.onChange', error?.message || error); } };
+          window.addEventListener('shinawase:ui-settings', listener);
+          return trackExtend(() => window.removeEventListener('shinawase:ui-settings', listener));
+        },
+      },
     };
     const modConsole = Object.fromEntries(['debug', 'info', 'log', 'warn', 'error'].map((level) => [level, (...values) => {
       const message = values.map((value) => { try { return typeof value === 'string' ? value : JSON.stringify(value); } catch { return String(value); } }).join(' ');
@@ -1162,7 +1338,7 @@ const injectIntoTarget = async (target, id, manifest, source) => {
     bridge.log = modConsole.log;
     let returnedDispose;
     try {
-      returnedDispose = await (async function(echoExternalMod, console) { ${source}\n })(bridge, modConsole);
+      returnedDispose = await (async function(echoExternalMod, console) { ${plan.source}\n })(bridge, modConsole);
     } catch (error) {
       console.error('[ECHO external mod]', id, error);
       throw error;
@@ -1176,7 +1352,7 @@ const injectIntoTarget = async (target, id, manifest, source) => {
     window.__echoExternalMods[id] = { source, signature, dispose };
     return { status: 'injected', id };
   })()`;
-  return cdpEvaluate(target.webSocketDebuggerUrl, expression);
+  return session.evaluate(expression);
 };
 
 const modEntrySource = (id, manifest, entry) => {
@@ -1190,47 +1366,94 @@ const modEntrySource = (id, manifest, entry) => {
   }
   return source;
 };
+// Plans are cached per package and validated with cheap stat() tokens for the
+// manifest, entry, and config files, so the steady-state injection cycle does
+// not re-read and re-hash every enabled package every few seconds.
+const planCache = new Map();
 const injectionPlan = (id, stateEntry) => {
+  const kindKey = stateEntry?.kind || '';
+  const cached = planCache.get(id);
+  if (cached && cached.kindKey === kindKey && cached.tokens.every(([file, token]) => fileToken(file) === token)) {
+    return cached.plan;
+  }
   const record = findPackage(id, stateEntry?.kind);
   const manifest = record?.manifest;
-  if (!record || !manifest) return null;
-  const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
-  if (!existsSync(entry)) {
-    if (!manifest.main && !manifest.native) return null;
-    const source = '/* shinawase native-only package */';
-    return { id, manifest, source, signature: sourceSignature(source, manifest, id) };
+  if (!record || !manifest) {
+    planCache.delete(id);
+    return null;
   }
-  const source = modEntrySource(id, manifest, entry);
-  return { id, manifest, source, signature: sourceSignature(source, manifest, id) };
+  const manifestPath = join(record.directory, record.manifestName);
+  const tokens = [[manifestPath, fileToken(manifestPath)]];
+  try {
+    const config = join(record.directory, safeRelative(manifest.config || 'config.json'));
+    tokens.push([config, fileToken(config)]);
+  } catch {}
+  let source;
+  // Official ECHO Next sandboxed plugins (echo.plugin.json with apiVersion +
+  // permissions) target ECHO's own plugin VM (`echo.commands`, `echo.net`, ...),
+  // not the echoExternalMod SDK. Running their entry in the renderer would just
+  // throw, so surface a clear notice instead and point at the native importer.
+  if (record.kind === 'plugin' && Number(manifest.apiVersion) >= 1 && Array.isArray(manifest.permissions)) {
+    const message = `"${manifest.name || id}" is an official ECHO Next sandboxed plugin (apiVersion ${Number(manifest.apiVersion)}); ShinawaseLoader does not execute it. Import the .echo package from ECHO's native Plugins page instead.`;
+    source = `echoExternalMod.log(${JSON.stringify(message)}); echoExternalMod.toast(${JSON.stringify(message)});`;
+  } else {
+    const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
+    tokens.push([entry, fileToken(entry)]);
+    if (!existsSync(entry)) {
+      if (!manifest.main && !manifest.native) {
+        planCache.delete(id);
+        return null;
+      }
+      source = '/* shinawase native-only package */';
+    } else {
+      source = modEntrySource(id, manifest, entry);
+    }
+  }
+  const contextJson = JSON.stringify(externalContext(id, manifest));
+  const signature = createHash('sha256').update(`${source}\n${contextJson}`).digest('hex');
+  const plan = { id, manifest, source, contextJson, signature };
+  planCache.set(id, { kindKey, tokens, plan });
+  return plan;
 };
-const targetInjectionState = async (target) => {
-  const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(() => ({
+
+// Single readiness + injection-state probe. It also applies the streaming echo
+// proxy patch in place, replacing what used to be three round trips per target
+// per cycle (ready check, echo patch, state snapshot) with one.
+const targetProbeExpression = `(() => {
+  const href = String(location.href || '');
+  if (/auxiliary\\.html/i.test(href) || /[?&](desktopLyrics|pet|miniPlayer)=1/i.test(href)) return { ready: false };
+  const splash = document.querySelector('.echo-startup-shell');
+  if (splash && document.documentElement.dataset.echoStartup !== 'ready') return { ready: false };
+  if (!document.querySelector('.app-shell')) return { ready: false };
+  const extra = window.__echoShinawaseStreaming;
+  if (extra && !window.__echoShinawaseEchoPatched) {
+    const base = window.echo || {};
+    try {
+      window.echo = new Proxy(base, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop);
+          if ((value === null || value === undefined) && extra[prop]) return extra[prop];
+          return value;
+        }
+      });
+      window.__echoShinawaseEchoPatched = true;
+    } catch {}
+  }
+  return {
+    ready: true,
     uiVersion: Number(window.__echoExternalLoaderUi?.version || 0),
     playerVersion: Number(window.__echoExternalPlayer?.version || 0),
     extendVersion: Number(window.__echoExternalExtend?.version || 0),
     mods: Object.fromEntries(Object.entries(window.__echoExternalMods || {}).map(([id, value]) => [id, String(value?.signature || '').slice(0, 64)]))
-  }))()`);
-  return result?.result?.value || { uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} };
-};
-
-const rendererReadyForMods = async (webSocketDebuggerUrl) => {
-  try {
-    const result = await cdpEvaluate(webSocketDebuggerUrl, `(() => {
-      const href = String(location.href || '');
-      if (/auxiliary\\.html/i.test(href) || /[?&](desktopLyrics|pet|miniPlayer)=1/i.test(href)) return false;
-      const splash = document.querySelector('.echo-startup-shell');
-      if (splash && document.documentElement.dataset.echoStartup !== 'ready') return false;
-      return Boolean(document.querySelector('.app-shell'));
-    })()`);
-    return result?.result?.value === true;
-  } catch {
-    return false;
-  }
-};
+  };
+})()`;
 
 const injectEnabled = async () => {
   if (safeMode || loadMode === 'disabled') return 0;
+  lastCycleTargetCount = 0;
+  lastCycleReadyCount = 0;
   const targets = await cdpTargets();
+  lastCycleTargetCount = targets.length;
   const state = readState();
   const active = Object.entries(state.mods).filter(([, value]) => value?.enabled === true);
   const plans = active.map(([id, value]) => injectionPlan(id, value)).filter(Boolean);
@@ -1239,34 +1462,23 @@ const injectEnabled = async () => {
     log('INFO', `ECHO targets=${targets.length}, enabledPackages=${plans.length}`);
   }
   for (const target of targets) {
-    if (!(await rendererReadyForMods(target.webSocketDebuggerUrl))) continue;
-    const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 17;
-    await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
-      const extra = window.__echoShinawaseStreaming;
-      if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
-      const base = window.echo || {};
-      try {
-        window.echo = new Proxy(base, {
-          get(target, prop) {
-            const value = Reflect.get(target, prop);
-            if ((value === null || value === undefined) && extra[prop]) return extra[prop];
-            return value;
-          }
-        });
-        window.__echoShinawaseEchoPatched = true;
-        return 'proxied';
-      } catch { return 'frozen'; }
-    })()`).catch(() => undefined);
-    if (uiReloaded) await injectLoaderUi(target).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
-    if (targetState.playerVersion < 1) await injectPlayerRuntime(target).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
-    if (targetState.extendVersion < 1) await injectExtendRuntime(target).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
-    for (const plan of plans) {
-      if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
-      await injectIntoTarget(target, plan.id, plan.manifest, plan.source).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
-    }
+    let session;
+    try { session = await openCdpSession(target.webSocketDebuggerUrl); } catch { continue; }
+    try {
+      const probe = await session.evaluate(targetProbeExpression).catch(() => null);
+      const targetState = probe?.result?.value;
+      if (targetState?.ready !== true) continue;
+      lastCycleReadyCount += 1;
+      const uiReloaded = targetState.uiVersion < 21;
+      if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
+      if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
+      if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
+      for (const plan of plans) {
+        if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
+        await injectIntoTarget(session, plan).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
+      }
+    } finally { session.close(); }
   }
-  lastTargets = new Set(targets.map((target) => target.id));
   loaderStats.injects += 1;
   loaderStats.lastInjectAt = Date.now();
   return targets.length;
@@ -1444,11 +1656,18 @@ const startWatch = () => {
     log('INFO', `Mod injection disabled (${safeMode ? 'safe-mode' : 'load-mode'})`);
     return;
   }
-  if (watchTimer) return;
-  watchTimer = setInterval(() => void requestInjection('interval').catch((error) => log('WARN', 'interval injection failed', error)), injectIntervalMs);
-  const inject = () => void requestInjection('initial').catch((error) => log('WARN', 'initial injection failed', error));
-  if (startupDelayMs) setTimeout(inject, startupDelayMs);
-  else inject();
+  if (watchActive) return;
+  watchActive = true;
+  // Poll fast (1s) only while ECHO targets exist but none is past the splash
+  // yet, so mods appear right after startup; settle to injectIntervalMs once
+  // injected or while no ECHO is running at all.
+  const fastPollMs = Math.min(1000, injectIntervalMs);
+  const tick = async () => {
+    try { await requestInjection('interval'); } catch (error) { log('WARN', 'interval injection failed', error); }
+    const startupPending = lastCycleTargetCount > 0 && lastCycleReadyCount === 0;
+    watchTimer = setTimeout(tick, startupPending ? fastPollMs : injectIntervalMs);
+  };
+  watchTimer = setTimeout(tick, startupDelayMs);
   log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
 const echoFileName = (name) => /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
@@ -1481,7 +1700,16 @@ const echoCandidateRoots = () => {
   }
   return [...roots].filter(Boolean).map((value) => resolve(String(value)));
 };
+// Discovery walks Steam library folders up to 5 levels deep, which is far too
+// expensive to repeat on every 4s status poll from the loader UI. Cache hits
+// for 60s; keep misses short so a fresh install is picked up quickly.
+let echoDiscoveryCache = { at: 0, hint: null, list: null };
 const discoverEchoes = (hint = null) => {
+  const cacheHint = hint || null;
+  const maxAgeMs = echoDiscoveryCache.list?.length ? 60000 : 5000;
+  if (echoDiscoveryCache.list && echoDiscoveryCache.hint === cacheHint && Date.now() - echoDiscoveryCache.at < maxAgeMs) {
+    return echoDiscoveryCache.list;
+  }
   const found = new Set();
   const add = (value) => {
     if (!value) return;
@@ -1504,7 +1732,9 @@ const discoverEchoes = (hint = null) => {
     try { if (existsSync(path) && statSync(path).isFile()) add(path); else walk(path); } catch {}
   }
   for (const candidate of echoCandidateRoots()) walk(candidate);
-  return [...found].sort((left, right) => left.localeCompare(right));
+  const list = [...found].sort((left, right) => left.localeCompare(right));
+  echoDiscoveryCache = { at: Date.now(), hint: cacheHint, list };
+  return list;
 };
 const findEcho = () => {
   const found = discoverEchoes();
@@ -1580,10 +1810,20 @@ const readRequest = async (request) => {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 };
 
+// Read only the last chunk of the log instead of the whole file: log files
+// grow without bound and the web console polls the tail every 1.5s.
 const readLogTail = (file, tail = 80) => {
   try {
-    const raw = existsSync(file) ? readFileSync(file, 'utf8') : '';
-    return raw.split(/\r?\n/).filter(Boolean).slice(-Math.max(1, tail)).join('\n');
+    const stats = statSync(file, { throwIfNoEntry: false });
+    if (!stats?.size) return '';
+    const maxBytes = 256 * 1024;
+    const start = Math.max(0, stats.size - maxBytes);
+    const buffer = Buffer.alloc(stats.size - start);
+    const descriptor = openSync(file, 'r');
+    try { readSync(descriptor, buffer, 0, buffer.length, start); } finally { closeSync(descriptor); }
+    let text = buffer.toString('utf8');
+    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
+    return text.split(/\r?\n/).filter(Boolean).slice(-Math.max(1, tail)).join('\n');
   } catch { return ''; }
 };
 const runConsoleCommand = async (line) => {
@@ -1657,12 +1897,7 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/logs') {
       const kind = url.searchParams.get('kind') === 'error' ? errorLogPath : logFilePath;
       const tail = Math.min(400, Math.max(20, Number(url.searchParams.get('tail') || 80)));
-      let text = '';
-      try {
-        const raw = existsSync(kind) ? readFileSync(kind, 'utf8') : '';
-        text = raw.split(/\r?\n/).filter(Boolean).slice(-tail).join('\n');
-      } catch {}
-      return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath, file: kind, text });
+      return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath, file: kind, text: readLogTail(kind, tail) });
     }
     if (request.method === 'POST' && url.pathname === '/api/console') {
       const body = await readRequest(request);
@@ -1672,6 +1907,20 @@ const server = createServer(async (request, response) => {
       const body = await readRequest(request);
       locale = persistLocale(body.locale);
       return jsonResponse(response, 200, { ok: true, locale });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/ui-settings') {
+      return jsonResponse(response, 200, { ok: true, ui: uiSettings, defaults: defaultUiSettings });
+    }
+    if (request.method === 'PUT' && url.pathname === '/api/ui-settings') {
+      const body = await readRequest(request);
+      const patch = body.ui && typeof body.ui === 'object' ? body.ui : body;
+      return jsonResponse(response, 200, { ok: true, ui: persistUiSettings(patch) });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/settings/export') {
+      return jsonResponse(response, 200, { ok: true, ...exportLoaderSettings() });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/settings/import') {
+      return jsonResponse(response, 200, importLoaderSettings(await readRequest(request)));
     }
     if (request.method === 'POST' && url.pathname === '/api/debug') {
       const body = await readRequest(request);

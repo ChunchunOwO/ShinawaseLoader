@@ -1,11 +1,13 @@
 {
   "id": "echo.auxiliary-fix",
   "name": "ECHO Auxiliary Fix",
-  "version": "1.2.0",
-  "description": "Fixes the native crash loop of desktop lyrics, pet, and mini-player windows (deferred always-on-top, loader >= 1.6.0).",
+  "version": "1.2.2",
+  "description": "Stops the native crash loop of desktop lyrics, pet, and mini-player windows by remapping them to auxiliary.html (loader >= 1.6.0).",
   "icon": "icon.svg",
   "entry": "mod.js",
   "main": "main.cjs",
   "config": "config.json",
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js",
   "sidebarOrder": 90
 }

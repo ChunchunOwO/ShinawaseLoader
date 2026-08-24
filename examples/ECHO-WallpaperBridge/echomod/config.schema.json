@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ECHO Wallpaper Bridge",
+  "type": "object",
+  "properties": {
+    "bridgeUrl": {
+      "type": "string",
+      "title": "桥接地址 / Bridge URL",
+      "description": "ECHO Wallpaper Engine 桥接服务地址，默认 http://127.0.0.1:47668。/ Base URL of ECHO's Wallpaper Engine bridge.",
+      "default": "http://127.0.0.1:47668"
+    },
+    "barCount": {
+      "type": "integer",
+      "title": "频谱条数量 / Spectrum bars",
+      "description": "可视化频谱条数量（桥接提供 32 段数据）。/ Number of bars rendered (the bridge provides 32 bands).",
+      "minimum": 8,
+      "maximum": 32,
+      "default": 32
+    },
+    "applyCssVariables": {
+      "type": "boolean",
+      "title": "导出 CSS 变量 / Export CSS variables",
+      "description": "在 ECHO 窗口根元素上更新 --echo-wallpaper-* 变量，与官方 /echo-wallpaper-engine.js 帮助脚本一致，可供主题和其他 Mod 使用。/ Mirror the official helper script by updating --echo-wallpaper-* variables on the document root.",
+      "default": false
+    },
+    "accentColor": {
+      "type": "string",
+      "title": "频谱颜色 / Spectrum color",
+      "description": "十六进制颜色（#RRGGBB）。留空跟随 ECHO 主题强调色。/ Hex color (#RRGGBB). Leave empty to follow the ECHO theme accent.",
+      "default": ""
+    }
+  }
+}

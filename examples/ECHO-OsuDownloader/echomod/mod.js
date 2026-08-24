@@ -8,7 +8,8 @@ const config = external.config || {};
 
 const locale = String(config.locale || 'zh-CN');
 const chinese = locale.toLowerCase().startsWith('zh');
-const searchLimit = Math.max(10, Math.min(100, Number(config.searchLimit) || 40));
+// The downloads bridge clamps limitPerProvider to 1-20, so never advertise more.
+const searchLimit = Math.max(5, Math.min(20, Number(config.searchLimit) || 20));
 const bestPageSize = 50;
 const mostPlayedPageSize = 50;
 const activeJobStatuses = new Set(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
@@ -102,7 +103,9 @@ const copy = chinese ? {
 const bridge = () => window.__echoShinawaseStreaming || {};
 const downloadsApi = () => external.echo?.downloads || window.echo?.downloads || bridge().downloads;
 const accountsApi = () => external.echo?.accounts || window.echo?.accounts || bridge().accounts;
-const showChromeNotice = (message) => window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: message }));
+// external.toast prefers the loader toast and falls back to the legacy
+// app:show-chrome-notice event; ECHO Next no longer guarantees the latter.
+const showChromeNotice = (message) => external.toast(String(message));
 const friendlyError = (error) => {
   const message = error instanceof Error ? error.message : String(error);
   for (const [needle, text] of Object.entries(copy.errors)) if (message.includes(needle)) return text;
@@ -122,9 +125,12 @@ const state = {
 
 let pageRoot = null;
 let disposed = true;
+let modDisposed = false;
 let scrollTop = 0;
 let jobsUnsubscribe = null;
 let statusesUnsubscribe = null;
+let notifySeeded = false;
+let collectionToken = 0;
 
 /* ---------- tiny DOM helpers ---------- */
 const make = (tag, className = '', text = undefined) => {
@@ -186,7 +192,11 @@ const formatDuration = (seconds) => {
   const whole = Math.round(value);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 };
-const formatInt = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString(chinese ? 'zh-CN' : 'en-US') : null;
+const formatInt = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toLocaleString(chinese ? 'zh-CN' : 'en-US') : null;
+};
 const formatBytes = (bytes) => {
   const value = Number(bytes);
   if (!Number.isFinite(value) || value <= 0) return null;
@@ -212,11 +222,25 @@ const notifyJob = (job) => {
   state.notified[job.id] = job.status;
   showChromeNotice(job.status === 'completed' ? copy.jobDone(job.title || job.sourceUrl) : copy.jobFailed(job.title || job.sourceUrl, job.error));
 };
+// Jobs persist across ECHO restarts; mark the first snapshot as already
+// notified so historical completed/failed jobs do not toast on every injection.
+const seedNotified = (jobs) => {
+  if (notifySeeded) return;
+  notifySeeded = true;
+  for (const job of jobs) {
+    if (job?.provider === 'osu' && ['completed', 'failed'].includes(job.status)) state.notified[job.id] = job.status;
+  }
+};
 
 /* ---------- data loading ---------- */
 const loadSettings = async () => { const api = downloadsApi(); if (api?.getSettings) state.settings = await api.getSettings(); };
 const loadTools = async () => { const api = downloadsApi(); if (api?.checkTools) state.tools = await api.checkTools(); };
-const loadJobs = async () => { const api = downloadsApi(); if (api?.getJobs) state.jobs = (await api.getJobs()) || []; };
+const loadJobs = async () => {
+  const api = downloadsApi();
+  if (!api?.getJobs) return;
+  state.jobs = (await api.getJobs()) || [];
+  seedNotified(state.jobs);
+};
 const loadAccountStatus = async () => {
   const api = accountsApi();
   if (!api?.getStatuses) return;
@@ -226,7 +250,7 @@ const loadAccountStatus = async () => {
 };
 const loadProfile = async () => {
   const api = downloadsApi();
-  if (!api?.getOsuAccountProfile || !state.account.connected) return;
+  if (!api?.getOsuAccountProfile || !state.account.connected || state.profileLoading) return;
   state.profileLoading = true; state.profileError = null; render();
   try { state.profile = await api.getOsuAccountProfile(); }
   catch (error) { state.profile = null; state.profileError = friendlyError(error); }
@@ -237,15 +261,20 @@ const collectionRequest = (page) => {
   if (state.kind === 'most_played') return { kind: 'most_played', offset: page * mostPlayedPageSize, limit: mostPlayedPageSize };
   return { kind: 'favourites' };
 };
+// Fresh loads supersede any in-flight request (kind/ruleset switches mid-load);
+// stale responses are discarded by the token check. Appends wait their turn.
 const loadCollection = async (append = false) => {
   const api = downloadsApi();
-  if (!api?.getOsuAccountCollection || !state.account.connected || state.collectionLoading) return;
+  if (!api?.getOsuAccountCollection || !state.account.connected) return;
+  if (append && (state.collectionLoading || state.collectionDone)) return;
+  const token = ++collectionToken;
   const page = append ? state.collectionPage + 1 : 0;
   state.collectionLoading = true; state.collectionError = null;
   if (!append) { state.collection = []; state.collectionTotal = null; state.collectionDone = false; }
   render();
   try {
     const response = await api.getOsuAccountCollection(collectionRequest(page));
+    if (token !== collectionToken) return;
     const items = Array.isArray(response?.items) ? response.items : [];
     state.collection = append ? [...state.collection, ...items] : items;
     state.collectionTotal = response?.total ?? null;
@@ -257,9 +286,9 @@ const loadCollection = async (append = false) => {
       || (state.kind === 'best' && (page + 1) * bestPageSize >= 100)
       || (state.collectionTotal !== null && state.collection.length >= state.collectionTotal);
   } catch (error) {
-    state.collectionError = friendlyError(error);
+    if (token === collectionToken) state.collectionError = friendlyError(error);
   } finally {
-    state.collectionLoading = false; render();
+    if (token === collectionToken) { state.collectionLoading = false; render(); }
   }
 };
 
@@ -275,7 +304,7 @@ const runSearch = async () => {
     state.results = Array.isArray(response?.results) ? response.results : [];
     state.searched = true;
     const providerError = (response?.errors || []).find((item) => item.provider === 'osu');
-    if (providerError && !state.results.length) state.searchError = providerError.error;
+    if (providerError && !state.results.length) state.searchError = friendlyError(providerError.error);
   } catch (error) {
     state.results = []; state.searched = true; state.searchError = friendlyError(error);
   } finally {
@@ -628,7 +657,8 @@ const renderJobsView = () => {
     if (activeJobStatuses.has(job.status)) {
       const progress = make('div', 'osu-dl-job-progress');
       const fill = make('i', '');
-      fill.style.width = `${Math.round(Math.max(0, Math.min(1, Number(job.progress) || 0)) * 100)}%`;
+      // Job progress is reported on a 0-100 scale by the downloads bridge.
+      fill.style.width = `${Math.round(Math.max(0, Math.min(100, Number(job.progress) || 0)))}%`;
       progress.append(fill);
       body.append(progress);
     }
@@ -660,15 +690,20 @@ const render = () => {
 };
 
 /* ---------- boot ---------- */
+const styleElementId = 'echo-osu-downloader-styles';
 void (async () => {
-  if (document.getElementById('echo-osu-downloader-styles')) return;
   try {
     const css = await external.loadAsset('styles.css');
-    if (!css) return;
-    const style = document.createElement('style');
-    style.id = 'echo-osu-downloader-styles';
+    if (!css || modDisposed) return;
+    // Update in place so a package update replaces stale CSS from the
+    // previous injection instead of keeping it around.
+    let style = document.getElementById(styleElementId);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = styleElementId;
+      document.head.append(style);
+    }
     style.textContent = String(css);
-    document.head.append(style);
   } catch {}
 })();
 
@@ -677,7 +712,8 @@ const installListeners = () => {
   if (downloads?.onJobsUpdated && !jobsUnsubscribe) {
     jobsUnsubscribe = downloads.onJobsUpdated((jobs) => {
       state.jobs = Array.isArray(jobs) ? jobs : [];
-      state.jobs.forEach(notifyJob);
+      if (notifySeeded) state.jobs.forEach(notifyJob);
+      else seedNotified(state.jobs);
       render();
     });
   }
@@ -720,9 +756,11 @@ const disposeSidebar = external.sidebar.register({
 
 return () => {
   disposed = true;
+  modDisposed = true;
   jobsUnsubscribe?.();
   statusesUnsubscribe?.();
   jobsUnsubscribe = null;
   statusesUnsubscribe = null;
   disposeSidebar?.();
+  document.getElementById(styleElementId)?.remove();
 };
