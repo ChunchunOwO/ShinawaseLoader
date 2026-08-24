@@ -45,14 +45,14 @@ root.innerHTML = `
     .tg-cfg-ping[data-state="ok"] { color: var(--theme-success-text, #1a7f37); }
     .tg-cfg-ping[data-state="error"] { color: var(--theme-danger-text, #c0392b); }
     .tg-cfg-range { display: flex; align-items: center; gap: 10px; }
-    .tg-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .tg-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent-solid-bg, var(--theme-accent, var(--color-accent, #4b55e8))); }
     .tg-cfg-range output { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; color: var(--theme-muted-text, #6c7179); }
     .tg-cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .tg-cfg-switch { position: relative; width: 42px; height: 24px; flex: none; }
     .tg-cfg-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
     .tg-cfg-switch i { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--theme-field-border, rgba(0,0,0,0.18)); }
     .tg-cfg-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(16,19,24,0.2); }
-    .tg-cfg-switch input:checked + i { background: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .tg-cfg-switch input:checked + i { background: var(--theme-accent-solid-bg, var(--theme-accent, var(--color-accent, #4b55e8))); }
     .tg-cfg-switch input:checked + i::after { transform: translateX(18px); }
   </style>
   <div class="tg-cfg">

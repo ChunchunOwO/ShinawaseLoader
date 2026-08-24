@@ -1,7 +1,7 @@
 {
   "id": "echo.listen-together",
   "name": "ECHO Together",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "minEchoVersion": "26.8.15",
   "description": "Share local music with friends through a Together room. The mod is injected by the external ECHO Mod Loader.",
   "icon": "icon.svg",
