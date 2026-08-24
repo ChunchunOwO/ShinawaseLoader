@@ -1,7 +1,23 @@
-if (window.__echoExternalLoaderUi?.version >= 17) return 'already';
+if (window.__echoExternalLoaderUi?.version >= 18) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
+const defaultUiSettings = {
+  density: 'comfortable',
+  accentColor: '',
+  animations: true,
+  cardLayout: 'list',
+  showModDescriptions: true,
+  showModVersions: true,
+  showModIds: true,
+  rememberFilters: true,
+  modSort: 'name',
+  modFilter: 'all',
+};
+let uiSettings = {
+  ...defaultUiSettings,
+  ...((typeof LOADER_UI_SETTINGS !== 'undefined' && LOADER_UI_SETTINGS && typeof LOADER_UI_SETTINGS === 'object') ? LOADER_UI_SETTINGS : {}),
+};
 let modsPanel = null;
 let loaderPanel = null;
 let configModal = null;
@@ -17,7 +33,8 @@ const sidebarEntries = new Map();
 const sidebarButtons = new Map();
 const sidebarPages = new Map();
 let searchQuery = '';
-let currentFilter = 'all';
+let currentFilter = uiSettings.rememberFilters !== false ? (uiSettings.modFilter || 'all') : 'all';
+let currentSort = uiSettings.modSort || 'name';
 let statusTimer = 0;
 let injectPopupTimer = 0;
 let injectPopupShown = false;
@@ -267,6 +284,7 @@ css.textContent = `
     background: var(--theme-field-bg, rgba(0,0,0,0.04));
     color: var(--theme-muted-text, #6c7179);
   }
+  .echo-mod-copy [hidden], .echo-mod-meta[hidden] { display: none !important; }
   .echo-mod-row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
   .echo-switch {
     position: relative; width: 42px; height: 24px; padding: 0; border: 0; border-radius: 999px;
@@ -423,6 +441,79 @@ css.textContent = `
     background: var(--theme-accent, #4b55e8);
     animation: shinawaseInjectFill 3s linear forwards;
   }
+  .echo-config-form { display: grid; gap: 14px; }
+  .echo-sort-select {
+    height: 38px; padding: 0 32px 0 12px; box-sizing: border-box; flex: none;
+    appearance: none; cursor: pointer;
+    border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14));
+    border-radius: 10px;
+    background: var(--theme-field-bg, rgba(255,255,255,0.82));
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 16px) calc(50% - 2px), calc(100% - 11px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+    color: inherit; font: 13px inherit;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .echo-sort-select:focus {
+    outline: none; border-color: var(--theme-accent, #4b55e8);
+    box-shadow: 0 0 0 3px var(--theme-accent-bg, rgba(75,85,232,0.14));
+  }
+  .echo-appearance-hint { margin: 0 0 4px; color: var(--theme-muted-text, #6c7179); font-size: 12px; }
+  .echo-appearance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .echo-appearance-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 52px; padding: 10px 14px; box-sizing: border-box; border-radius: 12px;
+    background: var(--theme-panel-bg, #fff);
+    border: 1px solid var(--theme-panel-border, rgba(38,40,46,0.1));
+  }
+  .echo-appearance-row > strong { font-size: 13px; font-weight: 600; color: var(--theme-heading-text, inherit); }
+  .echo-appearance-row select {
+    height: 32px; padding: 0 28px 0 10px; box-sizing: border-box; flex: none; max-width: 150px;
+    appearance: none; cursor: pointer;
+    border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14));
+    border-radius: 8px;
+    background: var(--theme-field-bg, rgba(255,255,255,0.92));
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+    color: inherit; font: 12px inherit;
+  }
+  .echo-appearance-color { display: flex; align-items: center; gap: 6px; flex: none; }
+  .echo-appearance-color input[type="color"] {
+    width: 34px; height: 26px; padding: 2px; cursor: pointer;
+    border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14));
+    border-radius: 7px; background: var(--theme-field-bg, rgba(255,255,255,0.92));
+  }
+  .echo-appearance-color button {
+    height: 26px; padding: 0 8px; cursor: pointer; font: 11px inherit;
+    border: 1px solid var(--theme-panel-border, rgba(38,40,46,0.12));
+    border-radius: 7px; background: var(--theme-panel-bg, #fff);
+    color: var(--theme-muted-text, #6c7179);
+  }
+  .echo-appearance-color button:hover { color: var(--theme-heading-text, inherit); }
+  .echo-appearance-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  [data-density="compact"] .echo-mod-page { padding: 20px 24px 100px; gap: 12px; }
+  [data-density="compact"] .echo-mod-header h1 { font-size: 22px; }
+  [data-density="compact"] .echo-mod-header p { margin-top: 4px; font-size: 13px; }
+  [data-density="compact"] .echo-mod-row { min-height: 56px; padding: 8px 12px; gap: 10px; grid-template-columns: 36px minmax(0, 1fr) auto; border-radius: 11px; }
+  [data-density="compact"] .echo-mod-icon { width: 36px; height: 36px; border-radius: 10px; font-size: 13px; }
+  [data-density="compact"] .echo-mod-icon img { border-radius: 10px; }
+  [data-density="compact"] .echo-mod-copy strong { font-size: 13px; }
+  [data-density="compact"] .echo-mod-copy em { margin-top: 2px; }
+  [data-density="compact"] .echo-mod-meta { margin-top: 4px; }
+  [data-density="compact"] .echo-mod-drop { min-height: 40px; padding: 8px 14px; }
+  [data-density="compact"] .echo-mod-list { gap: 7px; }
+  [data-density="compact"] .echo-status-chip { padding: 9px 12px; }
+  [data-density="compact"] .echo-appearance-row { min-height: 44px; padding: 7px 12px; }
+  [data-density="compact"] .echo-icon-btn { width: 30px; height: 30px; }
+  .echo-mod-list[data-layout="grid"] {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;
+  }
+  .echo-mod-list[data-layout="grid"] .echo-mod-row {
+    grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto auto; align-items: start; align-content: space-between;
+  }
+  .echo-mod-list[data-layout="grid"] .echo-mod-copy strong { white-space: normal; }
+  .echo-mod-list[data-layout="grid"] .echo-mod-row-actions { grid-column: 1 / -1; justify-content: flex-end; }
   @media (prefers-reduced-motion: reduce) {
     .echo-toast, .echo-config-overlay, .echo-config-card, .echo-mod-row, .echo-switch, .echo-switch-thumb,
     .echo-switch-box .echo-switch-track, .echo-switch-box .echo-switch-track::after,
@@ -433,7 +524,19 @@ css.textContent = `
     .echo-mod-row:hover { transform: none; }
   }
 `;
-document.head.append(css);
+const accentCss = document.createElement('style');
+accentCss.id = 'echo-loader-ui-accent';
+const motionCss = document.createElement('style');
+motionCss.id = 'echo-loader-ui-motion';
+document.head.append(css, accentCss, motionCss);
+
+const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group]';
+const hexToRgba = (hex, alpha) => {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((value >> 16) & 255) + ',' + ((value >> 8) & 255) + ',' + (value & 255) + ',' + alpha + ')';
+};
+const noMotionText = loaderSurfaces + ', ' + loaderSurfaces.split(', ').map((part) => part + ' *').join(', ') +
+  ' { animation: none !important; transition: none !important; }\n  .echo-mod-row:hover { transform: none !important; }';
 
 const toast = (text, type = 'info') => {
   document.querySelectorAll('.echo-toast').forEach((node) => node.remove());
@@ -452,6 +555,41 @@ const api = async (path, options) => {
   const val = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(val.error || 'request failed (' + res.status + ')');
   return val;
+};
+
+const syncModsToolbar = () => {
+  if (!modsPanel) return;
+  const sortSelect = modsPanel.querySelector('[data-sort]');
+  if (sortSelect && sortSelect.value !== currentSort) sortSelect.value = currentSort;
+  modsPanel.querySelectorAll('[data-filter]').forEach((chip) => chip.classList.toggle('active', chip.dataset.filter === currentFilter));
+};
+
+const applyUiSettings = () => {
+  const density = uiSettings.density === 'compact' ? 'compact' : 'comfortable';
+  const panels = [modsPanel, loaderPanel, ...sidebarPages.values()];
+  panels.forEach((panel) => { if (panel) panel.dataset.density = density; });
+  const list = modsPanel?.querySelector('[data-mod-list]');
+  if (list) list.dataset.layout = uiSettings.cardLayout === 'grid' ? 'grid' : 'list';
+  accentCss.textContent = /^#[0-9a-f]{6}$/i.test(uiSettings.accentColor || '')
+    ? loaderSurfaces + ' { --theme-accent: ' + uiSettings.accentColor + '; --theme-accent-bg: ' + hexToRgba(uiSettings.accentColor, 0.14) + '; }'
+    : '';
+  motionCss.textContent = uiSettings.animations === false ? noMotionText : '';
+  syncModsToolbar();
+  try { window.dispatchEvent(new CustomEvent('shinawase:ui-settings', { detail: { ...uiSettings } })); } catch {}
+};
+
+const saveUiSettings = async (patch) => {
+  const next = { ...uiSettings, ...(patch && typeof patch === 'object' ? patch : {}) };
+  const result = await api('/api/ui-settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ui: next }),
+  });
+  uiSettings = { ...defaultUiSettings, ...(result.ui || {}) };
+  applyUiSettings();
+  renderAppearance();
+  if (modsPanel && !modsPanel.hidden) void renderModList();
+  return { ...uiSettings };
 };
 
 const hideNativeSurfaces = () => document.querySelectorAll('.page-surface:not([hidden])').forEach((surface) => {
@@ -686,11 +824,7 @@ const runDebugCommand = async (command) => {
   }
 };
 
-const applyLocale = async () => {
-  const next = (typeof LOADER_LOCALE !== 'undefined' && LOADER_LOCALE === 'en') ? 'zh' : 'en';
-  await api('/api/locale', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: next }) });
-  if (typeof LOADER_LOCALE !== 'undefined') LOADER_LOCALE = next;
-  if (typeof LOCALES !== 'undefined' && LOCALES[next]) T = LOCALES[next];
+const rebuildUi = async () => {
   const showMods = Boolean(modsPanel && !modsPanel.hidden);
   loaderPanel?.remove();
   modsPanel?.remove();
@@ -702,6 +836,109 @@ const applyLocale = async () => {
   ensureLoaderButtons(loaderNav);
   if (showMods) await openMods();
   else await openLoader();
+};
+
+const applyLocale = async () => {
+  const next = (typeof LOADER_LOCALE !== 'undefined' && LOADER_LOCALE === 'en') ? 'zh' : 'en';
+  await api('/api/locale', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: next }) });
+  if (typeof LOADER_LOCALE !== 'undefined') LOADER_LOCALE = next;
+  if (typeof LOCALES !== 'undefined' && LOCALES[next]) T = LOCALES[next];
+  await rebuildUi();
+};
+
+const renderAppearance = () => {
+  const grid = loaderPanel?.querySelector('[data-appearance]');
+  if (!grid) return;
+  const row = (label, control) => {
+    const el = document.createElement('div');
+    el.className = 'echo-appearance-row';
+    const caption = document.createElement('strong');
+    caption.textContent = label;
+    el.append(caption, control);
+    return el;
+  };
+  const selectControl = (key, options) => {
+    const select = document.createElement('select');
+    options.forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.append(option);
+    });
+    select.value = String(uiSettings[key]);
+    select.onchange = () => void saveUiSettings({ [key]: select.value }).catch((error) => toast(error.message, 'error'));
+    return select;
+  };
+  const switchControl = (key) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'echo-switch';
+    button.setAttribute('role', 'switch');
+    button.setAttribute('aria-checked', uiSettings[key] === true ? 'true' : 'false');
+    button.innerHTML = '<span class="echo-switch-thumb"></span>';
+    button.onclick = () => void saveUiSettings({ [key]: uiSettings[key] !== true }).catch((error) => toast(error.message, 'error'));
+    return button;
+  };
+  const accentControl = () => {
+    const wrap = document.createElement('span');
+    wrap.className = 'echo-appearance-color';
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = /^#[0-9a-f]{6}$/i.test(uiSettings.accentColor || '') ? uiSettings.accentColor : '#4b55e8';
+    input.onchange = () => void saveUiSettings({ accentColor: input.value }).catch((error) => toast(error.message, 'error'));
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = T.accentReset || 'Reset';
+    reset.onclick = () => void saveUiSettings({ accentColor: '' }).catch((error) => toast(error.message, 'error'));
+    wrap.append(input, reset);
+    return wrap;
+  };
+  grid.replaceChildren(
+    row(T.density, selectControl('density', [['comfortable', T.densityComfortable], ['compact', T.densityCompact]])),
+    row(T.cardLayout, selectControl('cardLayout', [['list', T.layoutList], ['grid', T.layoutGrid]])),
+    row(T.accentColor, accentControl()),
+    row(T.animations, switchControl('animations')),
+    row(T.showDescriptions, switchControl('showModDescriptions')),
+    row(T.showVersions, switchControl('showModVersions')),
+    row(T.showIds, switchControl('showModIds')),
+    row(T.rememberFilters, switchControl('rememberFilters')),
+  );
+};
+
+const exportLoaderSettings = async () => {
+  const { ok, ...payload } = await api('/api/settings/export');
+  const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'shinawase-loader-settings.json';
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+  toast(T.settingsExported || 'Settings exported', 'success');
+};
+
+const importLoaderSettings = async (file) => {
+  if (!file) return;
+  const payload = JSON.parse(await file.text());
+  const result = await api('/api/settings/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  uiSettings = { ...defaultUiSettings, ...(result.ui || {}) };
+  currentSort = uiSettings.modSort || 'name';
+  if (uiSettings.rememberFilters !== false) currentFilter = uiSettings.modFilter || 'all';
+  const restartHint = (result.requiresRestart || []).length ? ' · ' + (T.restartNote || '') : '';
+  toast((T.settingsImported || 'Settings imported') + restartHint, 'success');
+  const nextLocale = result.locale;
+  if (typeof LOADER_LOCALE !== 'undefined' && typeof LOCALES !== 'undefined' && nextLocale && nextLocale !== LOADER_LOCALE && LOCALES[nextLocale]) {
+    LOADER_LOCALE = nextLocale;
+    T = LOCALES[nextLocale];
+    await rebuildUi();
+    return;
+  }
+  applyUiSettings();
+  renderAppearance();
+  if (modsPanel && !modsPanel.hidden) await renderModList();
 };
 
 const openLoader = async () => {
@@ -728,6 +965,16 @@ const openLoader = async () => {
       <section class="settings-section">
         <h2 class="section-title">${T.status}</h2>
         <div class="echo-status-grid" data-status-grid></div>
+      </section>
+      <section class="settings-section">
+        <h2 class="section-title">${T.appearance}</h2>
+        <p class="echo-appearance-hint">${T.appearanceHint}</p>
+        <div class="echo-appearance-grid" data-appearance></div>
+        <div class="echo-appearance-actions">
+          <button class="settings-action-button" data-action="export-settings">${T.exportSettings}</button>
+          <button class="settings-action-button" data-action="import-settings">${T.importSettings}</button>
+          <input type="file" accept="application/json,.json" data-settings-file hidden>
+        </div>
       </section>
       <section class="settings-section">
         <h2 class="section-title">${T.debugConsole}</h2>
@@ -764,6 +1011,15 @@ const openLoader = async () => {
     toast(next ? T.debugOn : T.debugOff, 'success');
     await renderStatus();
   };
+  loaderPanel.querySelector('[data-action="export-settings"]').onclick = () => void exportLoaderSettings().catch((error) => toast(error.message, 'error'));
+  const settingsFile = loaderPanel.querySelector('[data-settings-file]');
+  loaderPanel.querySelector('[data-action="import-settings"]').onclick = () => settingsFile.click();
+  settingsFile.onchange = (event) => {
+    const file = event.target.files?.[0];
+    settingsFile.value = '';
+    if (file) void importLoaderSettings(file).catch((error) => toast((T.settingsImportFailed || 'Import failed') + ': ' + error.message, 'error'));
+  };
+  renderAppearance();
   loaderPanel.querySelector('[data-action="console-clear"]').onclick = () => {
     loaderPanel.querySelector('[data-console-out]')?.replaceChildren();
     lastLogText = '';
@@ -781,6 +1037,7 @@ const openLoader = async () => {
     consoleInput.value = '';
     void runDebugCommand(value);
   }, true);
+  applyUiSettings();
   await renderStatus();
   await refreshDebugLog();
   window.clearInterval(statusTimer);
@@ -798,10 +1055,21 @@ const renderEmptyState = (isSearch) => {
   return empty;
 };
 
+const compareMods = (left, right) => {
+  if (currentSort === 'enabled' && left.enabled !== right.enabled) return left.enabled ? -1 : 1;
+  if (currentSort === 'recent') {
+    const leftTime = Date.parse(left.importedAt || '') || 0;
+    const rightTime = Date.parse(right.importedAt || '') || 0;
+    if (leftTime !== rightTime) return rightTime - leftTime;
+  }
+  return String(left.name || left.id).localeCompare(String(right.name || right.id));
+};
+
 const renderModList = async () => {
   if (!modsPanel) return;
   const data = await api('/api/mods');
   const list = modsPanel.querySelector('[data-mod-list]');
+  list.dataset.layout = uiSettings.cardLayout === 'grid' ? 'grid' : 'list';
   const allMods = data.mods || [];
   const items = allMods.filter((item) => {
     const hay = ((item.name || '') + ' ' + item.id + ' ' + (item.description || '')).toLowerCase();
@@ -809,7 +1077,7 @@ const renderModList = async () => {
     if (currentFilter === 'active') return item.enabled;
     if (currentFilter === 'inactive') return !item.enabled;
     return true;
-  });
+  }).sort(compareMods);
   modsPanel.querySelector('[data-count-all]').textContent = String(allMods.length);
   modsPanel.querySelector('[data-count-active]').textContent = String(allMods.filter((item) => item.enabled).length);
   modsPanel.querySelector('[data-count-inactive]').textContent = String(allMods.filter((item) => !item.enabled).length);
@@ -832,9 +1100,16 @@ const renderModList = async () => {
       icon.textContent = (item.name || item.id || '?').slice(0, 1).toUpperCase();
     }
     card.querySelector('strong').textContent = item.name || item.id;
-    card.querySelector('[data-desc]').textContent = item.description || item.id;
-    card.querySelector('[data-version]').textContent = 'v' + (item.version || '1.0.0');
-    card.querySelector('[data-id]').textContent = item.id;
+    const desc = card.querySelector('[data-desc]');
+    desc.textContent = item.description || item.id;
+    desc.hidden = uiSettings.showModDescriptions === false;
+    const versionBadge = card.querySelector('[data-version]');
+    versionBadge.textContent = 'v' + (item.version || '1.0.0');
+    versionBadge.hidden = uiSettings.showModVersions === false;
+    const idBadge = card.querySelector('[data-id]');
+    idBadge.textContent = item.id;
+    idBadge.hidden = uiSettings.showModIds === false;
+    card.querySelector('.echo-mod-meta').hidden = versionBadge.hidden && idBadge.hidden;
     const actions = card.querySelector('.echo-mod-row-actions');
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -929,11 +1204,11 @@ const openConfigModal = async (modId, modName) => {
     });
     return result.config;
   };
-  const readDraft = () => {
-    const area = body.querySelector('[data-json]');
+  const readDraftFrom = (container) => {
+    const area = container.querySelector('[data-json]');
     if (area) return JSON.parse(area.value || '{}');
     const next = {};
-    body.querySelectorAll('[data-key]').forEach((input) => {
+    container.querySelectorAll('[data-key]').forEach((input) => {
       const key = input.dataset.key;
       if (input.type === 'checkbox') next[key] = input.checked;
       else if (input.dataset.kind === 'integer') next[key] = Number.parseInt(input.value, 10);
@@ -943,6 +1218,7 @@ const openConfigModal = async (modId, modName) => {
     });
     return next;
   };
+  const readDraft = () => readDraftFrom(body);
   const fieldCaption = (field, spec, key) => {
     const caption = document.createElement('span');
     caption.className = 'echo-config-label';
@@ -960,7 +1236,7 @@ const openConfigModal = async (modId, modName) => {
     if (Object.prototype.hasOwnProperty.call(spec, 'default')) return spec.default;
     return undefined;
   };
-  const renderJsonEditor = (config) => {
+  const renderJsonEditorInto = (container, config) => {
     const wrap = document.createElement('div');
     wrap.className = 'echo-config-json-wrap';
     const label = document.createElement('span');
@@ -974,13 +1250,14 @@ const openConfigModal = async (modId, modName) => {
     area.dataset.json = 'true';
     area.value = JSON.stringify(config && typeof config === 'object' ? config : {}, null, 2);
     wrap.append(label, hint, area);
-    body.append(wrap);
+    container.append(wrap);
   };
-  const renderFields = (schema, config) => {
+  const renderJsonEditor = (config) => renderJsonEditorInto(body, config);
+  const renderFieldsInto = (container, schema, config) => {
     const draft = config && typeof config === 'object' && !Array.isArray(config) ? { ...config } : {};
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     if (!props || !Object.keys(props).length) {
-      renderJsonEditor(draft);
+      renderJsonEditorInto(container, draft);
       return;
     }
     Object.entries(props).forEach(([key, rawSpec]) => {
@@ -1041,8 +1318,17 @@ const openConfigModal = async (modId, modName) => {
         hint.textContent = (T.defaultHint || 'Default') + ': ' + (typeof spec.default === 'string' ? spec.default : JSON.stringify(spec.default));
         field.append(hint);
       }
-      body.append(field);
+      container.append(field);
     });
+  };
+  const renderFields = (schema, config) => renderFieldsInto(body, schema, config);
+  const schemaDefaults = (schema) => {
+    const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : {};
+    const defaults = {};
+    Object.entries(props).forEach(([key, spec]) => {
+      if (spec && typeof spec === 'object' && Object.prototype.hasOwnProperty.call(spec, 'default')) defaults[key] = cloneValue(spec.default);
+    });
+    return defaults;
   };
   const bindSchemaSave = () => {
     setSaveVisible(true);
@@ -1115,6 +1401,25 @@ const openConfigModal = async (modId, modName) => {
       },
       assetUrl,
       loadAsset,
+      defaults: () => schemaDefaults(payload.schema),
+      loaderSettings: () => ({ ...uiSettings }),
+      ui: {
+        form: (formSchema, formConfig) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'echo-config-form';
+          const schemaValue = formSchema === undefined ? payload.schema : formSchema;
+          const configValue = cloneValue(formConfig === undefined ? payload.config : formConfig);
+          renderFieldsInto(wrap, schemaValue, configValue && typeof configValue === 'object' ? configValue : {});
+          return { element: wrap, read: () => readDraftFrom(wrap) };
+        },
+        field: (key, spec = {}, value) => {
+          const name = String(key);
+          const wrap = document.createElement('div');
+          wrap.className = 'echo-config-form';
+          renderFieldsInto(wrap, { properties: { [name]: spec } }, value === undefined ? {} : { [name]: value });
+          return { element: wrap, read: () => readDraftFrom(wrap)[name] };
+        },
+      },
     };
     const AsyncFn = Object.getPrototypeOf(async function () {}).constructor;
     const run = new AsyncFn('echoConfigUi', '"use strict";\n' + source);
@@ -1178,6 +1483,11 @@ const openMods = async () => {
           <button class="list-filter-chip echo-filter" data-filter="active">${T.filterOn} (<span data-count-active>0</span>)</button>
           <button class="list-filter-chip echo-filter" data-filter="inactive">${T.filterOff} (<span data-count-inactive>0</span>)</button>
         </div>
+        <select class="echo-sort-select" data-sort aria-label="${T.sortMods}" title="${T.sortMods}">
+          <option value="name">${T.sortName}</option>
+          <option value="recent">${T.sortRecent}</option>
+          <option value="enabled">${T.sortEnabled}</option>
+        </select>
       </div>
       <div class="echo-mod-drop" data-dropzone><span data-drop-label></span></div>
       <div class="echo-mod-list" data-mod-list></div>
@@ -1209,18 +1519,36 @@ const openMods = async () => {
     if (file) processFileImport(file);
   };
   modsPanel.querySelector('[data-search]').oninput = (event) => { searchQuery = event.target.value; void renderModList(); };
+  const persistListPrefs = () => {
+    if (uiSettings.rememberFilters === false) return;
+    uiSettings = { ...uiSettings, modSort: currentSort, modFilter: currentFilter };
+    void api('/api/ui-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ui: uiSettings }),
+    }).catch(() => {});
+  };
   modsPanel.querySelectorAll('[data-filter]').forEach((chip) => {
     chip.onclick = () => {
       modsPanel.querySelectorAll('[data-filter]').forEach((node) => node.classList.remove('active'));
       chip.classList.add('active');
       currentFilter = chip.dataset.filter;
+      persistListPrefs();
       void renderModList();
     };
   });
+  const sortSelect = modsPanel.querySelector('[data-sort]');
+  sortSelect.value = currentSort;
+  sortSelect.onchange = () => {
+    currentSort = sortSelect.value;
+    persistListPrefs();
+    void renderModList();
+  };
   modsPanel.querySelector('[data-action="reinject"]').onclick = async () => {
     const result = await api('/api/reinject', { method: 'POST' });
     toast(String(result.targets || 0), 'success');
   };
+  applyUiSettings();
   await renderModList();
 };
 
@@ -1231,6 +1559,7 @@ const mountSidebarPage = (entry) => {
     page.className = 'echo-external-mod-page page-surface';
     page.hidden = true;
     page.dataset.echoExternalPage = entry.id;
+    page.dataset.density = uiSettings.density === 'compact' ? 'compact' : 'comfortable';
     (document.querySelector('.app-shell') || document.body).append(page);
     sidebarPages.set(entry.id, page);
   }
@@ -1423,9 +1752,11 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 17,
+  version: 18,
   registerSidebar,
   unregisterSidebar: removeSidebar,
+  uiSettings: () => ({ ...uiSettings }),
+  setUiSettings: (patch) => saveUiSettings(patch),
   dispose: () => {
     observer.disconnect();
     window.clearTimeout(ensureTimer);
@@ -1441,6 +1772,8 @@ window.__echoExternalLoaderUi = {
     configModalCleanup = null;
     configModal?.remove();
     css.remove();
+    accentCss.remove();
+    motionCss.remove();
     sidebarEntries.forEach((entry) => { try { entry.cleanup?.(); } catch {} });
     sidebarButtons.forEach((button) => button.remove());
     sidebarPages.forEach((page) => page.remove());
