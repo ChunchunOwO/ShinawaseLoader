@@ -14,7 +14,7 @@ const { stat } = require('node:fs/promises');
 const { basename, dirname, extname, join, resolve, normalize } = require('node:path');
 const { Readable } = require('node:stream');
 
-const MOD_VERSION = '1.0.0';
+const MOD_VERSION = '1.0.2';
 const MV_MATCH_ALGORITHM_VERSION = 5;
 const MV_AUTO_MATCH_THRESHOLD = 0.7;
 const MV_AUTO_MATCH_MIN_MARGIN = 0.08;
