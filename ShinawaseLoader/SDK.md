@@ -70,6 +70,16 @@ HTTP surface:
 
 Mods read the same settings through `echoExternalMod.loaderSettings` and can subscribe via `loaderSettings.onChange(handler)` or the `shinawase:ui-settings` window event, for example to match a custom page to the user's accent color or density.
 
+## ECHO Next compatibility notes
+
+Recent ECHO builds ("ECHO Next") reshaped the renderer. The loader adapts automatically, but mod authors should know:
+
+- **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader now injects its group into either shape.
+- **`extend.hideNav(routeId)`**: ECHO Next removed the per-route `[data-workshop-icon]` markers, so CSS hiding no longer matches. The loader additionally patches the native `sidebarHiddenRouteIds` app setting (via `window.echo.app.setSettings`) and restores it on `showNav` / cleanup. Route ids follow ECHO Next's sidebar ids (`home`, `songs`, `streaming`, `queue`, `playlists`, `plugins`, `settings`, ...).
+- **Route surfaces**: `.page-surface[data-route-id]`, `app:navigate:*` events, and `extend.replaceRoute` are unchanged.
+- **Theme variables**: ECHO Next removed `--theme-accent`, `--theme-code-bg`, `--theme-border`, `--theme-card-bg`, `--theme-card-border`, `--theme-hover-bg`, and `--theme-surface`. The loader bridges these to the new tokens (`--theme-accent-solid-bg`, `--theme-field-bg`, `--theme-panel-border(-strong)`, `--theme-panel-bg`, `--theme-list-row-bg-hover`, `--color-surface`) at runtime, but new CSS should target the new token names directly (see `src/renderer/styles/tokens.css` in the ECHO repo).
+- **Official plugins**: ECHO Next ships its own sandboxed plugin system (`userData/plugins/<id>/echo.plugin.json` + `plugin.js`, packaged as JSON `.echo` files with `"type": "echo-next-plugin-package"`). Those plugins use the sandboxed `echo` plugin API (`echo.commands`, `echo.net`, ...), not `echoExternalMod`, and are best imported through ECHO's own Plugins page (`window.echo.plugins.importPackage`). ShinawaseLoader packages keep using `echo.mod.json` / ShinawaseLoader `echo.plugin.json` manifests with the `echoExternalMod` SDK.
+
 ## Package locations
 
 - `Mods/`: Mod drop folder; installed Mods live in `Mods/installed`.

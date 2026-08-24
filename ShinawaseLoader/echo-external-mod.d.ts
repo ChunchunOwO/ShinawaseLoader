@@ -142,6 +142,19 @@ type EchoExternalExtend = {
   currentRoute(): string | null;
   replaceRoute(routeId: string, options?: { html?: string; render?: (root: HTMLElement) => void | (() => void) }): () => void;
   restoreRoute(routeId: string): void;
+  /**
+   * Hide a native sidebar route.
+   *
+   * Legacy ECHO builds are hidden via CSS (`[data-workshop-icon="nav-<id>"]`).
+   * ECHO Next removed that hook, so the loader additionally patches the
+   * `sidebarHiddenRouteIds` app setting through `window.echo.app.setSettings`.
+   * The settings patch persists until `showNav` (or the returned cleanup) runs;
+   * routes the user hid themselves are never restored by `showNav`.
+   * ECHO Next route ids include `home`, `songs`, `downloads`, `osu-downloader`,
+   * `albums`, `artists`, `folders`, `audio-cd`, `remote`, `connect`, `dsp`,
+   * `streaming`, `queue`, `history`, `playlists`, `inbox`, `plugins`, `liked`
+   * and `settings`.
+   */
   hideNav(routeId: string): () => void;
   showNav(routeId: string): void;
   hide(selector: string): () => void;
@@ -198,6 +211,15 @@ type EchoExternalMod = {
   id: string;
   manifest: Record<string, unknown>;
   config: Record<string, unknown>;
+  /**
+   * The renderer `window.echo` preload API. On ECHO Next this exposes typed
+   * namespaces such as `app`, `playback`, `library`, `libraryLab`, `streaming`,
+   * `lyrics`, `mv`, `plugins`, `accounts`, `downloads`, `audio`, `eq`,
+   * `diagnostics`, `connect`, `remoteSources`, `desktopLyrics`, `miniPlayer`,
+   * `taskbarMiniPlayer`, `hqPlayer`, `spotify`, `smtc`, `audioCd`,
+   * `sleepTimer`, `lastfm`, `discordPresence` and `stageBridge`.
+   * Prefer `sdk.list()` / `sdk.get()` to discover the exact surface at runtime.
+   */
   echo: Record<string, unknown>;
   player: EchoExternalPlayer | null;
   extend: EchoExternalExtend | null;
