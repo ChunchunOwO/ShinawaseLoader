@@ -1,4 +1,4 @@
-if (window.__echoExternalLoaderUi?.version >= 19) return 'already';
+if (window.__echoExternalLoaderUi?.version >= 20) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -562,6 +562,21 @@ css.textContent = `
   /* ---- Sidebar nav ---- */
   [data-echo-external-loader-group] .nav-icon-shell { display: grid; place-items: center; }
   [data-echo-external-loader-group] .nav-icon-shell svg { width: 21px; height: 21px; display: block; }
+  /* Flat sidebar (ECHO Next removed .sidebar-groups): style our injected group ourselves. */
+  .sidebar > [data-echo-external-loader-group] { display: flex; flex: none; flex-direction: column; min-height: 0; margin-top: 14px; }
+  .sidebar > [data-echo-external-loader-group] .sidebar-group-label {
+    margin: 0 0 6px; padding: 0 12px; font-size: 10.5px; font-weight: 680;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--theme-subtle-text, var(--theme-muted-text, #a0a4aa));
+  }
+  .sidebar > [data-echo-external-loader-group] .nav-list { display: flex; flex-direction: column; gap: 5px; }
+  .app-shell--sidebar-icon-only .sidebar > [data-echo-external-loader-group] .sidebar-group-label,
+  .sidebar[data-icon-only] > [data-echo-external-loader-group] .sidebar-group-label { display: none; }
+  @media (max-width: 980px) {
+    .sidebar > [data-echo-external-loader-group] { flex-direction: row; margin-top: 0; align-items: center; }
+    .sidebar > [data-echo-external-loader-group] .sidebar-group-label { display: none; }
+    .sidebar > [data-echo-external-loader-group] .nav-list { flex-direction: row; min-width: max-content; }
+  }
 
   /* ---- Loader status page ---- */
   .echo-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; }
@@ -858,6 +873,31 @@ const dismissToast = (el) => {
   el.classList.add('is-leaving');
   window.setTimeout(() => el.remove(), 240);
 };
+
+// ECHO Next dropped several legacy theme variables that older mods (and this
+// UI) still reference. When they are missing but the new token set is present,
+// bridge them once so var() fallbacks and color-mix() usages keep resolving.
+let legacyThemeBridge = null;
+const ensureLegacyThemeVars = () => {
+  if (legacyThemeBridge?.isConnected) return;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const missing = (name) => !rootStyle.getPropertyValue(name).trim();
+  if (!missing('--theme-accent')) return;
+  if (missing('--theme-accent-solid-bg') && missing('--color-accent')) return;
+  legacyThemeBridge = document.createElement('style');
+  legacyThemeBridge.id = 'echo-loader-legacy-theme-bridge';
+  legacyThemeBridge.textContent = `:root {
+    --theme-accent: var(--theme-accent-solid-bg, var(--color-accent, #4b55e8));
+    --theme-code-bg: var(--theme-field-bg, rgba(16,18,24,0.04));
+    --theme-border: var(--theme-panel-border-strong, var(--color-border-strong, rgba(38,40,46,0.18)));
+    --theme-card-bg: var(--theme-panel-bg, var(--color-surface, rgba(255,255,255,0.76)));
+    --theme-card-border: var(--theme-panel-border, var(--color-border, rgba(38,40,46,0.1)));
+    --theme-hover-bg: var(--theme-list-row-bg-hover, var(--theme-button-bg-hover, rgba(255,255,255,0.92)));
+    --theme-surface: var(--color-surface, var(--theme-panel-bg, rgba(255,255,255,0.76)));
+  }`;
+  document.head.append(legacyThemeBridge);
+};
+
 const toast = (text, type = 'info') => {
   const stack = ensureToastStack();
   while (stack.childElementCount >= 3) stack.firstElementChild.remove();
@@ -998,18 +1038,23 @@ const makeNavButton = (nav, key, label, icon, onClick) => {
 };
 
 const ensureLoaderGroup = () => {
+  // Legacy ECHO renders a grouped sidebar (.sidebar-groups). ECHO Next flattened
+  // the sidebar to <aside class="sidebar"> with plain .nav-list children, so fall
+  // back to the flat sidebar and slot our group above the spacer / utility nav.
   const groups = document.querySelector('.sidebar-groups');
-  if (!groups) return null;
+  const flatSidebar = groups ? null : document.querySelector('aside.sidebar, .sidebar');
+  const host = groups || flatSidebar;
+  if (!host) return null;
   document.querySelectorAll('[data-echo-external-owned="true"]').forEach((button) => {
     if (!button.closest('[data-echo-external-loader-group]')) button.remove();
   });
-  let group = groups.querySelector('[data-echo-external-loader-group]');
+  let group = document.querySelector('[data-echo-external-loader-group]');
   if (!group) {
     group = document.createElement('section');
     group.className = 'sidebar-group';
     group.dataset.echoExternalLoaderGroup = 'true';
     const heading = document.createElement('h2');
-    heading.className = 'sidebar-group-label';
+    heading.className = 'sidebar-group-label sidebar-section-label';
     heading.textContent = T.loaderGroup || 'Shinawase Loader';
     const nav = document.createElement('nav');
     nav.className = 'nav-list';
@@ -1018,7 +1063,15 @@ const ensureLoaderGroup = () => {
     const heading = group.querySelector('.sidebar-group-label');
     if (heading) heading.textContent = T.loaderGroup || 'Shinawase Loader';
   }
-  if (group.parentElement !== groups) groups.append(group);
+  if (groups) {
+    if (group.parentElement !== groups) groups.append(group);
+  } else {
+    const anchor = flatSidebar.querySelector(':scope > .sidebar-spacer') || flatSidebar.querySelector(':scope > .utility-nav');
+    if (group.parentElement !== flatSidebar || (anchor && group.nextElementSibling !== anchor)) {
+      if (anchor) flatSidebar.insertBefore(group, anchor);
+      else flatSidebar.append(group);
+    }
+  }
   loaderGroup = group;
   loaderNav = group.querySelector('.nav-list');
   return loaderNav;
@@ -2074,6 +2127,7 @@ const maybeShowInjectedPopup = () => {
 
 const ensure = () => {
   if (splashActive()) return false;
+  ensureLegacyThemeVars();
   attachPanel(loaderPanel);
   attachPanel(modsPanel);
   sidebarPages.forEach((page) => attachPanel(page));
@@ -2118,7 +2172,7 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 19,
+  version: 20,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
@@ -2141,6 +2195,8 @@ window.__echoExternalLoaderUi = {
     css.remove();
     accentCss.remove();
     motionCss.remove();
+    legacyThemeBridge?.remove();
+    loaderGroup?.remove();
     sidebarEntries.forEach((entry) => { try { entry.cleanup?.(); } catch {} });
     sidebarButtons.forEach((button) => button.remove());
     sidebarPages.forEach((page) => page.remove());

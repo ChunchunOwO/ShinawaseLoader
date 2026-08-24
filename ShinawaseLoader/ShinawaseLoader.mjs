@@ -972,6 +972,37 @@ const injectExtendRuntime = async (target) => {
         if (!surface.dataset.echoExternalHidden) surface.style.removeProperty('display');
       });
     };
+    // ECHO Next removed the per-route [data-workshop-icon] nav hooks the CSS
+    // hiding relied on, but exposes native sidebar route hiding through the
+    // sidebarHiddenRouteIds app setting. Apply both: the CSS path still covers
+    // legacy ECHO builds, the settings patch covers ECHO Next. Only routes this
+    // runtime hid itself are ever restored, so user-hidden routes stay hidden.
+    const nativeNavOwned = new Set();
+    const readNativeHiddenRoutes = async (app) => {
+      const settings = await app.getSettings();
+      return Array.isArray(settings?.sidebarHiddenRouteIds) ? settings.sidebarHiddenRouteIds.map(String) : [];
+    };
+    const hideNativeNav = async (id) => {
+      const app = window.echo?.app;
+      if (!id || typeof app?.getSettings !== 'function' || typeof app?.setSettings !== 'function') return;
+      try {
+        const hidden = await readNativeHiddenRoutes(app);
+        if (hidden.includes(id)) return;
+        const next = await app.setSettings({ sidebarHiddenRouteIds: [...hidden, id] });
+        const applied = Array.isArray(next?.sidebarHiddenRouteIds) ? next.sidebarHiddenRouteIds.map(String) : [];
+        if (applied.includes(id)) nativeNavOwned.add(id);
+      } catch {}
+    };
+    const showNativeNav = async (id) => {
+      const app = window.echo?.app;
+      if (!id || !nativeNavOwned.has(id) || typeof app?.getSettings !== 'function' || typeof app?.setSettings !== 'function') return;
+      nativeNavOwned.delete(id);
+      try {
+        const hidden = await readNativeHiddenRoutes(app);
+        if (!hidden.includes(id)) return;
+        await app.setSettings({ sidebarHiddenRouteIds: hidden.filter((routeId) => routeId !== id) });
+      } catch {}
+    };
     const extend = {
       version: 1,
       mode: 'external-cdp',
@@ -1037,11 +1068,14 @@ const injectExtendRuntime = async (target) => {
         const id = safeId(routeId);
         hiddenNav.add(id);
         syncNavCss();
+        void hideNativeNav(id);
         return () => extend.showNav(id);
       },
       showNav(routeId) {
-        hiddenNav.delete(safeId(routeId));
+        const id = safeId(routeId);
+        hiddenNav.delete(id);
         syncNavCss();
+        void showNativeNav(id);
       },
       hide(selector) {
         const key = String(selector || '');
@@ -1292,6 +1326,15 @@ const injectionPlan = (id, stateEntry) => {
   const record = findPackage(id, stateEntry?.kind);
   const manifest = record?.manifest;
   if (!record || !manifest) return null;
+  // Official ECHO Next sandboxed plugins (echo.plugin.json with apiVersion +
+  // permissions) target ECHO's own plugin VM (`echo.commands`, `echo.net`, ...),
+  // not the echoExternalMod SDK. Running their entry in the renderer would just
+  // throw, so surface a clear notice instead and point at the native importer.
+  if (record.kind === 'plugin' && Number(manifest.apiVersion) >= 1 && Array.isArray(manifest.permissions)) {
+    const message = `"${manifest.name || id}" is an official ECHO Next sandboxed plugin (apiVersion ${Number(manifest.apiVersion)}); ShinawaseLoader does not execute it. Import the .echo package from ECHO's native Plugins page instead.`;
+    const source = `echoExternalMod.log(${JSON.stringify(message)}); echoExternalMod.toast(${JSON.stringify(message)});`;
+    return { id, manifest, source, signature: sourceSignature(source, manifest, id) };
+  }
   const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
   if (!existsSync(entry)) {
     if (!manifest.main && !manifest.native) return null;
@@ -1339,7 +1382,7 @@ const injectEnabled = async () => {
   for (const target of targets) {
     if (!(await rendererReadyForMods(target.webSocketDebuggerUrl))) continue;
     const targetState = await targetInjectionState(target).catch(() => ({ uiVersion: 0, playerVersion: 0, extendVersion: 0, mods: {} }));
-    const uiReloaded = targetState.uiVersion < 17;
+    const uiReloaded = targetState.uiVersion < 20;
     await cdpEvaluate(target.webSocketDebuggerUrl, `(() => {
       const extra = window.__echoShinawaseStreaming;
       if (!extra || window.__echoShinawaseEchoPatched) return extra ? 'already' : 'missing';
