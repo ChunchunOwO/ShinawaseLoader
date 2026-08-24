@@ -16,9 +16,12 @@ const call = (method, params = {}) => new Promise((resolve, reject) => {
   socket.addEventListener('message', onMessage);
   socket.send(JSON.stringify({ id, method, params }));
 });
-await new Promise((resolve) => socket.addEventListener('open', resolve, { once: true }));
+await new Promise((resolve, reject) => {
+  socket.addEventListener('open', resolve, { once: true });
+  socket.addEventListener('error', () => reject(new Error('cdp socket error')), { once: true });
+});
 try {
-  await call('Runtime.enable');
+  // Runtime.evaluate does not require Runtime.enable; skipping it saves a round trip.
   const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
   console.log(JSON.stringify(result?.result?.value ?? result?.result ?? null, null, 2));
 } finally { socket.close(); }

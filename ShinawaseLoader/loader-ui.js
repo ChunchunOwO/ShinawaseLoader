@@ -1,4 +1,4 @@
-if (window.__echoExternalLoaderUi?.version >= 20) return 'already';
+if (window.__echoExternalLoaderUi?.version >= 21) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -39,6 +39,8 @@ let statusTimer = 0;
 let injectPopupTimer = 0;
 let injectPopupShown = false;
 let modsListAnimate = true;
+let searchTimer = 0;
+let modsCache = [];
 
 const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 const cloneValue = (value) => {
@@ -951,7 +953,7 @@ const saveUiSettings = async (patch) => {
   uiSettings = { ...defaultUiSettings, ...(result.ui || {}) };
   applyUiSettings();
   renderAppearance();
-  if (modsPanel && !modsPanel.hidden) void renderModList();
+  if (modsPanel && !modsPanel.hidden) renderModList();
   return { ...uiSettings };
 };
 
@@ -1095,7 +1097,7 @@ const mountPage = (className, html) => {
 };
 
 const renderStatus = async () => {
-  if (!loaderPanel || loaderPanel.hidden) return;
+  if (!loaderPanel || loaderPanel.hidden || document.hidden) return;
   try {
     const status = await api('/api/status');
     const grid = loaderPanel.querySelector('[data-status-grid]');
@@ -1140,7 +1142,7 @@ const consoleAppend = (text, className, forceScroll = false) => {
   if (stick) out.scrollTop = out.scrollHeight;
 };
 const refreshDebugLog = async () => {
-  if (!loaderPanel || loaderPanel.hidden || consolePaused) return;
+  if (!loaderPanel || loaderPanel.hidden || consolePaused || document.hidden) return;
   const logs = await api('/api/logs?tail=120').catch(() => null);
   const text = String(logs?.text || '');
   if (!text || text === lastLogText) return;
@@ -1314,7 +1316,7 @@ const importLoaderSettings = async (file) => {
   }
   applyUiSettings();
   renderAppearance();
-  if (modsPanel && !modsPanel.hidden) await renderModList();
+  if (modsPanel && !modsPanel.hidden) renderModList();
 };
 
 const openLoader = async () => {
@@ -1447,14 +1449,21 @@ const compareMods = (left, right) => {
   return String(left.name || left.id).localeCompare(String(right.name || right.id));
 };
 
-const renderModList = async () => {
+// Fetch once, render many: search, filter, sort, and appearance changes
+// re-render from the cached list instead of refetching /api/mods (and
+// re-encoding icons server-side) on every keystroke. Actions that change
+// loader state go through loadMods.
+const loadMods = async () => {
+  modsCache = (await api('/api/mods')).mods || [];
+  renderModList();
+};
+const renderModList = () => {
   if (!modsPanel) return;
   const animate = modsListAnimate;
   modsListAnimate = false;
-  const data = await api('/api/mods');
   const list = modsPanel.querySelector('[data-mod-list]');
   list.dataset.layout = uiSettings.cardLayout === 'grid' ? 'grid' : 'list';
-  const allMods = data.mods || [];
+  const allMods = modsCache;
   const items = allMods.filter((item) => {
     const hay = ((item.name || '') + ' ' + item.id + ' ' + (item.description || '')).toLowerCase();
     if (searchQuery && !hay.includes(searchQuery.toLowerCase())) return false;
@@ -1514,7 +1523,7 @@ const renderModList = async () => {
     toggle.innerHTML = '<span class="echo-switch-thumb"></span>';
     toggle.onclick = async () => {
       await api('/api/mod/' + encodeURIComponent(item.id) + '/' + (item.enabled ? 'disable' : 'enable'), { method: 'POST' });
-      await renderModList();
+      await loadMods();
     };
     const config = document.createElement('button');
     config.type = 'button';
@@ -1532,7 +1541,7 @@ const renderModList = async () => {
     remove.onclick = async () => {
       if (!confirm(item.id)) return;
       await api('/api/mod/' + encodeURIComponent(item.id), { method: 'DELETE' });
-      await renderModList();
+      await loadMods();
     };
     actions.append(toggle, config, remove);
     return card;
@@ -1848,14 +1857,14 @@ const processFileImport = async (file) => {
   for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
   const res = await api('/api/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data: btoa(binary), name: file.name }) });
   toast((res.manifest?.name || res.manifest?.id || file.name), 'success');
-  await renderModList();
+  await loadMods();
 };
 
 const openMods = async () => {
   if (modsPanel) {
     modsListAnimate = true;
     showPanel(modsPanel, modsButton);
-    await renderModList();
+    await loadMods();
     return;
   }
   modsPanel = mountPage('echo-external-mod-panel page-surface', `
@@ -1929,14 +1938,17 @@ const openMods = async () => {
   searchInput.oninput = () => {
     searchQuery = searchInput.value;
     searchClear.hidden = !searchQuery;
-    void renderModList();
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => { searchTimer = 0; renderModList(); }, 150);
   };
   searchClear.onclick = () => {
     searchInput.value = '';
     searchQuery = '';
     searchClear.hidden = true;
     searchInput.focus();
-    void renderModList();
+    window.clearTimeout(searchTimer);
+    searchTimer = 0;
+    renderModList();
   };
   const persistListPrefs = () => {
     if (uiSettings.rememberFilters === false) return;
@@ -1953,7 +1965,7 @@ const openMods = async () => {
       chip.classList.add('active');
       currentFilter = chip.dataset.filter;
       persistListPrefs();
-      void renderModList();
+      renderModList();
     };
   });
   const sortSelect = modsPanel.querySelector('[data-sort]');
@@ -1961,14 +1973,14 @@ const openMods = async () => {
   sortSelect.onchange = () => {
     currentSort = sortSelect.value;
     persistListPrefs();
-    void renderModList();
+    renderModList();
   };
   modsPanel.querySelector('[data-action="reinject"]').onclick = async () => {
     const result = await api('/api/reinject', { method: 'POST' });
     toast(String(result.targets || 0), 'success');
   };
   applyUiSettings();
-  await renderModList();
+  await loadMods();
 };
 
 const mountSidebarPage = (entry) => {
@@ -2172,7 +2184,7 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 20,
+  version: 21,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
@@ -2182,6 +2194,7 @@ window.__echoExternalLoaderUi = {
     window.clearTimeout(ensureTimer);
     window.clearTimeout(injectPopupTimer);
     window.clearTimeout(configModalTimer);
+    window.clearTimeout(searchTimer);
     window.clearInterval(statusTimer);
     window.clearInterval(consoleTimer);
     document.querySelectorAll('.echo-inject-popup, .echo-toast-stack, .echo-toast').forEach((node) => node.remove());
