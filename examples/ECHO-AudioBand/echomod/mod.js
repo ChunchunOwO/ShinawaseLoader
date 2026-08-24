@@ -30,7 +30,11 @@ const activateAudioBand = () => {
     let lastKnown = null;
     let artKey = '';
     let artUrl = '';
+    let artFetchKey = '';
     let sendBlockedUntil = 0;
+    let sendFailures = 0;
+    let lastSentBody = '';
+    let lastSentAt = 0;
     let timer = 0;
     let disposed = false;
 
@@ -105,13 +109,19 @@ const activateAudioBand = () => {
       }
     };
 
-    const resolveArt = async (trackKey, coverUrl) => {
-      if (trackKey && trackKey === artKey && (artUrl || !coverUrl)) return artUrl;
-      artKey = trackKey || '';
+    // Resolves cover art without blocking the status pipeline: cached art is
+    // returned synchronously, remote art is fetched once per track (no
+    // duplicate in-flight fetches) and pushed as a follow-up status update.
+    const resolveArt = (trackKey, coverUrl) => {
+      if (trackKey !== artKey) {
+        artKey = trackKey;
+        artUrl = '';
+      }
       if (!coverUrl) {
         artUrl = '';
         return '';
       }
+      if (artUrl) return artUrl;
       if (coverUrl.startsWith('data:')) {
         artUrl = coverUrl;
         return artUrl;
@@ -125,28 +135,38 @@ const activateAudioBand = () => {
         artUrl = coverUrl;
         return artUrl;
       }
-      try {
-        const dataUrl = await coverToDataUrl(coverUrl);
-        if (trackKey) {
-          artCache.set(trackKey, dataUrl);
-          while (artCache.size > 8) artCache.delete(artCache.keys().next().value);
-        }
-        artUrl = dataUrl;
-        return dataUrl;
-      } catch {
-        artUrl = coverUrl;
-        if (trackKey) artCache.set(trackKey, coverUrl);
-        return coverUrl;
+      if (artFetchKey !== trackKey) {
+        artFetchKey = trackKey;
+        void coverToDataUrl(coverUrl)
+          .catch(() => coverUrl)
+          .then((resolved) => {
+            if (disposed) return;
+            artCache.set(trackKey, resolved);
+            while (artCache.size > 8) artCache.delete(artCache.keys().next().value);
+            if (artFetchKey === trackKey) artFetchKey = '';
+            if (artKey !== trackKey) return;
+            artUrl = resolved;
+            if (lastKnown && lastKnown.trackKey === trackKey && lastKnown.coverUrl !== resolved) {
+              lastKnown = { ...lastKnown, coverUrl: resolved };
+              void sendStatus(lastKnown);
+            }
+          });
       }
+      return artUrl;
     };
 
-    const sendStatus = async (payload) => {
+    const sendStatus = async (payload, body) => {
       if (Date.now() < sendBlockedUntil) return;
       try {
         await external.main.invoke('status', payload);
+        sendFailures = 0;
+        lastSentBody = body ?? JSON.stringify(payload);
+        lastSentAt = Date.now();
       } catch (error) {
-        sendBlockedUntil = Date.now() + 5000;
-        log('status invoke failed, backing off 5s', error);
+        sendFailures += 1;
+        const backoff = Math.min(60000, 5000 * (2 ** Math.min(4, sendFailures - 1)));
+        sendBlockedUntil = Date.now() + backoff;
+        log(`status invoke failed, backing off ${Math.round(backoff / 1000)}s`, error);
       }
     };
 
@@ -157,9 +177,15 @@ const activateAudioBand = () => {
         const player = external.player;
         let status = {};
         try { status = (await player?.status?.()) || {}; } catch { status = {}; }
-        let queue = null;
-        try { queue = player?.queue?.() || null; } catch { queue = null; }
-        const current = currentFromQueue(queue);
+        // player.status() already walks the React tree for the queue and
+        // returns its currentTrack; only fall back to a second queue() walk
+        // when the snapshot lacks it (older loader runtimes).
+        let current = asTrack(status.currentTrack);
+        if (!current) {
+          let queue = null;
+          try { queue = player?.queue?.() || null; } catch { queue = null; }
+          current = currentFromQueue(queue);
+        }
         const state = String(status.state || 'stopped');
         const title = textOf(status.title, status.currentTrackTitle, current?.title);
         const artist = textOf(status.artist, status.currentTrackArtist, current?.artist);
@@ -181,13 +207,16 @@ const activateAudioBand = () => {
           title,
           artist,
           album,
-          coverUrl: await resolveArt(trackKey, rawCover),
+          coverUrl: resolveArt(trackKey, rawCover),
           positionSeconds: numOf(status.positionSeconds, Number(status.positionMs || 0) / 1000),
           durationSeconds: numOf(status.durationSeconds, Number(status.durationMs || 0) / 1000, current?.duration),
           trackKey,
         };
         lastKnown = payload;
-        await sendStatus(payload);
+        // Skip sends when nothing changed (e.g. paused), but re-send at least
+        // every 10s so a restarted native host resyncs its cached status.
+        const body = JSON.stringify(payload);
+        if (body !== lastSentBody || Date.now() - lastSentAt >= 10000) await sendStatus(payload, body);
       } catch (error) {
         log('poll failed', error);
       }
@@ -228,7 +257,29 @@ const activateAudioBand = () => {
       }
     };
 
-    void external.main.invoke('configure', config).catch((error) => log('configure failed', error));
+    // Retry configure a few times before reporting: the in-process native host
+    // may activate this package slightly after the renderer injection.
+    const pushConfigure = async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (disposed) return;
+        try {
+          await external.main.invoke('configure', config);
+          return;
+        } catch (error) {
+          if (attempt === 2) {
+            log('configure failed', error);
+            try {
+              external.toast?.(chinese
+                ? 'AudioBand 无法连接 native host（main.cjs）。请在 Loader 中启用主进程桥接后重启 ECHO。'
+                : 'AudioBand could not reach its native host (main.cjs). Enable the main-process bridge in the Loader and restart ECHO.');
+            } catch {}
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      }
+    };
+    void pushConfigure();
     window.addEventListener('echo-native', onNative);
     void tick();
     timer = window.setInterval(() => { void tick(); }, pollMs);
@@ -237,7 +288,7 @@ const activateAudioBand = () => {
       disposed = true;
       try { window.clearInterval(timer); } catch {}
       try { window.removeEventListener('echo-native', onNative); } catch {}
-      try { void external.main?.invoke?.('rendererGone'); } catch {}
+      try { external.main?.invoke?.('rendererGone')?.catch?.(() => {}); } catch {}
       window.__echoAudioBandActive = false;
     };
   } catch (error) {

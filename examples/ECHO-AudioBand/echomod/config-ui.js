@@ -123,6 +123,10 @@ const number = (key, min, max, step) => {
   if (step != null) node.step = String(step);
   node.value = String(draft[key] ?? '');
   node.addEventListener('input', () => {
+    if (node.value.trim() === '') {
+      draft[key] = defaults[key];
+      return;
+    }
     const n = Number(node.value);
     draft[key] = Number.isFinite(n) ? n : defaults[key];
   });
@@ -220,24 +224,30 @@ behavior.append(toggle('hoverPreview'));
 behavior.append(toggle('autoHideWhenStopped'));
 behavior.append(field('pollIntervalMs', number('pollIntervalMs', 250, 5000, 50)));
 
+const numOf = (key, min, max) => {
+  const n = Number(draft[key]);
+  if (!Number.isFinite(n)) return defaults[key];
+  return Math.min(max, Math.max(min, Math.round(n)));
+};
+
 const readDraft = () => ({
   locale: String(draft.locale || 'auto'),
-  widgetWidth: Number(draft.widgetWidth),
+  widgetWidth: numOf('widgetWidth', 200, 800),
   alignment: String(draft.alignment || 'right'),
-  offsetX: Number(draft.offsetX),
-  offsetY: Number(draft.offsetY),
+  offsetX: numOf('offsetX', 0, 600),
+  offsetY: numOf('offsetY', -80, 80),
   monitor: String(draft.monitor || 'primary'),
-  customHeight: Number(draft.customHeight),
+  customHeight: numOf('customHeight', 28, 80),
   showAlbumArt: draft.showAlbumArt === true,
   showControls: draft.showControls === true,
   showProgress: draft.showProgress === true,
   showTime: draft.showTime === true,
   theme: ['auto', 'dark', 'light'].includes(String(draft.theme)) ? String(draft.theme) : 'auto',
   accentColor: String(draft.accentColor || '#4da3ff'),
-  backgroundOpacity: Number(draft.backgroundOpacity),
+  backgroundOpacity: numOf('backgroundOpacity', 0, 100),
   scrollingText: draft.scrollingText === true,
   autoHideWhenStopped: draft.autoHideWhenStopped === true,
-  pollIntervalMs: Number(draft.pollIntervalMs),
+  pollIntervalMs: numOf('pollIntervalMs', 250, 5000),
   autoAvoidTray: draft.autoAvoidTray === true,
   seamlessMode: draft.seamlessMode === true,
   hoverPreview: draft.hoverPreview === true,
