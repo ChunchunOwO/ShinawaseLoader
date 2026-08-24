@@ -3,7 +3,7 @@ const external = echoExternalMod;
 const manifest = external.manifest || {};
 const config = external.config || {};
 const echo = external.echo || {};
-const pageSize = 30;
+const pageSize = Math.max(10, Math.min(50, Math.round(Number(config.pageSize) || 30)));
 const albumInitialTrackCount = 24;
 const albumTrackRenderStep = 48;
 const hiddenProviders = new Set(['mock', 'm3u8', 'kugou']);
@@ -149,7 +149,7 @@ const persistMemory = () => { try { external.settings?.set?.({ provider: state.p
 const rememberSearch = (query) => { const value = String(query || '').trim(); if (!value) return; state.recentSearches = [value, ...state.recentSearches.filter((item) => item !== value)].slice(0, 8); };
 const providerRailState = (provider) => accountAwareProviders.has(provider?.name) && provider.accountConnected !== true ? 'signedOut' : !provider?.enabled ? 'disabled' : accountAwareProviders.has(provider?.name) ? 'signedIn' : 'available';
 const providerRailStatus = (provider) => { const rail = providerRailState(provider); return rail === 'disabled' ? copy.disabled : rail === 'signedOut' ? copy.notLoggedIn : rail === 'signedIn' ? copy.loggedIn(provider.accountDisplayName || provider.displayName) : copy.available; };
-void (async () => { if (document.getElementById('echo-community-streaming-spatial')) return; try { const css = await external.loadAsset('spatial.css'); if (!css) return; const style = document.createElement('style'); style.id = 'echo-community-streaming-spatial'; style.textContent = String(css); document.head.append(style); } catch {} })();
+void (async () => { if (document.getElementById('echo-community-streaming-spatial')) return; try { const css = await external.loadAsset('spatial.css'); if (!css) return; const style = document.createElement('style'); style.id = 'echo-community-streaming-spatial'; style.textContent = String(css) + (config.hideUnavailable === true ? '\n.streaming-row[data-unavailable="true"] { display: none; }' : ''); document.head.append(style); } catch {} })();
 const showChromeNotice = (message) => window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: message }));
 const reportError = (error) => { if (disposed) return; state.actionError = error instanceof Error ? error.message : String(error); state.actionMessage = null; render(); };
 const setMessage = (message) => { state.actionError = null; state.actionMessage = message; render(); };

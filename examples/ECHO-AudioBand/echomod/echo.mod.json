@@ -1,7 +1,7 @@
 {
   "id": "echo.audioband",
   "name": "ECHO AudioBand",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minEchoVersion": "26.8.15",
   "description": "AudioBand-style taskbar now-playing bar: album art, scrolling title, seekable progress, and playback controls rendered over the Windows taskbar.",
   "icon": "icon.svg",

@@ -1,6 +1,12 @@
 {
   "type": "object",
   "properties": {
+    "locale": {
+      "type": "string",
+      "title": "界面语言 / UI language",
+      "enum": ["zh-CN", "en-US"],
+      "default": "zh-CN"
+    },
     "defaultProvider": {
       "type": "string",
       "title": "Default provider",
