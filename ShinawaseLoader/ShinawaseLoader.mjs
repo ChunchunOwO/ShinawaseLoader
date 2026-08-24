@@ -129,6 +129,36 @@ const log = (level, message, ...values) => {
   method(line);
 };
 
+const defaultUiSettings = Object.freeze({
+  density: 'comfortable',
+  accentColor: '',
+  animations: true,
+  cardLayout: 'list',
+  showModDescriptions: true,
+  showModVersions: true,
+  showModIds: true,
+  rememberFilters: true,
+  modSort: 'name',
+  modFilter: 'all',
+});
+const sanitizeUiSettings = (value) => {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const pick = (key, allowed) => (allowed.includes(input[key]) ? input[key] : defaultUiSettings[key]);
+  const bool = (key) => (typeof input[key] === 'boolean' ? input[key] : defaultUiSettings[key]);
+  return {
+    density: pick('density', ['comfortable', 'compact']),
+    accentColor: typeof input.accentColor === 'string' && /^#[0-9a-f]{6}$/iu.test(input.accentColor) ? input.accentColor.toLowerCase() : '',
+    animations: bool('animations'),
+    cardLayout: pick('cardLayout', ['list', 'grid']),
+    showModDescriptions: bool('showModDescriptions'),
+    showModVersions: bool('showModVersions'),
+    showModIds: bool('showModIds'),
+    rememberFilters: bool('rememberFilters'),
+    modSort: pick('modSort', ['name', 'recent', 'enabled']),
+    modFilter: pick('modFilter', ['all', 'active', 'inactive']),
+  };
+};
+
 const loaderConfig = readJson(loaderConfigPath, {
   autoStart: false,
   autoStartMode: 'manual',
@@ -145,7 +175,15 @@ const loaderConfig = readJson(loaderConfigPath, {
   nativeHost: true,
   nativePort: 17863,
   nativeMemoryApi: true,
+  ui: { ...defaultUiSettings },
 });
+
+let uiSettings = sanitizeUiSettings(loaderConfig.ui);
+const persistUiSettings = (patch) => {
+  uiSettings = sanitizeUiSettings({ ...uiSettings, ...(patch && typeof patch === 'object' ? patch : {}) });
+  writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), ui: uiSettings });
+  return uiSettings;
+};
 
 const args = process.argv.slice(2);
 const command = args[0] && !args[0].startsWith('-') ? args.shift() : 'serve';
@@ -206,6 +244,50 @@ const promptLocale = async () => {
   return persistLocale(picked);
 };
 const loaderStats = { startedAt: Date.now(), injects: 0, lastInjectAt: null, lastError: null };
+
+const exportableConfigKeys = [
+  'autoStart', 'autoStartMode', 'enableWebConsole', 'showConsole', 'port', 'debugPort', 'loadMode',
+  'safeMode', 'debugMode', 'injectIntervalMs', 'startupDelayMs', 'logLevel', 'nativeHost', 'nativePort',
+  'nativeMemoryApi', 'inspectPort',
+];
+const exportLoaderSettings = () => {
+  const config = readJson(loaderConfigPath, loaderConfig);
+  const settings = {};
+  for (const key of exportableConfigKeys) if (config[key] !== undefined) settings[key] = config[key];
+  return {
+    type: 'shinawase-loader-settings',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    loaderVersion,
+    settings: { ...settings, locale: locale || 'zh', ui: uiSettings },
+  };
+};
+const importLoaderSettings = (payload) => {
+  const wrapper = payload && typeof payload === 'object' ? payload : null;
+  const source = wrapper && wrapper.settings && typeof wrapper.settings === 'object' ? wrapper.settings : wrapper;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('settings_import_invalid');
+  const applied = [];
+  const requiresRestart = [];
+  const config = readJson(loaderConfigPath, loaderConfig);
+  for (const key of exportableConfigKeys) {
+    if (source[key] === undefined || JSON.stringify(config[key]) === JSON.stringify(source[key])) continue;
+    config[key] = source[key];
+    if (key === 'debugMode') applied.push(key);
+    else requiresRestart.push(key);
+  }
+  writeJson(loaderConfigPath, config);
+  if (typeof source.debugMode === 'boolean' && source.debugMode !== debugMode) setDebugMode(source.debugMode);
+  if (typeof source.locale === 'string' && normalizeLocale(source.locale)) {
+    if (normalizeLocale(source.locale) !== (locale || 'zh')) applied.push('locale');
+    locale = persistLocale(source.locale);
+  }
+  if (source.ui && typeof source.ui === 'object') {
+    persistUiSettings(source.ui);
+    applied.push('ui');
+  }
+  log('INFO', `settings imported applied=[${applied.join(',')}] restart=[${requiresRestart.join(',')}]`);
+  return { ok: true, applied, requiresRestart, locale: locale || 'zh', ui: uiSettings };
+};
 
 mkdirSync(installedRoot, { recursive: true });
 mkdirSync(installedPluginsRoot, { recursive: true });
@@ -302,6 +384,7 @@ const modSummaries = () => {
       configSchema: readModConfigSchema(id, manifest),
       configUi: typeof manifest.configUi === 'string' ? manifest.configUi : null,
       enabled: state.mods[id].enabled === true,
+      importedAt: typeof entry.importedAt === 'string' ? entry.importedAt : null,
       directory: record.directory,
       main: Boolean(manifest.main || manifest.native?.main),
       native: Boolean(manifest.native || manifest.main),
@@ -572,6 +655,7 @@ const injectLoaderUi = async (target) => {
     `let LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
     `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
     `let T = LOCALES[LOADER_LOCALE] || LOCALES.zh;`,
+    `const LOADER_UI_SETTINGS = ${JSON.stringify(uiSettings)};`,
     uiSource,
     '})()',
   ].join('\n');
@@ -1151,6 +1235,20 @@ const injectIntoTarget = async (target, id, manifest, source) => {
         mode: 'in-process-asar-bridge',
         invoke: (method, payload) => request('/api/native/call', { body: { method: 'main.invoke', packageId: id, payload: { method, payload } } }),
       },
+      loaderSettings: {
+        get: async () => (await request('/api/ui-settings', { method: 'GET' })).ui,
+        set: async (patch) => {
+          const applier = window.__echoExternalLoaderUi?.setUiSettings;
+          if (typeof applier === 'function') return applier(patch);
+          return (await request('/api/ui-settings', { method: 'PUT', body: { ui: patch } })).ui;
+        },
+        onChange: (handler) => {
+          if (typeof handler !== 'function') return () => {};
+          const listener = (event) => { try { handler(event.detail); } catch (error) { modConsole.error('loaderSettings.onChange', error?.message || error); } };
+          window.addEventListener('shinawase:ui-settings', listener);
+          return trackExtend(() => window.removeEventListener('shinawase:ui-settings', listener));
+        },
+      },
     };
     const modConsole = Object.fromEntries(['debug', 'info', 'log', 'warn', 'error'].map((level) => [level, (...values) => {
       const message = values.map((value) => { try { return typeof value === 'string' ? value : JSON.stringify(value); } catch { return String(value); } }).join(' ');
@@ -1672,6 +1770,20 @@ const server = createServer(async (request, response) => {
       const body = await readRequest(request);
       locale = persistLocale(body.locale);
       return jsonResponse(response, 200, { ok: true, locale });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/ui-settings') {
+      return jsonResponse(response, 200, { ok: true, ui: uiSettings, defaults: defaultUiSettings });
+    }
+    if (request.method === 'PUT' && url.pathname === '/api/ui-settings') {
+      const body = await readRequest(request);
+      const patch = body.ui && typeof body.ui === 'object' ? body.ui : body;
+      return jsonResponse(response, 200, { ok: true, ui: persistUiSettings(patch) });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/settings/export') {
+      return jsonResponse(response, 200, { ok: true, ...exportLoaderSettings() });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/settings/import') {
+      return jsonResponse(response, 200, importLoaderSettings(await readRequest(request)));
     }
     if (request.method === 'POST' && url.pathname === '/api/debug') {
       const body = await readRequest(request);
