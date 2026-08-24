@@ -22,7 +22,7 @@ An in-app viewer for ECHO's built-in Wallpaper Engine bridge: a live 32-band spe
 - Loader 侧栏「壁纸桥接」页：连接状态、正在播放卡片、频谱画布、能量 / 瞬态仪表、输出模式徽章
 - 断线自动重连（EventSource 原生重试），并提供手动重连按钮
 - 可选把 `--echo-wallpaper-*` CSS 变量写到 ECHO 窗口根元素（与官方帮助脚本同名同义），主题和其他 Mod 可以直接引用
-- 频谱颜色默认跟随 ECHO 主题强调色（`--color-accent`），也可固定为自定义颜色
+- 频谱颜色默认跟随 ECHO 主题强调色（`--theme-accent-solid-bg` / `--color-accent`，含 Loader 外观设置的强调色覆盖），也可固定为自定义颜色
 - 自定义配置页（`configUi`），包含桥接连通性测试
 
 ## 配置 Config

@@ -5,7 +5,12 @@ const draft = { ...defaults, ...(config && typeof config === 'object' ? config :
 const chinese = String(document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('zh');
 const t = (zh, en) => (chinese ? zh : en);
 const specOf = (key) => (props[key] && typeof props[key] === 'object' ? props[key] : {});
-const normalizeBase = (value) => String(value || '').trim().replace(/\/+$/u, '');
+const normalizeBase = (value) => {
+  const raw = String(value || '').trim().replace(/\/+$/u, '');
+  if (!raw) return '';
+  // Without a scheme the URL would resolve relative to the app origin.
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(raw) ? raw : `http://${raw}`;
+};
 
 root.innerHTML = `
   <style>
@@ -35,14 +40,14 @@ root.innerHTML = `
     .wb-cfg-ping[data-state="ok"] { color: var(--theme-success-text, #1a7f37); }
     .wb-cfg-ping[data-state="error"] { color: var(--theme-danger-text, #c0392b); }
     .wb-cfg-range { display: flex; align-items: center; gap: 10px; }
-    .wb-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .wb-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent-solid-bg, var(--theme-accent, #4b55e8)); }
     .wb-cfg-range output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--theme-muted-text, #6c7179); }
     .wb-cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .wb-cfg-switch { position: relative; width: 42px; height: 24px; flex: none; }
     .wb-cfg-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
     .wb-cfg-switch i { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--theme-field-border, rgba(0,0,0,0.18)); }
     .wb-cfg-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(16,19,24,0.2); }
-    .wb-cfg-switch input:checked + i { background: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .wb-cfg-switch input:checked + i { background: var(--theme-accent-solid-bg, var(--theme-accent, #4b55e8)); }
     .wb-cfg-switch input:checked + i::after { transform: translateX(18px); }
     .wb-cfg-color { display: flex; gap: 8px; align-items: center; }
     .wb-cfg-color input[type="color"] { width: 46px; height: 38px; padding: 4px; border-radius: 9px; border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14)); background: var(--theme-field-bg, rgba(255,255,255,0.92)); cursor: pointer; }
@@ -105,7 +110,7 @@ testButton.addEventListener('click', async () => {
   ping.dataset.state = '';
   ping.textContent = t('连接中...', 'Connecting...');
   try {
-    const response = await fetch(`${base}/health`, { headers: { Accept: 'application/json' } });
+    const response = await fetch(`${base}/health`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error(`http_${response.status}`);
     const value = await response.json();
     ping.dataset.state = 'ok';
@@ -115,7 +120,8 @@ testButton.addEventListener('click', async () => {
     );
   } catch (error) {
     ping.dataset.state = 'error';
-    ping.textContent = t('无法连接桥接：', 'Cannot reach bridge: ') + (error instanceof Error ? error.message : String(error));
+    const reason = error?.name === 'TimeoutError' ? t('超时', 'timeout') : (error instanceof Error ? error.message : String(error));
+    ping.textContent = t('无法连接桥接：', 'Cannot reach bridge: ') + reason;
   } finally {
     testButton.disabled = false;
   }

@@ -4,7 +4,12 @@ const config = external.config && typeof external.config === 'object' ? external
 const chinese = String(document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('zh');
 const t = (zh, en) => (chinese ? zh : en);
 
-const normalizeBase = (value) => String(value || '').trim().replace(/\/+$/u, '');
+const normalizeBase = (value) => {
+  const raw = String(value || '').trim().replace(/\/+$/u, '');
+  if (!raw) return '';
+  // Without a scheme the URL would resolve relative to the app origin.
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(raw) ? raw : `http://${raw}`;
+};
 const bridgeUrl = normalizeBase(config.bridgeUrl) || 'http://127.0.0.1:47668';
 const barCount = Math.max(8, Math.min(32, Math.round(Number(config.barCount) || 32)));
 const applyCssVariables = config.applyCssVariables === true;
@@ -14,6 +19,7 @@ let source = null;
 let snapshot = null;
 let connected = false;
 let disposed = false;
+let dataVersion = 0;
 const pageDisposers = new Set();
 
 const clamp01 = (value) => (Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0);
@@ -21,10 +27,23 @@ const formatTime = (seconds) => {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
   return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 };
+// The loader's Appearance accent override is applied per loader surface (not on
+// :root), so resolve tokens against the mounted page when available. Cached with
+// a short TTL because this runs inside the canvas draw loop.
+let accentHost = null;
+let accentCache = '';
+let accentCacheAt = 0;
 const accentColor = () => {
   if (accentOverride) return accentOverride;
-  const styles = getComputedStyle(document.documentElement);
-  return styles.getPropertyValue('--color-accent').trim() || styles.getPropertyValue('--theme-accent').trim() || '#4b55e8';
+  const now = Date.now();
+  if (accentCache && now - accentCacheAt < 1000) return accentCache;
+  const styles = getComputedStyle(accentHost?.isConnected ? accentHost : document.documentElement);
+  accentCache = styles.getPropertyValue('--theme-accent-solid-bg').trim()
+    || styles.getPropertyValue('--theme-accent').trim()
+    || styles.getPropertyValue('--color-accent').trim()
+    || '#4b55e8';
+  accentCacheAt = now;
+  return accentCache;
 };
 
 // Mirrors the official helper script served at <bridge>/echo-wallpaper-engine.js,
@@ -34,8 +53,10 @@ const applySceneCssVars = (value) => {
   const scene = value?.scene;
   if (!scene) return;
   const rootStyle = document.documentElement.style;
-  document.documentElement.dataset.echoWallpaperBridge = 'connected';
-  document.documentElement.dataset.echoWallpaperMode = scene.mode || 'idle';
+  const rootDataset = document.documentElement.dataset;
+  if (rootDataset.echoWallpaperBridge !== 'connected') rootDataset.echoWallpaperBridge = 'connected';
+  const mode = scene.mode || 'idle';
+  if (rootDataset.echoWallpaperMode !== mode) rootDataset.echoWallpaperMode = mode;
   rootStyle.setProperty('--echo-wallpaper-energy', clamp01(scene.energy).toFixed(3));
   rootStyle.setProperty('--echo-wallpaper-transient', clamp01(scene.transient).toFixed(3));
   rootStyle.setProperty('--echo-wallpaper-bass', clamp01(scene.bass).toFixed(3));
@@ -59,35 +80,64 @@ const clearSceneCssVars = () => {
 const statusListeners = new Set();
 const notifyStatus = () => statusListeners.forEach((listener) => { try { listener(); } catch {} });
 
+let reconnectTimer = 0;
+const scheduleReconnect = () => {
+  if (disposed || reconnectTimer) return;
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = 0;
+    if (disposed) return;
+    if (source && source.readyState !== EventSource.CLOSED) return;
+    if (source) { try { source.close(); } catch {} source = null; }
+    connect();
+  }, 5000);
+};
 const connect = () => {
   if (disposed || source) return;
+  let stream;
   try {
-    source = new EventSource(`${bridgeUrl}/events`);
+    stream = new EventSource(`${bridgeUrl}/events`);
   } catch {
     connected = false;
     notifyStatus();
+    scheduleReconnect();
     return;
   }
-  source.addEventListener('open', () => { connected = true; notifyStatus(); });
-  source.addEventListener('snapshot', (event) => {
+  source = stream;
+  stream.addEventListener('open', () => {
+    if (stream !== source) return;
+    connected = true;
+    notifyStatus();
+  });
+  stream.addEventListener('snapshot', (event) => {
+    if (stream !== source) return;
     try {
       snapshot = JSON.parse(event.data);
       connected = true;
+      dataVersion += 1;
       if (applyCssVariables) applySceneCssVars(snapshot);
       notifyStatus();
     } catch {}
   });
-  source.addEventListener('error', () => {
-    // EventSource retries on its own; surface the state while it does.
+  stream.addEventListener('error', () => {
+    if (stream !== source) return;
     connected = false;
+    if (applyCssVariables && document.documentElement.dataset.echoWallpaperBridge === 'connected') {
+      document.documentElement.dataset.echoWallpaperBridge = 'disconnected';
+    }
     notifyStatus();
+    // EventSource retries transient drops on its own, but a fatal response
+    // (non-200, wrong content type) leaves it CLOSED with no retry.
+    if (stream.readyState === EventSource.CLOSED) scheduleReconnect();
   });
 };
 const disconnect = () => {
+  if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = 0; }
   if (source) { try { source.close(); } catch {} source = null; }
   connected = false;
 };
-connect();
+// Only hold a background SSE connection when the CSS variables need it;
+// otherwise connect lazily when the page is first opened.
+if (applyCssVariables) connect();
 
 const renderPage = (root) => {
   root.innerHTML = `
@@ -146,7 +196,16 @@ const renderPage = (root) => {
   `;
 
   const page = root.querySelector('.wpb-page');
-  page.style.setProperty('--wpb-accent', accentColor());
+  accentHost = page;
+  const applyAccent = () => {
+    accentCacheAt = 0;
+    dataVersion += 1;
+    page.style.setProperty('--wpb-accent', accentColor());
+  };
+  applyAccent();
+  // Follow the loader Appearance accent (and any live changes to it).
+  const disposeAccentWatch = external.loaderSettings?.onChange?.(() => applyAccent()) || null;
+  connect();
   root.querySelector('h1').textContent = t('壁纸桥接', 'Wallpaper Bridge');
   root.querySelector('[data-retry]').textContent = t('重新连接', 'Reconnect');
   root.querySelector('[data-energy-label]').textContent = t('能量', 'Energy');
@@ -176,6 +235,12 @@ const renderPage = (root) => {
   const canvas = root.querySelector('[data-canvas]');
   const context = canvas.getContext('2d');
 
+  let raf = 0;
+  let idleTimer = 0;
+  let factsKey = '';
+  let coverUrl = '';
+  cover.addEventListener('error', () => { cover.hidden = true; });
+
   const updateInfo = () => {
     statusBadge.dataset.connected = String(connected);
     statusText.textContent = connected ? t('已连接', 'Connected') : t('未连接', 'Disconnected');
@@ -184,7 +249,12 @@ const renderPage = (root) => {
     title.textContent = track.title || t('暂无播放', 'Nothing playing');
     artist.textContent = [track.artist, track.album].filter(Boolean).join(' · ');
     time.textContent = track.durationSeconds ? `${formatTime(track.positionSeconds)} / ${formatTime(track.durationSeconds)}` : '';
-    if (track.coverUrl) { cover.src = track.coverUrl; cover.hidden = false; } else { cover.hidden = true; }
+    const nextCover = track.coverUrl || '';
+    if (nextCover !== coverUrl) {
+      coverUrl = nextCover;
+      if (nextCover) { cover.hidden = false; cover.src = nextCover; }
+      else { cover.hidden = true; cover.removeAttribute('src'); }
+    }
     const audio = snapshot?.audio || {};
     const energy = clamp01(audio.visualEnergy);
     const transient = clamp01(audio.visualTransient);
@@ -192,42 +262,63 @@ const renderPage = (root) => {
     energyOut.textContent = `${Math.round(energy * 100)}%`;
     transientFill.style.width = `${Math.round(transient * 100)}%`;
     transientOut.textContent = `${Math.round(transient * 100)}%`;
-    facts.replaceChildren(...[
+    const parts = [
       snapshot?.state ? `${t('状态', 'State')}: ${snapshot.state}` : null,
       snapshot?.outputMode ? `${t('输出', 'Output')}: ${snapshot.outputMode}` : null,
       audio.visualTelemetryState ? `${t('遥测', 'Telemetry')}: ${audio.visualTelemetryState}` : null,
       snapshot?.scene?.mode ? `${t('场景', 'Scene')}: ${snapshot.scene.mode}` : null,
-    ].filter(Boolean).map((text) => {
-      const chip = document.createElement('span');
-      chip.textContent = text;
-      return chip;
-    }));
+    ].filter(Boolean);
+    const key = parts.join('\n');
+    if (key !== factsKey) {
+      factsKey = key;
+      facts.replaceChildren(...parts.map((text) => {
+        const chip = document.createElement('span');
+        chip.textContent = text;
+        return chip;
+      }));
+    }
+    // Fresh data while the draw loop idles: resume the fast path right away.
+    if (idleTimer) { window.clearTimeout(idleTimer); idleTimer = 0; raf = requestAnimationFrame(draw); }
   };
   statusListeners.add(updateInfo);
   updateInfo();
 
   const displayed = new Array(barCount).fill(0);
-  let raf = 0;
+  let paintedVersion = -1;
+  const scheduleDraw = (slow) => {
+    if (slow) idleTimer = window.setTimeout(() => { idleTimer = 0; raf = requestAnimationFrame(draw); }, 250);
+    else raf = requestAnimationFrame(draw);
+  };
   const draw = () => {
-    raf = requestAnimationFrame(draw);
+    raf = 0;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
-    if (!width || !height) return;
+    // Hidden page (loader keeps it mounted): poll cheaply instead of spinning rAF.
+    if (!width || !height) { scheduleDraw(true); return; }
     const scale = window.devicePixelRatio || 1;
     if (canvas.width !== Math.round(width * scale) || canvas.height !== Math.round(height * scale)) {
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
+      paintedVersion = -1;
     }
-    context.setTransform(scale, 0, 0, scale, 0, 0);
-    context.clearRect(0, 0, width, height);
     const spectrum = Array.isArray(snapshot?.audio?.visualSpectrum) ? snapshot.audio.visualSpectrum : [];
     const stride = spectrum.length ? spectrum.length / barCount : 0;
+    let moving = false;
+    for (let index = 0; index < barCount; index += 1) {
+      const target = stride ? clamp01(spectrum[Math.min(spectrum.length - 1, Math.floor(index * stride))]) : 0;
+      const next = displayed[index] + (target - displayed[index]) * 0.35;
+      if (Math.abs(next - displayed[index]) > 0.0015) moving = true;
+      displayed[index] = next;
+    }
+    // Bars settled and no new snapshot/accent: skip repainting a static frame.
+    if (!moving && paintedVersion === dataVersion) { scheduleDraw(true); return; }
+    paintedVersion = dataVersion;
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, height);
     const gap = 3;
     const barWidth = (width - gap * (barCount - 1)) / barCount;
     context.fillStyle = accentColor();
     for (let index = 0; index < barCount; index += 1) {
-      const target = stride ? clamp01(spectrum[Math.min(spectrum.length - 1, Math.floor(index * stride))]) : 0;
-      displayed[index] += (target - displayed[index]) * 0.35;
       const barHeight = Math.max(2, displayed[index] * (height - 8));
       const x = index * (barWidth + gap);
       const y = height - barHeight;
@@ -235,11 +326,15 @@ const renderPage = (root) => {
       context.roundRect(x, y, barWidth, barHeight, Math.min(4, barWidth / 2));
       context.fill();
     }
+    scheduleDraw(false);
   };
   raf = requestAnimationFrame(draw);
 
   const dispose = () => {
     cancelAnimationFrame(raf);
+    if (idleTimer) { window.clearTimeout(idleTimer); idleTimer = 0; }
+    disposeAccentWatch?.();
+    if (accentHost === page) accentHost = null;
     statusListeners.delete(updateInfo);
     pageDisposers.delete(dispose);
     root.replaceChildren();
