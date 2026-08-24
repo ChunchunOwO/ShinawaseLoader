@@ -48,14 +48,14 @@ root.innerHTML = `
       color: inherit; font: inherit;
     }
     .st-cfg-range { display: flex; align-items: center; gap: 10px; }
-    .st-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .st-cfg-range input[type="range"] { flex: 1; accent-color: var(--theme-accent-solid-bg, var(--theme-accent, var(--color-accent, #4b55e8))); }
     .st-cfg-range output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--theme-muted-text, #6c7179); }
     .st-cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .st-cfg-switch { position: relative; width: 42px; height: 24px; flex: none; }
     .st-cfg-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
     .st-cfg-switch i { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--theme-field-border, rgba(0,0,0,0.18)); }
     .st-cfg-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(16,19,24,0.2); }
-    .st-cfg-switch input:checked + i { background: var(--theme-accent, var(--color-accent, #4b55e8)); }
+    .st-cfg-switch input:checked + i { background: var(--theme-accent-solid-bg, var(--theme-accent, var(--color-accent, #4b55e8))); }
     .st-cfg-switch input:checked + i::after { transform: translateX(18px); }
   </style>
   <div class="st-cfg">
@@ -164,6 +164,7 @@ display.append(toggle('showDisabledProviders',
   t('在平台栏中显示已被禁用的平台。', 'Keep disabled platforms visible in the provider rail.')));
 
 echoConfigUi.onSave(() => ({
+  ...(config && typeof config === 'object' ? config : {}),
   locale: String(draft.locale) === 'en-US' ? 'en-US' : 'zh-CN',
   defaultProvider: providers.some((item) => item.value === draft.defaultProvider) ? String(draft.defaultProvider) : 'netease',
   defaultQuality: qualities.some((item) => item.value === draft.defaultQuality) ? String(draft.defaultQuality) : 'lossless',

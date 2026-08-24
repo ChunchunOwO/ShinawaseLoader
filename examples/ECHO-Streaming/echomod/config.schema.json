@@ -10,26 +10,31 @@
     "defaultProvider": {
       "type": "string",
       "title": "Default provider",
-      "enum": ["netease", "qqmusic", "soundcloud", "youtube", "spotify", "tidal", "qobuz", "bilibili"]
+      "enum": ["netease", "qqmusic", "soundcloud", "youtube", "spotify", "tidal", "qobuz", "bilibili"],
+      "default": "netease"
     },
     "defaultQuality": {
       "type": "string",
       "title": "Default quality",
-      "enum": ["lossless", "high", "standard", "hires"]
+      "enum": ["lossless", "high", "standard", "hires"],
+      "default": "lossless"
     },
     "pageSize": {
       "type": "integer",
       "title": "Search result count",
       "minimum": 10,
-      "maximum": 50
+      "maximum": 50,
+      "default": 30
     },
     "hideUnavailable": {
       "type": "boolean",
-      "title": "Hide unavailable tracks"
+      "title": "Hide unavailable tracks",
+      "default": false
     },
     "showDisabledProviders": {
       "type": "boolean",
-      "title": "Show disabled providers"
+      "title": "Show disabled providers",
+      "default": true
     }
   }
 }
