@@ -50,7 +50,7 @@ root.innerHTML = `
     .ab-cfg-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
     .ab-cfg-switch i { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--theme-field-border, rgba(0,0,0,0.18)); }
     .ab-cfg-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(16,19,24,0.2); }
-    .ab-cfg-switch input:checked + i { background: var(--theme-accent, #4da3ff); }
+    .ab-cfg-switch input:checked + i { background: var(--theme-accent, var(--color-accent, #4da3ff)); }
     .ab-cfg-switch input:checked + i::after { transform: translateX(18px); }
     .ab-cfg-color { display: flex; gap: 8px; align-items: center; }
     .ab-cfg-color input[type="color"] { width: 46px; height: 38px; padding: 4px; border-radius: 9px; border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14)); background: var(--theme-field-bg, rgba(255,255,255,0.92)); cursor: pointer; }
