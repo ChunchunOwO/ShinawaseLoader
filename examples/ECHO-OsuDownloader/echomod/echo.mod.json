@@ -1,7 +1,7 @@
 {
   "id": "echo.osu-downloader",
   "name": "ECHO osu!downloader",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minEchoVersion": "26.8.15",
   "description": "Search osu! beatmapsets, browse your account library, and download audio into the ECHO library through the loader's downloads bridge.",
   "icon": "icon.svg",

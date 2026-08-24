@@ -1,6 +1,6 @@
 const { root, manifest, schema, config } = echoConfigUi;
 const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : {};
-const defaults = { locale: 'zh-CN', searchLimit: 40, sidebarOrder: 42 };
+const defaults = { locale: 'zh-CN', searchLimit: 20, sidebarOrder: 42 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const chinese = String(draft.locale || '').toLowerCase().startsWith('zh');
 const t = (zh, en) => (chinese ? zh : en);
@@ -81,10 +81,10 @@ main.append(field('locale', locale));
 const limitWrap = el(`<div class="osu-cfg-range"></div>`);
 const limit = document.createElement('input');
 limit.type = 'range';
-limit.min = '10';
-limit.max = '100';
-limit.step = '5';
-limit.value = String(Math.max(10, Math.min(100, Math.round(Number(draft.searchLimit) || 40))));
+limit.min = '5';
+limit.max = '20';
+limit.step = '1';
+limit.value = String(Math.max(5, Math.min(20, Math.round(Number(draft.searchLimit) || 20))));
 const limitOut = document.createElement('output');
 limitOut.textContent = limit.value;
 limit.addEventListener('input', () => {
@@ -104,7 +104,7 @@ main.append(field('sidebarOrder', order, t('数值越小，Loader 侧栏分组�
 
 echoConfigUi.onSave(() => ({
   locale: String(draft.locale) === 'en-US' ? 'en-US' : 'zh-CN',
-  searchLimit: Math.max(10, Math.min(100, Math.round(Number(draft.searchLimit) || 40))),
+  searchLimit: Math.max(5, Math.min(20, Math.round(Number(draft.searchLimit) || 20))),
   sidebarOrder: Math.max(1, Math.min(99, Math.round(Number(draft.sidebarOrder) || 42))),
 }));
 
