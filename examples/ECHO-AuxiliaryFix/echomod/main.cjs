@@ -18,11 +18,13 @@ const activate = (host) => {
       log: (message) => host.log('INFO', message),
     })
     : { ok: false, error: 'auxiliary_remap_missing' };
-  host.log('INFO', result?.ok === false
+  const failed = result?.ok === false;
+  host.log(failed ? 'ERROR' : 'INFO', failed
     ? `auxiliary remap failed ${result.error || ''}`.trim()
     : 'auxiliary window remap active');
+  host.handle?.('status', () => ({ ok: !failed, ...(failed ? { error: result?.error || 'auxiliary_remap_failed' } : {}) }));
   return () => {};
 };
 
 module.exports = activate;
-exports.activate = activate;
+module.exports.activate = activate;
