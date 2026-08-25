@@ -655,7 +655,9 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
   $originalAsar = Join-Path $echoRoot 'resources\app.asar'
   $backupAsar = Join-Path $loaderRoot 'backups\app.asar.original'
   if (Test-Path -LiteralPath $backupAsar) { $originalAsar = $backupAsar }
-  New-HardLinkOrCopy $echoExe (Join-Path $runtimeRoot 'ECHO.exe')
+  # ECHO 43.3+ embeds an Electron asar header hash in ECHO.exe. Copy the exe so
+  # echo-asar.mjs can rewrite that hash after patching without touching Steam.
+  Copy-Item -LiteralPath $echoExe -Destination (Join-Path $runtimeRoot 'ECHO.exe') -Force
   foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -File -Force) {
     if ($item.Name -eq 'app.asar') { continue }
     New-HardLinkOrCopy $item.FullName (Join-Path (Join-Path $runtimeRoot 'resources') $item.Name)
@@ -673,7 +675,8 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
     catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
   }
   New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'ShinawaseLoader\backups') | Out-Null
-  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot | Out-Null
+  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot
+  if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime app.asar patch failed.' }
   return $runtimeRoot
 }
 

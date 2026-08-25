@@ -77,7 +77,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.6.0';
+const loaderVersion = '1.6.3';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
 const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));

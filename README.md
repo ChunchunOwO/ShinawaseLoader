@@ -274,6 +274,9 @@ flowchart TB
 **Mod 没有生效？**  
 确认是用 Loader 启动器打开的，而不是 Steam 快捷方式。Steam 入口不会执行 inspector 主进程 bootstrap。
 
+**ECHO 43.3+ 双击 `ECHO.modded.exe` 立刻退出？**  
+新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。重新运行安装或 `echo-asar.mjs patch <modded-runtime>` 即可。
+
 **日志在哪里？**  
 游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误）。
 

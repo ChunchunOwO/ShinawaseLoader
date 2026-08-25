@@ -1,6 +1,6 @@
 {
   "name": "ShinawaseLoader",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "nodeVersion": "22.23.2",
   "nodeUrl": "https://nodejs.org/dist/v22.23.2/node-v22.23.2-win-x64.zip"
 }
