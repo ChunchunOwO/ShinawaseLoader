@@ -10,7 +10,7 @@
     "bilibiliCookie": {
       "type": "string",
       "title": "Bilibili Cookie",
-      "description": "可选。原样放入 Cookie 请求头，例如 SESSDATA=xxx。用于 1080p+ / 大会员清晰度；无 Cookie 时高档会标记 requiresAccount 并尝试降级。",
+      "description": "可选覆盖。留空则自动使用流媒体 Mod 已登录的 Bilibili 账号（ECHO accounts.json）。手动填写时原样放入 Cookie 头，例如 SESSDATA=xxx。有登录后才能稳定拿到 1080p+ / 大会员清晰度。",
       "default": ""
     },
     "debugLog": {

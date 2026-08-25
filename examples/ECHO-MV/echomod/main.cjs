@@ -14,7 +14,7 @@ const { stat } = require('node:fs/promises');
 const { basename, dirname, extname, join, resolve, normalize } = require('node:path');
 const { Readable } = require('node:stream');
 
-const MOD_VERSION = '1.0.2';
+const MOD_VERSION = '1.0.10';
 const MV_MATCH_ALGORITHM_VERSION = 5;
 const MV_AUTO_MATCH_THRESHOLD = 0.7;
 const MV_AUTO_MATCH_MIN_MARGIN = 0.08;
@@ -929,6 +929,96 @@ const isBilibiliPlayurlBlockedAttempt = (attempt) =>
   attempt.error === 'request_failed:412' ||
   attempt.message?.toLowerCase().includes('request was banned') === true;
 
+const ECHO_SAFE_SECRET_PREFIX = 'safe:';
+const ECHO_PLAIN_SECRET_PREFIX = 'plain:';
+const ECHO_BILI_ACCOUNT_PARTITION = 'persist:echo-account-bilibili';
+const ECHO_BILI_COOKIE_NAMES = new Set(['SESSDATA', 'DedeUserID', 'bili_jct', 'DedeUserID__ckMd5', 'sid', 'buvid3', 'bili_ticket']);
+
+const resolveSafeStorage = (safeStorage) => {
+  const passed = typeof safeStorage === 'function' ? safeStorage() : safeStorage;
+  if (passed && typeof passed.decryptString === 'function') return passed;
+  try {
+    const electronSafeStorage = require('electron').safeStorage;
+    return electronSafeStorage && typeof electronSafeStorage.decryptString === 'function' ? electronSafeStorage : null;
+  } catch {
+    return null;
+  }
+};
+
+const decryptEchoAccountSecret = (value, safeStorage) => {
+  if (typeof value !== 'string' || !value) return null;
+  if (value.startsWith(ECHO_SAFE_SECRET_PREFIX)) {
+    try {
+      return resolveSafeStorage(safeStorage)?.decryptString?.(Buffer.from(value.slice(ECHO_SAFE_SECRET_PREFIX.length), 'base64')) || null;
+    } catch {
+      return null;
+    }
+  }
+  if (value.startsWith(ECHO_PLAIN_SECRET_PREFIX)) {
+    try {
+      return Buffer.from(value.slice(ECHO_PLAIN_SECRET_PREFIX.length), 'base64').toString('utf8') || null;
+    } catch {
+      return null;
+    }
+  }
+  return value;
+};
+
+const cookieHeaderFromSessionCookies = (cookies) => {
+  const picked = (Array.isArray(cookies) ? cookies : []).filter((cookie) => cookie?.name && ECHO_BILI_COOKIE_NAMES.has(cookie.name));
+  if (!picked.some((cookie) => cookie.name === 'SESSDATA')) return '';
+  return [...new Map(picked.map((cookie) => [cookie.name, `${cookie.name}=${cookie.value}`])).values()].join('; ');
+};
+
+const createEchoAccountCookieReader = ({ userData, safeStorage, log } = {}) => {
+  const filePath = userData ? join(userData, 'accounts.json') : null;
+  let cache = { mtimeMs: -1, cookie: '' };
+  return () => {
+    if (!filePath) return '';
+    try {
+      if (!existsSync(filePath)) {
+        cache = { mtimeMs: -1, cookie: '' };
+        return '';
+      }
+      const fileStat = statSync(filePath);
+      if (fileStat.mtimeMs === cache.mtimeMs) return cache.cookie;
+      const parsed = JSON.parse(readFileSync(filePath, 'utf8'));
+      const record = isObject(parsed?.bilibili) ? parsed.bilibili : null;
+      if (!record || record.authInvalid === true) {
+        cache = { mtimeMs: fileStat.mtimeMs, cookie: '' };
+        return '';
+      }
+      const encrypted = record.encryptedCookie ?? record.cookie;
+      const cookie = text(decryptEchoAccountSecret(encrypted, safeStorage));
+      if (!cookie && typeof encrypted === 'string' && encrypted.startsWith(ECHO_SAFE_SECRET_PREFIX)) return '';
+      cache = { mtimeMs: fileStat.mtimeMs, cookie: cookie || '' };
+      return cache.cookie;
+    } catch (error) {
+      try { log?.('WARN', `mv: echo account cookie read failed (${error instanceof Error ? error.message : String(error)})`); } catch {}
+      return cache.cookie || '';
+    }
+  };
+};
+
+const createSessionBilibiliCookieReader = (electron) => {
+  let cached = '';
+  const refresh = async () => {
+    const sessionApi = electron?.session;
+    if (typeof sessionApi?.fromPartition !== 'function') return cached;
+    try {
+      const loginSession = sessionApi.fromPartition(ECHO_BILI_ACCOUNT_PARTITION);
+      const batches = await Promise.all([
+        loginSession.cookies.get({ domain: '.bilibili.com' }).catch(() => []),
+        loginSession.cookies.get({ domain: 'bilibili.com' }).catch(() => []),
+        loginSession.cookies.get({ domain: 'www.bilibili.com' }).catch(() => []),
+      ]);
+      cached = cookieHeaderFromSessionCookies(batches.flat()) || cached;
+    } catch {}
+    return cached;
+  };
+  return { get: () => cached, refresh };
+};
+
 const createJsonStore = (filePath, log) => {
   const data = { version: 1, settings: {}, tracks: {}, streams: {} };
   try {
@@ -945,6 +1035,13 @@ const createJsonStore = (filePath, log) => {
   }
   let timer = null;
   let dirty = false;
+  const applyParsed = (parsed) => {
+    if (!isObject(parsed)) return false;
+    data.settings = isObject(parsed.settings) ? parsed.settings : {};
+    data.tracks = isObject(parsed.tracks) ? parsed.tracks : {};
+    data.streams = isObject(parsed.streams) ? parsed.streams : {};
+    return true;
+  };
   const flush = () => {
     dirty = false;
     if (timer) {
@@ -962,7 +1059,17 @@ const createJsonStore = (filePath, log) => {
       if (dirty) flush();
     }, STORE_DEBOUNCE_MS);
   };
-  return { data, save, flush, dispose: flush };
+  const reloadFromDisk = () => {
+    if (dirty) return false;
+    try {
+      if (!existsSync(filePath)) return false;
+      return applyParsed(JSON.parse(readFileSync(filePath, 'utf8')));
+    } catch (error) {
+      log('WARN', `mv: store reload failed (${error instanceof Error ? error.message : String(error)})`);
+      return false;
+    }
+  };
+  return { data, save, flush, reloadFromDisk, dispose: flush };
 };
 
 function createEngine(options = {}) {
@@ -999,9 +1106,40 @@ function createEngine(options = {}) {
   let wbiKeyRequest = null;
   let protocolsRegistered = false;
   let lastNetworkStatus = null;
+  let lastCookieSource = 'none';
+  const readEchoBilibiliCookie = typeof options.readBilibiliCookie === 'function'
+    ? options.readBilibiliCookie
+    : createEchoAccountCookieReader({
+      userData: options.echoUserData || null,
+      safeStorage: options.safeStorage || null,
+      log,
+    });
+  const sessionBilibiliCookie = options.sessionBilibiliCookie && typeof options.sessionBilibiliCookie.get === 'function'
+    ? options.sessionBilibiliCookie
+    : createSessionBilibiliCookieReader(options.electron || null);
+
+  const getBilibiliCookie = () => {
+    const configured = getModConfig().bilibiliCookie;
+    if (configured) {
+      lastCookieSource = 'config';
+      return configured;
+    }
+    const echoCookie = text(readEchoBilibiliCookie());
+    if (echoCookie) {
+      lastCookieSource = 'echo-account';
+      return echoCookie;
+    }
+    const sessionCookie = text(sessionBilibiliCookie.get());
+    if (sessionCookie) {
+      lastCookieSource = 'echo-session';
+      return sessionCookie;
+    }
+    lastCookieSource = 'none';
+    return '';
+  };
 
   const cookieHeaders = () => {
-    const cookie = getModConfig().bilibiliCookie;
+    const cookie = getBilibiliCookie();
     return cookie ? { Cookie: cookie } : {};
   };
 
@@ -1283,7 +1421,7 @@ function createEngine(options = {}) {
           mimeType: 'video/mp4',
           protocol: mutedVideoOnly || source === 'durl' ? 'direct' : 'dash',
           playableInApp: mutedVideoOnly || (source === 'durl' && browserPlayable),
-          requiresAccount: streamQn >= 112 && !getModConfig().bilibiliCookie,
+          requiresAccount: streamQn >= 112 && !getBilibiliCookie(),
           expiresAt,
         }),
         url: streamUrl,
@@ -1663,7 +1801,7 @@ function createEngine(options = {}) {
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
-    store.save();
+    store.flush();
   };
 
   const cacheResolvedStreams = (row, variants) => {
@@ -1853,6 +1991,9 @@ function createEngine(options = {}) {
     if (row.provider === 'local') return { video: mapRow(row), variants: [] };
     const providerId = providerName(row.provider);
     if (providerId !== 'bilibili' && providerId !== 'youtube') return { video: mapRow(row), variants: [] };
+    if (providerId === 'bilibili') {
+      try { await sessionBilibiliCookie.refresh?.(); } catch {}
+    }
     const settings = getSettings();
     let variants = getValidStreamRows(row.id);
     if (optionsResolve.forceRefresh || variants.length === 0 || !variants.some(isPlayableStreamRow) || shouldRefreshResolvedStreams(row, variants, settings)) {
@@ -1897,8 +2038,13 @@ function createEngine(options = {}) {
   };
 
   const selectFirstResolvedAutoCandidate = async (trackId, candidates, settings) => {
-    const rankedCandidates = sameUploaderAutoResolutionCandidates(rankAutoCandidates(candidates, settings));
-    if (!hasConfidentAutoMatchLead(rankedCandidates)) return null;
+    const threshold = normalizeAutoApplyThreshold(settings.autoApplyThreshold);
+    const enabledProviders = new Set(settings.enabledProviders);
+    const rankedCandidates = [...candidates]
+      .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider))
+      .filter((candidate) => candidate.score >= threshold)
+      .sort(compareNetworkCandidates(settings));
+    if (!rankedCandidates.length) return null;
     for (const candidate of rankedCandidates) {
       try {
         const resolved = await resolvePlayableCandidateForSelection(candidate.id);
@@ -2080,19 +2226,33 @@ function createEngine(options = {}) {
     return { videoId, variantId: variant.variantId, url: variant.url, headers: variant.headers || {}, mimeType: variant.mimeType ?? null };
   };
 
-  const getStreamVariantForProtocol = async (videoId, variantId) => {
+  const playableProtocolVariant = (videoId, variantId) => {
+    const variant = getStreamRow(videoId, variantId);
+    return isPlayableStreamRow(variant) && !isExpired(variant) ? variant : null;
+  };
+  const fallbackProtocolVariant = (videoId) => {
     const row = getRow(videoId);
     if (!row || row.provider === 'local') return null;
-    let variant = getStreamRow(videoId, variantId);
-    if (!variant) {
-      await resolveStreams(videoId);
-      variant = getStreamRow(videoId, variantId);
-    } else if (isExpired(variant)) {
-      try {
-        await resolveStreams(videoId);
-        variant = getStreamRow(videoId, variantId) ?? variant;
-      } catch {}
+    const selected = chooseStreamVariant(row, getPlaybackStreamRows(videoId));
+    return isPlayableStreamRow(selected) && !isExpired(selected) ? selected : null;
+  };
+
+  const getStreamVariantForProtocol = async (videoId, variantId) => {
+    let row = getRow(videoId);
+    let variant = playableProtocolVariant(videoId, variantId);
+    if (!row || !variant) {
+      store.reloadFromDisk();
+      row = getRow(videoId);
+      variant = playableProtocolVariant(videoId, variantId);
     }
+    if (!row || row.provider === 'local') return null;
+    if (variant) return toProtocolVariant(videoId, variant);
+    const cached = fallbackProtocolVariant(videoId);
+    if (cached) return toProtocolVariant(videoId, cached);
+    try {
+      await resolveStreamsUnsafe(videoId, { forceRefresh: true });
+    } catch {}
+    variant = playableProtocolVariant(videoId, variantId) || fallbackProtocolVariant(videoId);
     return toProtocolVariant(videoId, variant);
   };
 
@@ -2141,12 +2301,12 @@ function createEngine(options = {}) {
       const snapshot = normalizeSnapshot(body.snapshot ?? body);
       rememberSnapshot(snapshot);
       const query = optionalText(body.query) ?? snapshot.query;
-      return searchNetworkForTrack(snapshotToTrack(snapshot), query, !query);
+      return searchNetworkForTrack(snapshotToTrack(snapshot), query, body.autoSelect !== false);
     },
     searchNetworkCandidatesForSnapshot: async (payload) => {
       const snapshot = normalizeSnapshot(payloadObj(payload).snapshot ?? payload);
       rememberSnapshot(snapshot);
-      return searchNetworkForTrack(snapshotToTrack(snapshot), snapshot.query, snapshot.autoSelect === true);
+      return searchNetworkForTrack(snapshotToTrack(snapshot), snapshot.query, snapshot.autoSelect !== false);
     },
     getTemporaryPlayableForSnapshot: async (payload) => {
       const snapshot = normalizeSnapshot(payloadObj(payload).snapshot ?? payload);
@@ -2164,8 +2324,10 @@ function createEngine(options = {}) {
         }
       }));
       const candidates = providerResults.flat().sort(compareNetworkCandidates(settings));
-      const rankedCandidates = sameUploaderAutoResolutionCandidates(rankAutoCandidates(candidates, settings));
-      if (!hasConfidentAutoMatchLead(rankedCandidates)) return null;
+      const rankedCandidates = [...candidates]
+        .filter((candidate) => candidate.score >= normalizeAutoApplyThreshold(settings.autoApplyThreshold))
+        .sort(compareNetworkCandidates(settings));
+      if (!rankedCandidates.length) return null;
       for (const candidate of rankedCandidates) {
         const providerId = providerName(candidate.provider);
         const resolve = providerResolve[providerId];
@@ -2269,6 +2431,7 @@ function createEngine(options = {}) {
       protocolsRegistered,
       dataDir,
       lastNetworkStatus,
+      bilibiliCookieSource: getBilibiliCookie() ? lastCookieSource : 'none',
     }),
     testWbi: async () => {
       const sampleKey = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ12';
@@ -2307,7 +2470,12 @@ function createEngine(options = {}) {
       store.dispose();
     },
     flush: () => store.flush(),
+    refreshBilibiliCookie: async () => {
+      try { await sessionBilibiliCookie.refresh?.(); } catch {}
+      return getBilibiliCookie() ? lastCookieSource : 'none';
+    },
     dataDir,
+    version: MOD_VERSION,
   };
   return api;
 }
@@ -2417,9 +2585,12 @@ const handleEchoMv = async (engine, urlString, method, rangeHeader) => {
       if (typeof globalThis.__echoMvProtoLog === 'function') globalThis.__echoMvProtoLog(`echo-mv 404 bad-url host=${url.hostname} videoId=${videoId} variantId=${variantId} extra=${extraPart ?? ''}`);
       return { status: 404, headers: {}, body: null };
     }
-    const variant = await engine.getStreamVariantForProtocol(videoId, variantId);
+    const variant = await engine.getStreamVariantForProtocol(videoId, variantId)
+      ?? await engine.refreshStreamVariantForProtocol(videoId, variantId);
     if (!variant) {
-      if (typeof globalThis.__echoMvProtoLog === 'function') globalThis.__echoMvProtoLog(`echo-mv 404 no-variant videoId=${videoId} variantId=${variantId}`);
+      if (typeof globalThis.__echoMvProtoLog === 'function') {
+        globalThis.__echoMvProtoLog(`echo-mv 404 no-variant videoId=${videoId} variantId=${variantId}`);
+      }
       return { status: 404, headers: {}, body: null };
     }
     const response = await fetchUpstreamVariant(engine, variant, method, rangeHeader);
@@ -2470,23 +2641,43 @@ const registerProtocolScheme = (protocolApi, scheme, handler) => {
   throw new Error('protocol_api_unavailable');
 };
 
+const collectProtocolApis = (host) => {
+  const electron = host.electron || {};
+  const apis = new Set();
+  const add = (protocolApi) => {
+    if (protocolApi && (typeof protocolApi.handle === 'function' || typeof protocolApi.registerStreamProtocol === 'function')) {
+      apis.add(protocolApi);
+    }
+  };
+  add(host.session?.defaultSession?.protocol);
+  add(host.session?.protocol);
+  add(electron.session?.defaultSession?.protocol);
+  add(electron.protocol);
+  try {
+    for (const window of electron.BrowserWindow?.getAllWindows?.() || []) {
+      add(window.webContents?.session?.protocol);
+    }
+  } catch {}
+  return [...apis];
+};
+
 const registerProtocols = async (engine, host) => {
   const app = host.app;
   if (app && typeof app.whenReady === 'function' && !app.isReady()) await app.whenReady();
-  const electron = host.electron || {};
-  const session = host.session;
-  const protocolApi = session?.defaultSession?.protocol || session?.protocol || electron.protocol;
-  if (!protocolApi) {
+  const protocolApis = collectProtocolApis(host);
+  if (!protocolApis.length) {
     host.log('WARN', 'mv: protocol API unavailable, streaming handlers not registered');
     engine.setProtocolsRegistered(false);
     return () => {};
   }
   const unbind = [];
   try {
-    unbind.push(registerProtocolScheme(protocolApi, 'echo-video', (url, method, range) => handleEchoVideo(engine, url, method, range)));
-    unbind.push(registerProtocolScheme(protocolApi, 'echo-mv', (url, method, range) => handleEchoMv(engine, url, method, range)));
+    for (const protocolApi of protocolApis) {
+      unbind.push(registerProtocolScheme(protocolApi, 'echo-video', (url, method, range) => handleEchoVideo(engine, url, method, range)));
+      unbind.push(registerProtocolScheme(protocolApi, 'echo-mv', (url, method, range) => handleEchoMv(engine, url, method, range)));
+    }
     engine.setProtocolsRegistered(true);
-    host.log('INFO', 'mv: echo-video and echo-mv protocol handlers registered');
+    host.log('INFO', `mv: echo-video and echo-mv protocol handlers registered sessions=${protocolApis.length}`);
   } catch (error) {
     engine.setProtocolsRegistered(false);
     host.log('ERROR', `mv: protocol register failed ${error instanceof Error ? error.message : String(error)}`);
@@ -2520,6 +2711,8 @@ const RPC_METHODS = {
   'mv.status': 'status',
 };
 
+const SHARED_ENGINE_KEY = '__echoMvSharedEngine';
+
 async function activate(host) {
   const app = host.app;
   const userData = (() => {
@@ -2530,22 +2723,30 @@ async function activate(host) {
     }
   })();
   const dataDir = join(userData || require('node:os').homedir(), 'echo-mv-mod');
-  const engine = createEngine({
-    fetchImpl: globalThis.fetch,
-    // Prefer Node's fetch (undici): it hits Bilibili directly and is not
-    // affected by the app session's cookies / risk-control, which makes
-    // electron net.fetch return empty search results in practice.
-    netFetch: typeof globalThis.fetch === 'function'
-      ? globalThis.fetch
-      : (host.electron?.net?.fetch ? host.electron.net.fetch.bind(host.electron.net) : undefined),
-    dataDir,
-    dialog: host.electron?.dialog || null,
-    shell: host.electron?.shell || null,
-    config: () => host.config || {},
-    log: (level, message) => {
-      try { host.log(level, message); } catch {}
-    },
-  });
+  let engine = globalThis[SHARED_ENGINE_KEY];
+  if (!engine || engine.dataDir !== dataDir || engine.version !== MOD_VERSION) {
+    try { engine?.dispose?.(); } catch {}
+    engine = createEngine({
+      fetchImpl: globalThis.fetch,
+      // Prefer Node's fetch (undici): it hits Bilibili directly and is not
+      // affected by the app session's cookies / risk-control, which makes
+      // electron net.fetch return empty search results in practice.
+      netFetch: typeof globalThis.fetch === 'function'
+        ? globalThis.fetch
+        : (host.electron?.net?.fetch ? host.electron.net.fetch.bind(host.electron.net) : undefined),
+      dataDir,
+      echoUserData: userData,
+      electron: host.electron || null,
+      safeStorage: () => host.electron?.safeStorage || null,
+      dialog: host.electron?.dialog || null,
+      shell: host.electron?.shell || null,
+      config: () => host.config || {},
+      log: (level, message) => {
+        try { host.log(level, message); } catch {}
+      },
+    });
+    globalThis[SHARED_ENGINE_KEY] = engine;
+  }
   globalThis.__echoMvProtoLog = (message) => {
     try { host.log('INFO', `mv-proto: ${message}`); } catch {}
   };
@@ -2554,14 +2755,15 @@ async function activate(host) {
   for (const [method, name] of Object.entries(RPC_METHODS)) {
     unbind.push(host.handle(method, async (payload) => engine[name](payload)));
   }
-  host.log('INFO', `mv: backend ${MOD_VERSION} ready dataDir=${dataDir}`);
+  const cookieSource = await engine.refreshBilibiliCookie();
+  host.log('INFO', `mv: backend ${MOD_VERSION} ready dataDir=${dataDir} biliCookie=${cookieSource}`);
   return () => {
     for (const disposeHandler of unbind) {
       try { disposeHandler(); } catch {}
     }
     try { unhandleProtocols(); } catch {}
+    try { engine.flush(); } catch {}
     try { delete globalThis.__echoMvProtoLog; } catch {}
-    engine.dispose();
   };
 }
 
