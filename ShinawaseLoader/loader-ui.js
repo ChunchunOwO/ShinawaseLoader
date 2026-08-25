@@ -998,7 +998,7 @@ const closeSidebarPage = () => {
   hideAllPanels();
   restoreNativeSurfaces();
 };
-const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:lyrics-back'];
+const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:lyrics-back', 'app:navigate:route'];
 const onNativeRoute = () => closeSidebarPage();
 nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNativeRoute));
 
@@ -2184,7 +2184,7 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 21,
+  version: 22,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
