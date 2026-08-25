@@ -6,8 +6,9 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 
 ## 使用
 
-- 播放条 **MV 按钮**：单击打开 / 关闭 MV 设置抽屉（右键、`app:open-mv-settings` 事件同样有效）
-- 抽屉里的 **「启用 MV」总开关**：控制歌词页是否显示 MV 视图
+- 播放条只留 **MV 入口**：单击开关歌词页上的 Mod 自建 MV 面板（右键、`app:open-mv-settings` 打开设置）
+- 抽屉里的 **「启用 MV」总开关**：控制是否搜索 / 播放 MV
+- 官方歌词舞台布局保持不变；MV 背景和面板都由本 Mod 自己画，不依赖官方空壳导航
 - 抽屉内按 `Esc` 或点遮罩关闭
 - 注意：没有正在播放的曲目时，播放条与歌词页由应用本身隐藏，MV 按钮也会跟着不可见
 
@@ -28,7 +29,7 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `youtubeApiKey` | `""` | YouTube Data API v3。空则跳过 YouTube 搜索 |
-| `bilibiliCookie` | `""` | 原样作为 Cookie 头（如 `SESSDATA=...`），用于高码率 |
+| `bilibiliCookie` | `""` | 可选覆盖。留空则复用流媒体 Mod 登录的 Bilibili Cookie，用于高码率 |
 | `debugLog` | `false` | 冗余日志（不会打印完整 Cookie） |
 
 MV 面板里的选项（自动搜索、清晰度上限、沉浸背景等）走 `mv.getSettings` / `mv.setSettings`，与 Loader 的 `config.json` 分开。
@@ -47,6 +48,7 @@ MV 面板里的选项（自动搜索、清晰度上限、沉浸背景等）走 `
 
 ```powershell
 node --check .\examples\ECHO-MV\echomod\main.cjs
+node .\examples\ECHO-MV\dev\protocol-lookup-test.mjs
 node .\examples\ECHO-MV\dev\test-engine.mjs
 ```
 
