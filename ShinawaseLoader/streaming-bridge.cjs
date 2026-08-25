@@ -164692,14 +164692,16 @@ var removeHandlers = (channels) => {
     }
   }
 };
+var safeRegister = (label, register) => {
+  try {
+    register();
+  } catch (error) {
+    console.warn(`[ShinawaseBridge] ${label} failed:`, error instanceof Error ? error.message : String(error));
+  }
+};
 var registerShinawaseStreamingBridge = () => {
   if (registered) return;
   registered = true;
-  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
-  registerStreamingIpc();
-  registerAccountIpc();
-  registerDownloadsIpc();
-  registerQobuzIpc();
   globalThis.__shinawaseResolveStreamingPlayback = (request) => {
     const service = getStreamingService();
     const payload = request && typeof request === "object" ? request : {};
@@ -164719,6 +164721,11 @@ var registerShinawaseStreamingBridge = () => {
       return null;
     }
   };
+  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
+  safeRegister("registerStreamingIpc", registerStreamingIpc);
+  safeRegister("registerAccountIpc", registerAccountIpc);
+  safeRegister("registerDownloadsIpc", registerDownloadsIpc);
+  safeRegister("registerQobuzIpc", registerQobuzIpc);
   try {
     require_playback_shim().installStreamingPlaybackShim();
   } catch {

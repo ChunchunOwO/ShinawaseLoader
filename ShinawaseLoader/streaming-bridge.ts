@@ -16,14 +16,24 @@ const removeHandlers = (channels: string[]): void => {
   }
 };
 
+const safeRegister = (label: string, register: () => void): void => {
+  try {
+    register();
+  } catch (error) {
+    console.warn(`[ShinawaseBridge] ${label} failed:`, error instanceof Error ? error.message : String(error));
+  }
+};
+
 export const registerShinawaseStreamingBridge = (): void => {
   if (registered) return;
   registered = true;
-  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
-  registerStreamingIpc();
-  registerAccountIpc();
-  registerDownloadsIpc();
-  registerQobuzIpc();
+  // The main-process globals are installed FIRST: they only need the lazy
+  // service singletons, not the IPC re-registration below. If any register*
+  // call throws (channel drift on a newer ECHO build, a service failing to
+  // construct, …) main-process mods must still be able to resolve playback
+  // and read the logged-in account session — losing the account getter here
+  // is what used to turn a NetEase 歌单 download into a bogus
+  // "请先登录网易云" prompt even though the user was signed in.
   (globalThis as typeof globalThis & {
     __shinawaseResolveStreamingPlayback?: (request: unknown) => Promise<unknown>;
   }).__shinawaseResolveStreamingPlayback = (request) => {
@@ -49,6 +59,11 @@ export const registerShinawaseStreamingBridge = (): void => {
       return null;
     }
   };
+  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
+  safeRegister('registerStreamingIpc', registerStreamingIpc);
+  safeRegister('registerAccountIpc', registerAccountIpc);
+  safeRegister('registerDownloadsIpc', registerDownloadsIpc);
+  safeRegister('registerQobuzIpc', registerQobuzIpc);
   try {
     require('./playback-shim.cjs').installStreamingPlaybackShim();
   } catch {}
