@@ -132,6 +132,187 @@ const resolveAuthenticatedSource = async (body) => {
   }
 };
 
+/*
+ * Provider quality probing.
+ *
+ * ECHO's `StreamingTrack.qualities` arrays are hard-coded guesses: NetEase
+ * maps the `fee` flag to 2-3 buckets (never `hires`, and VIP tracks lose
+ * `lossless` even for VIP accounts), QQ Music reports a fixed 1-or-3 bucket
+ * list, and none of them carry bitrates or file sizes. The real per-file
+ * descriptors are public metadata, so this section asks the providers
+ * directly:
+ *   - NetEase `POST /api/v3/song/detail` (batched, up to 100 ids per call)
+ *     returns `l`/`m`/`h`/`sq`/`hr` objects with the true bitrate + size of
+ *     each encoded file (128/192/320 MP3, FLAC, Hi-Res FLAC).
+ *   - QQ Music `fcg_play_single_song.fcg` (the same endpoint ECHO's own
+ *     resolvePlayback uses) returns `file.size_128mp3/size_320mp3/size_flac`.
+ *     QQ playback mints F000 (standard FLAC) for both lossless and hires, so
+ *     the probe tops out at `lossless` — advertising `hires` would deliver
+ *     the identical file.
+ *   - KuGou track ids already embed the HQ (320) and SQ (FLAC) file hashes
+ *     (`hash.albumId.albumAudioId.hqHash.sqHash`), so those are decoded
+ *     locally with no network call. Ids without the hash parts return
+ *     nothing so the renderer can re-fetch instead of under-reporting.
+ * A tier is only reported when the provider confirms the file exists; the
+ * account-tier fallback still happens inside `resolvePlayback` at download
+ * time exactly as before.
+ */
+const probeParseJson = (raw) => {
+  const trimmed = String(raw ?? '').trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Some QQ endpoints wrap JSON in a jsonp callback even with format=json.
+    return JSON.parse(trimmed.replace(/^[^(]*\((.*)\);?$/su, '$1'));
+  }
+};
+
+const probeFetchJson = async (url, init = {}) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.ok) throw new Error(`probe_http_${response.status}`);
+    return probeParseJson(await response.text());
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const chunkList = (list, size) => {
+  const chunks = [];
+  for (let index = 0; index < list.length; index += size) chunks.push(list.slice(index, index + size));
+  return chunks;
+};
+
+const neteaseTier = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  const bitrate = Number(value.br) > 0 ? Number(value.br) : null;
+  const size = Number(value.size) > 0 ? Number(value.size) : null;
+  return bitrate || size ? { bitrate, size } : null;
+};
+
+const probeNeteaseQualities = async (ids) => {
+  const results = {};
+  for (const chunk of chunkList(ids, 100)) {
+    let data;
+    try {
+      data = await probeFetchJson('https://music.163.com/api/v3/song/detail', {
+        method: 'POST',
+        headers: {
+          'User-Agent': defaultUserAgent,
+          Referer: 'https://music.163.com/',
+          Origin: 'https://music.163.com',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          c: JSON.stringify(chunk.map((id) => ({ id: /^\d+$/u.test(id) ? Number(id) : id }))),
+        }).toString(),
+      });
+    } catch {
+      continue;
+    }
+    for (const song of Array.isArray(data?.songs) ? data.songs : []) {
+      const id = song && song.id != null ? String(song.id) : '';
+      if (!id) continue;
+      const tiers = [];
+      const hires = neteaseTier(song.hr);
+      const losslessTier = neteaseTier(song.sq);
+      // `h` = 320kbps, `m` = 192kbps, `l` = 128kbps; the `high` request tries
+      // exhigh(320) then higher(192), so `m` backs the high bucket when the
+      // 320 encode is missing.
+      const high = neteaseTier(song.h) || neteaseTier(song.m);
+      const standard = neteaseTier(song.l) || neteaseTier(song.m);
+      if (hires) tiers.push({ quality: 'hires', codec: 'flac', ...hires });
+      if (losslessTier) tiers.push({ quality: 'lossless', codec: 'flac', ...losslessTier });
+      if (high) tiers.push({ quality: 'high', codec: 'mp3', ...high });
+      if (standard) tiers.push({ quality: 'standard', codec: 'mp3', ...standard });
+      if (tiers.length) results[id] = { qualities: tiers };
+    }
+  }
+  return results;
+};
+
+const qqSongWrapperKeys = ['songinfo', 'songInfo', 'track_info', 'trackinfo', 'trackInfo', 'data'];
+const unwrapQqSong = (value) => {
+  let record = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (let index = 0; index < 5; index += 1) {
+    const nested = qqSongWrapperKeys
+      .map((key) => record[key])
+      .find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate) && Object.keys(candidate).length > 0);
+    if (!nested) break;
+    record = { ...record, ...nested };
+  }
+  return record;
+};
+
+const probeQqTrack = async (providerTrackId) => {
+  const variants = [
+    { key: 'songmid', value: providerTrackId },
+    ...(/^\d+$/u.test(providerTrackId) ? [{ key: 'songid', value: providerTrackId }] : []),
+  ];
+  for (const variant of variants) {
+    const params = new URLSearchParams({ tpl: 'yqq_song_detail', format: 'json' });
+    params.set(variant.key, variant.value);
+    let data;
+    try {
+      data = await probeFetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?${params.toString()}`, {
+        headers: { 'User-Agent': defaultUserAgent, Referer: 'https://y.qq.com/', Origin: 'https://y.qq.com' },
+      });
+    } catch {
+      continue;
+    }
+    const song = unwrapQqSong(Array.isArray(data?.data) ? data.data[0] : null);
+    if (!Object.keys(song).length) continue;
+    const file = song.file && typeof song.file === 'object' ? song.file : {};
+    const size = (key) => (Number(file[key]) > 0 ? Number(file[key]) : null);
+    const tiers = [];
+    const losslessSize = size('size_flac') ?? size('size_ape');
+    if (losslessSize) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: losslessSize });
+    const highSize = size('size_320mp3');
+    if (highSize) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: highSize });
+    const standardSize = size('size_128mp3');
+    if (standardSize) {
+      tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: standardSize });
+    } else {
+      const aacSize = size('size_96aac') ?? size('size_48aac');
+      if (aacSize) tiers.push({ quality: 'standard', codec: 'aac', bitrate: null, size: aacSize });
+    }
+    return tiers.length ? { qualities: tiers } : null;
+  }
+  return null;
+};
+
+const probeQqQualities = async (ids) => {
+  const results = {};
+  const queue = [...ids];
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      const entry = await probeQqTrack(id).catch(() => null);
+      if (entry) results[id] = entry;
+    }
+  }));
+  return results;
+};
+
+const probeKugouQualities = (ids) => {
+  const results = {};
+  for (const id of ids) {
+    const [hash, , , hqHash, sqHash] = String(id).split('.');
+    if (!/^[a-f0-9]{16,64}$/iu.test(hash || '')) continue;
+    const hq = hqHash && hqHash !== '0' ? hqHash : null;
+    const sq = sqHash && sqHash !== '0' ? sqHash : null;
+    if (!hq && !sq) continue;
+    const tiers = [];
+    if (sq) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: null });
+    if (hq) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: null });
+    tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: null });
+    results[id] = { qualities: tiers };
+  }
+  return results;
+};
+
 const fetchCoverImage = async (coverUrl) => {
   const url = String(coverUrl || '').trim();
   if (!/^https?:\/\//iu.test(url)) return null;
@@ -177,6 +358,22 @@ const activate = (host) => {
     directory: streamDirectory(payload?.subfolder ?? null),
     mainResolveAvailable: typeof globalThis.__shinawaseResolveStreamingPlayback === 'function',
   }));
+
+  host.handle('probeQualities', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const provider = String(body.provider || '').trim();
+    const ids = [...new Set(
+      (Array.isArray(body.providerTrackIds) ? body.providerTrackIds : [])
+        .map((id) => String(id ?? '').trim())
+        .filter(Boolean),
+    )].slice(0, 1000);
+    if (!ids.length) return { ok: true, provider, results: {} };
+    const results = provider === 'netease' ? await probeNeteaseQualities(ids)
+      : provider === 'qqmusic' ? await probeQqQualities(ids)
+      : provider === 'kugou' ? probeKugouQualities(ids)
+      : {};
+    return { ok: true, provider, results };
+  });
 
   host.handle('downloadToMusic', async (payload) => {
     const body = payload && typeof payload === 'object' ? payload : {};
