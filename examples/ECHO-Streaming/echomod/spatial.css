@@ -1,20 +1,42 @@
 /* Spatial streaming shell for the community Mod. Hosts that already ship
    these rules keep working; this file fills the gap for Steam builds. */
 .echo-external-mod-page:has(.streaming-hub--spatial),
-.echo-external-mod-page:has(.streaming-account-view),
-.echo-external-mod-page:has(.album-detail-page),
-.echo-external-mod-page:has(.streaming-artist-page) {
+.echo-external-mod-page:has(.streaming-account-view) {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   padding: 0;
 }
 
-.echo-external-mod-page > .streaming-page,
-.echo-external-mod-page > .album-detail-page,
-.echo-external-mod-page > .streaming-artist-page {
+.echo-external-mod-page > .streaming-page {
   height: 100%;
   min-height: 0;
+}
+
+/* Detail pages scroll on the page surface itself, mirroring the host's
+   .page-surface:has(.album-detail-page / .streaming-artist-page) rules:
+   the page grows with its content and the surface owns the scrollbar.
+   (Forcing overflow: hidden + height: 100% here froze the artist page.) */
+.echo-external-mod-page:has(.album-detail-page),
+.echo-external-mod-page:has(.streaming-artist-page) {
+  display: block;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 0;
+}
+
+.echo-external-mod-page:has(.streaming-artist-page) {
+  padding: 26px clamp(28px, 4vw, 58px) 34px;
+}
+
+.echo-external-mod-page > .album-detail-page,
+.echo-external-mod-page > .streaming-artist-page {
+  height: auto;
+  min-height: 100%;
 }
 
 @scope (.echo-external-mod-page) {

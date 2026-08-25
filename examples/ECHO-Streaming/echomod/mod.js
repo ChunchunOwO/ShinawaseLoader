@@ -1369,9 +1369,19 @@ const onNativeBroadcast = (event) => {
 const openImportedPlaylist = async (imported) => {
   window.dispatchEvent(new Event('library:playlists-changed'));
   try { await libraryApi()?.getPlaylists?.(); } catch {}
-  if (imported?.playlistId) {
-    window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'playlists' }));
-  }
+  if (!imported?.playlistId) return;
+  // Prefer clicking the real sidebar entry: the loader closes its mod-page
+  // overlay when it sees a native nav-item click, whereas a bare
+  // app:navigate:route event switched the route invisibly behind the still
+  // visible streaming page (the 歌单 looked like it never opened).
+  const nav = document.querySelector('button.nav-item[data-workshop-icon="nav-playlists"]');
+  if (nav) { nav.click(); return; }
+  window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'playlists' }));
+  // Loaders below UI v22 only close the overlay on nav clicks / lyrics
+  // events, so reveal the surfaces the loader hid and step aside ourselves.
+  document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => { delete surface.dataset.echoExternalHidden; surface.removeAttribute('hidden'); });
+  document.querySelectorAll('.echo-external-mod-page').forEach((page) => { page.hidden = true; });
+  document.querySelectorAll('.nav-item[data-echo-external-sidebar]').forEach((button) => { button.setAttribute('aria-current', 'false'); button.dataset.active = 'false'; });
 };
 const handleImportPlaylist = async () => { const url = state.playlistUrl.trim(); if (!url) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); state.importingPlaylistKey = '__url__'; render(); try { const imported = await stream.importPlaylistFromUrl(url); state.playlistUrl = ''; state.actionMessage = copy.imported(imported.playlistName, imported.importedCount); state.actionError = null; await openImportedPlaylist(imported); } finally { state.importingPlaylistKey = null; render(); } };
 const handleImportStreamingPlaylist = async (playlist) => { const url = streamingPlaylistWebUrl(playlist); if (!url || state.importingPlaylistKey) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); state.importingPlaylistKey = playlist.id; render(); try { const imported = await stream.importPlaylistFromUrl(url); state.actionMessage = copy.imported(imported.playlistName, imported.importedCount); state.actionError = null; await openImportedPlaylist(imported); } finally { state.importingPlaylistKey = null; render(); } };
