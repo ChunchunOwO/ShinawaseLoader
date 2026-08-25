@@ -15,7 +15,7 @@
  * track metadata and cover art supplied by the renderer.
  */
 
-const { createWriteStream, existsSync } = require('node:fs');
+const { createWriteStream, existsSync, readFileSync } = require('node:fs');
 const { mkdir, rename, rm } = require('node:fs/promises');
 const { join, resolve } = require('node:path');
 const { homedir } = require('node:os');
@@ -100,27 +100,122 @@ const headersCarryCredentials = (headers) => Object.keys(headers).some((name) =>
 /*
  * Account session access.
  *
- * ShinawaseLoader's bridge exposes `__shinawaseStreamingAccountCookie`, which
- * reads the decrypted per-provider login cookie straight from ECHO's
- * AccountService — the exact same session playback uses. On older bridge
- * builds without that getter the cookie is captured opportunistically from
- * `resolveAuthenticatedSource` results (playback resolutions carry the
- * account cookie in their headers), so any played or downloaded NetEase
- * track "primes" the session for later playlist scans and cover fetches.
+ * The logged-in streaming session is looked up in order:
+ *
+ * 1. `globalThis.__shinawaseStreamingAccountCookie` — ShinawaseLoader's
+ *    streaming bridge exposes ECHO's AccountService getter for main-process
+ *    mods. Only present when the loader injected `streaming-bridge.cjs`
+ *    (the CDP / --inspect launch path) on a bridge build that ships the
+ *    getter.
+ * 2. ECHO's own account store: `userData/accounts.json` (with `.bak`
+ *    fallback) — the exact file ECHO's AccountService writes on every login
+ *    (cookie paste, login window, and NetEase QR login all end in
+ *    `saveCookie`). The per-provider cookie is persisted as
+ *    `encryptedCookie`, either `safe:<base64>` (Electron safeStorage,
+ *    decryptable from this same main process) or `plain:<base64>` when OS
+ *    encryption is unavailable; legacy files stored the raw cookie. Reading
+ *    it directly works in every launch mode — including the asar-bridge
+ *    mode, where only native-host.cjs runs and no bridge globals exist — so
+ *    a user who shows as logged-in in ECHO's account UI is always
+ *    recognized here. This was the root cause of the false
+ *    "请先登录网易云" prompt: without the bridge globals the mod had no way
+ *    to see the session before the first playback resolve.
+ * 3. A cookie captured from an earlier `resolveAuthenticatedSource` result
+ *    (playback resolutions carry the account cookie in their headers).
+ *
+ * Every lookup outcome change is logged so the loader log shows whether a
+ * failure came from a missing session or from the provider rejecting an
+ * existing one.
  */
 const capturedProviderCookies = {};
+let electronRuntime = null;
+let logHost = null;
 
-const streamingAccountCookie = (provider) => {
+const logMod = (level, message) => { try { logHost?.log?.(level, message); } catch {} };
+
+const getElectron = () => {
+  if (!electronRuntime) {
+    try { electronRuntime = require('electron'); } catch {}
+  }
+  return electronRuntime;
+};
+
+// Mirrors AccountService.isCookieHeaderValueSafe: printable latin-1 + tab.
+const cookieHeaderSafe = (value) => /^[\t\u0020-\u007e\u0080-\u00ff]+$/u.test(value);
+
+// Opens one stored account secret exactly like ECHO's AccountSecretStore:
+// 'safe:' envelopes are Electron safeStorage ciphertext, 'plain:' envelopes
+// are tagged base64 (used when OS encryption is unavailable), and legacy
+// records stored the raw cookie directly.
+const decryptAccountSecret = (stored) => {
+  if (typeof stored !== 'string' || !stored) return { value: null, reason: 'empty_record' };
+  if (stored.startsWith('safe:')) {
+    try {
+      const safeStorage = getElectron()?.safeStorage;
+      const decrypted = safeStorage?.decryptString?.(Buffer.from(stored.slice(5), 'base64'));
+      return decrypted ? { value: decrypted, reason: null } : { value: null, reason: 'safe_storage_unavailable' };
+    } catch (error) {
+      return { value: null, reason: `safe_storage_decrypt_failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+  if (stored.startsWith('plain:')) {
+    try { return { value: Buffer.from(stored.slice(6), 'base64').toString('utf8') || null, reason: null }; } catch { return { value: null, reason: 'plain_decode_failed' }; }
+  }
+  return { value: stored, reason: null };
+};
+
+// Reads the provider login cookie straight from ECHO's account store.
+const readAccountsFileCookie = (provider) => {
+  let directory = null;
+  try { directory = getElectron()?.app?.getPath?.('userData') || null; } catch {}
+  if (!directory) return { cookie: null, detail: 'userData_unavailable' };
+  const reasons = [];
+  for (const name of ['accounts.json', 'accounts.json.bak']) {
+    const file = join(directory, name);
+    let parsed;
+    try { parsed = JSON.parse(readFileSync(file, 'utf8')); } catch {
+      reasons.push(`${name} ${existsSync(file) ? 'unreadable' : 'missing'}`);
+      continue;
+    }
+    const record = parsed && typeof parsed === 'object' ? parsed[provider] : null;
+    const stored = record && typeof record === 'object' ? (record.encryptedCookie ?? record.cookie) : null;
+    if (!stored) { reasons.push(`${name} has no ${provider} cookie record`); continue; }
+    const { value, reason } = decryptAccountSecret(stored);
+    const cookie = typeof value === 'string' ? value.trim() : '';
+    if (!cookie) { reasons.push(`${name} ${reason || 'decrypt_failed'}`); continue; }
+    if (!cookieHeaderSafe(cookie)) { reasons.push(`${name} cookie_not_header_safe`); continue; }
+    return { cookie, detail: name };
+  }
+  return { cookie: null, detail: reasons.join('; ') || 'not_found' };
+};
+
+const lastSessionLog = {};
+const rememberSession = (provider, cookie, source, detail) => {
+  const summary = `${source}:${cookie ? 'ok' : detail || 'none'}`;
+  if (lastSessionLog[provider] !== summary) {
+    lastSessionLog[provider] = summary;
+    logMod(cookie ? 'INFO' : 'WARN', `${provider} account cookie lookup: source=${source}${detail ? ` (${detail})` : ''}${cookie ? '' : ' — no login session found'}`);
+  }
+  return { cookie, source, detail };
+};
+
+const streamingAccountSession = (provider) => {
+  const getter = globalThis.__shinawaseStreamingAccountCookie;
   try {
-    const getter = globalThis.__shinawaseStreamingAccountCookie;
     if (typeof getter === 'function') {
       const cookie = getter(provider);
-      if (typeof cookie === 'string' && cookie.trim()) return cookie.trim();
+      if (typeof cookie === 'string' && cookie.trim()) return rememberSession(provider, cookie.trim(), 'bridge-getter', null);
     }
   } catch {}
+  const fromFile = readAccountsFileCookie(provider);
+  if (fromFile.cookie) return rememberSession(provider, fromFile.cookie, 'accounts-file', fromFile.detail);
   const captured = capturedProviderCookies[provider];
-  return typeof captured === 'string' && captured ? captured : null;
+  if (typeof captured === 'string' && captured) return rememberSession(provider, captured, 'captured-playback', null);
+  const bridgeState = typeof getter === 'function' ? 'bridge getter returned nothing' : 'bridge getter not installed';
+  return rememberSession(provider, null, 'none', `${bridgeState}; ${fromFile.detail}`);
 };
+
+const streamingAccountCookie = (provider) => streamingAccountSession(provider).cookie;
 
 const captureProviderCookie = (provider, headers) => {
   if (provider !== 'netease' && provider !== 'qqmusic') return;
@@ -333,7 +428,8 @@ const mapNeteasePlaylistSong = (song) => {
  * titles, artists, durations, artwork and real per-file quality tiers.
  */
 const listNeteasePlaylistTracks = async (playlistId) => {
-  const cookie = streamingAccountCookie('netease');
+  const session = streamingAccountSession('netease');
+  const cookie = session.cookie;
   const params = new URLSearchParams({ id: playlistId, n: '100000' });
   const data = await probeFetchJson(`https://music.163.com/api/v6/playlist/detail?${params.toString()}`, {
     headers: neteaseApiHeaders(cookie),
@@ -343,10 +439,25 @@ const listNeteasePlaylistTracks = async (playlistId) => {
     : data && typeof data === 'object' && data.result && typeof data.result === 'object' ? data.result : null;
   const code = Number(data?.code);
   if (!playlist) {
-    // Anonymous sessions cannot see private playlists at all: NetEase answers
-    // with a non-200 code and no playlist object. Tell the renderer to ask
-    // for a login instead of pretending the 歌单 is empty.
-    if (!cookie) throw new Error('netease_login_required');
+    const apiDetail = `code=${Number.isFinite(code) ? code : 'none'}, message=${String(data?.message || data?.msg || 'none')}`;
+    if (!cookie) {
+      // Anonymous sessions cannot see private playlists at all: NetEase
+      // answers with a non-200 code and no playlist object. Tell the
+      // renderer to ask for a login instead of pretending the 歌单 is empty.
+      logMod('WARN', `netease playlist ${playlistId}: no account cookie (${session.detail || 'no session'}); API said ${apiDetail}`);
+      throw new Error('netease_login_required');
+    }
+    if (code === 301) {
+      // 301 is NetEase's "需要登录": the stored cookie no longer
+      // authenticates (expired or revoked) even though ECHO still shows the
+      // account as connected. Distinct error so the renderer can say
+      // "re-login" instead of "login".
+      logMod('WARN', `netease playlist ${playlistId}: cookie from ${session.source} was rejected by NetEase (${apiDetail}) — session expired`);
+      throw new Error('netease_session_expired');
+    }
+    // Any other rejection (missing playlist, region block, rate limit, …)
+    // is NOT a login problem; surface the provider's own answer.
+    logMod('WARN', `netease playlist ${playlistId}: no playlist in response (${apiDetail}) despite cookie from ${session.source}`);
     throw new Error(String(data?.message || data?.msg || `netease_playlist_${Number.isFinite(code) ? code : 'unavailable'}`));
   }
   const trackIds = (Array.isArray(playlist.trackIds) ? playlist.trackIds : [])
@@ -525,6 +636,8 @@ const fetchCoverImage = async (coverUrl) => {
 
 const activate = (host) => {
   const app = host.electron?.app || host.app;
+  if (host.electron) electronRuntime = host.electron;
+  logHost = host;
 
   const musicRoot = () => {
     const override = String(host.config?.musicFolder || '').trim();
@@ -592,6 +705,19 @@ const activate = (host) => {
     // environments where the loader bridge is not installed.
     const headers = resolved ? { ...resolved.headers } : cleanHeaders(body.headers);
     applyProviderHeaders(headers, url, String(body.webpageUrl || ''));
+    // Renderer-resolved sources arrive with credentials stripped (ECHO's IPC
+    // sanitizes Cookie/Authorization before results reach page scripts).
+    // When the loader bridge could not re-resolve in the main process,
+    // attach the account session directly so member-only files still fetch.
+    const bodyProvider = String(body.provider || '').trim();
+    let sessionAttached = false;
+    if (!headersCarryCredentials(headers) && (bodyProvider === 'netease' || bodyProvider === 'qqmusic')) {
+      const cookie = streamingAccountCookie(bodyProvider);
+      if (cookie) {
+        headers.Cookie = cookie;
+        sessionAttached = true;
+      }
+    }
 
     const response = await fetch(url, { headers });
     if (!response.ok || !response.body) throw new Error(`download_http_${response.status}`);
@@ -663,7 +789,7 @@ const activate = (host) => {
       try { host.log('WARN', `tagging failed for ${targetPath}: ${error instanceof Error ? error.message : String(error)}`); } catch {}
     }
 
-    try { host.log('INFO', `saved ${targetPath} (${receivedBytes} bytes, auth=${resolved ? resolved.authenticated : false}, tagged=${tagged})`); } catch {}
+    try { host.log('INFO', `saved ${targetPath} (${receivedBytes} bytes, auth=${resolved ? resolved.authenticated : sessionAttached}, tagged=${tagged})`); } catch {}
     return {
       ok: true,
       path: targetPath,
@@ -671,7 +797,7 @@ const activate = (host) => {
       bytes: receivedBytes,
       tagged,
       viaMainResolve: Boolean(resolved),
-      authenticated: resolved ? resolved.authenticated : false,
+      authenticated: resolved ? resolved.authenticated : sessionAttached,
     };
   });
 
