@@ -4,5 +4,6 @@
   "defaultQuality": "lossless",
   "pageSize": 30,
   "hideUnavailable": false,
-  "showDisabledProviders": true
+  "showDisabledProviders": true,
+  "musicFolder": ""
 }

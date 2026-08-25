@@ -35,6 +35,12 @@
       "type": "boolean",
       "title": "Show disabled providers",
       "default": true
+    },
+    "musicFolder": {
+      "type": "string",
+      "title": "音乐文件夹覆盖 / Music folder override",
+      "description": "Base folder for right-click downloads. Empty = system Music folder. Tracks are saved under <folder>/Stream.",
+      "default": ""
     }
   }
 }

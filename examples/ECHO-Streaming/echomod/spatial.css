@@ -583,3 +583,67 @@
   }
 }
 }
+
+/* Context menu mounts on document.body, outside the scoped mod page. */
+.echo-streaming-context-menu {
+  position: fixed;
+  z-index: 260;
+  display: grid;
+  gap: 2px;
+  min-width: 228px;
+  max-width: 340px;
+  padding: 6px;
+  border: 1px solid var(--theme-panel-border-strong, var(--theme-panel-border, rgba(0, 0, 0, 0.12)));
+  border-radius: 12px;
+  background: var(--theme-panel-bg-strong, var(--theme-panel-bg, #fff));
+  box-shadow: 0 14px 38px rgba(10, 14, 22, 0.24);
+}
+
+.echo-streaming-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.echo-streaming-context-menu-item:hover:not(:disabled),
+.echo-streaming-context-menu-item:focus-visible {
+  background: var(--theme-list-row-bg-hover, var(--theme-hover-bg, rgba(0, 0, 0, 0.06)));
+}
+
+.echo-streaming-context-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.echo-streaming-context-menu-item > svg {
+  flex: none;
+  opacity: 0.72;
+}
+
+.echo-streaming-context-menu-item > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.echo-streaming-context-menu-item strong {
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.echo-streaming-context-menu-item small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
