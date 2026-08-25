@@ -4,9 +4,11 @@ const defaults = {
   locale: 'zh-CN',
   defaultProvider: 'netease',
   defaultQuality: 'lossless',
+  defaultDownloadQuality: 'auto',
   pageSize: 30,
   hideUnavailable: false,
   showDisabledProviders: true,
+  musicFolder: '',
 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const chinese = String(draft.locale || '').toLowerCase().startsWith('zh');
@@ -29,6 +31,13 @@ const qualities = [
   { value: 'standard', label: t('标准（优先兼容性）', 'Standard (prefer compatibility)') },
   { value: 'hires', label: t('Hi-Res（平台支持时）', 'Hi-Res (when supported)') },
 ];
+const downloadQualities = [
+  { value: 'auto', label: t('跟随播放音质', 'Follow playback quality') },
+  { value: 'hires', label: t('Hi-Res（平台支持时）', 'Hi-Res (when supported)') },
+  { value: 'lossless', label: t('无损（优先 FLAC）', 'Lossless (prefer FLAC)') },
+  { value: 'high', label: t('高音质（优先 320kbps）', 'High (prefer 320kbps)') },
+  { value: 'standard', label: t('标准（优先兼容性）', 'Standard (prefer compatibility)') },
+];
 
 root.innerHTML = `
   <style>
@@ -41,7 +50,8 @@ root.innerHTML = `
     .st-cfg-field { display: grid; gap: 6px; }
     .st-cfg-field label { font-weight: 600; }
     .st-cfg-field small { color: var(--theme-muted-text, #6c7179); }
-    .st-cfg-field select {
+    .st-cfg-field select,
+    .st-cfg-field input[type="text"] {
       width: 100%; min-height: 38px; padding: 8px 11px; box-sizing: border-box;
       border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14));
       border-radius: 9px; background: var(--theme-field-bg, rgba(255,255,255,0.92));
@@ -68,6 +78,7 @@ root.innerHTML = `
     </div>
     <section class="st-cfg-sec" data-sec="search"></section>
     <section class="st-cfg-sec" data-sec="display"></section>
+    <section class="st-cfg-sec" data-sec="download"></section>
   </div>
 `;
 
@@ -163,14 +174,31 @@ display.append(toggle('hideUnavailable',
 display.append(toggle('showDisabledProviders',
   t('在平台栏中显示已被禁用的平台。', 'Keep disabled platforms visible in the provider rail.')));
 
+const textInput = (key, placeholder) => {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder || '';
+  input.value = typeof draft[key] === 'string' ? draft[key] : '';
+  input.addEventListener('input', () => { draft[key] = input.value; });
+  return input;
+};
+
+const download = root.querySelector('[data-sec="download"]');
+download.append(field('defaultDownloadQuality', select('defaultDownloadQuality', downloadQualities),
+  t('下载弹窗中预选的音质。“跟随播放音质”使用页面右上角的播放音质；每首歌只会显示它实际可用的音质，最近一次手动选择的音质会被记住。', 'Preselected quality in the download pickers. "Follow playback quality" mirrors the page quality selector; each song only lists the qualities it actually offers, and the last quality you pick is remembered.')));
+download.append(field('musicFolder', textInput('musicFolder', t('留空使用系统音乐文件夹', 'Empty = system Music folder')),
+  t('右键下载的保存位置。歌曲保存到 <文件夹>/Stream，歌单保存到 <文件夹>/Stream/<歌单名>。留空使用系统音乐文件夹。', 'Where right-click downloads are saved. Tracks go to <folder>/Stream and playlists to <folder>/Stream/<playlist>. Empty uses the system Music folder.')));
+
 echoConfigUi.onSave(() => ({
   ...(config && typeof config === 'object' ? config : {}),
   locale: String(draft.locale) === 'en-US' ? 'en-US' : 'zh-CN',
   defaultProvider: providers.some((item) => item.value === draft.defaultProvider) ? String(draft.defaultProvider) : 'netease',
   defaultQuality: qualities.some((item) => item.value === draft.defaultQuality) ? String(draft.defaultQuality) : 'lossless',
+  defaultDownloadQuality: downloadQualities.some((item) => item.value === draft.defaultDownloadQuality) ? String(draft.defaultDownloadQuality) : 'auto',
   pageSize: Math.max(10, Math.min(50, Math.round(Number(draft.pageSize) || 30))),
   hideUnavailable: draft.hideUnavailable === true,
   showDisabledProviders: draft.showDisabledProviders === true,
+  musicFolder: String(draft.musicFolder || '').trim(),
 }));
 
 return () => { root.replaceChildren(); };

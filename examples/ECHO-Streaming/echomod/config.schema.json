@@ -19,6 +19,13 @@
       "enum": ["lossless", "high", "standard", "hires"],
       "default": "lossless"
     },
+    "defaultDownloadQuality": {
+      "type": "string",
+      "title": "默认下载音质 / Default download quality",
+      "description": "Preselected quality in the download pickers. 'auto' follows the playback quality selector; the last quality picked in a download menu is remembered on top of this.",
+      "enum": ["auto", "hires", "lossless", "high", "standard"],
+      "default": "auto"
+    },
     "pageSize": {
       "type": "integer",
       "title": "Search result count",
@@ -35,6 +42,12 @@
       "type": "boolean",
       "title": "Show disabled providers",
       "default": true
+    },
+    "musicFolder": {
+      "type": "string",
+      "title": "音乐文件夹覆盖 / Music folder override",
+      "description": "Base folder for right-click downloads. Empty = system Music folder. Tracks are saved under <folder>/Stream.",
+      "default": ""
     }
   }
 }
