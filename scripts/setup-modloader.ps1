@@ -43,6 +43,7 @@ $script:Strings = @{
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
+    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = '准备目录'
     progressCopy = '复制 Loader'
     progressNode = '准备 Node 运行时'
@@ -81,6 +82,7 @@ $script:Strings = @{
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
+    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = 'prepare folders'
     progressCopy = 'copy loader'
     progressNode = 'prepare Node runtime'
@@ -653,7 +655,9 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
   $originalAsar = Join-Path $echoRoot 'resources\app.asar'
   $backupAsar = Join-Path $loaderRoot 'backups\app.asar.original'
   if (Test-Path -LiteralPath $backupAsar) { $originalAsar = $backupAsar }
-  New-HardLinkOrCopy $echoExe (Join-Path $runtimeRoot 'ECHO.exe')
+  # ECHO 43.3+ embeds an Electron asar header hash in ECHO.exe. Copy the exe so
+  # echo-asar.mjs can rewrite that hash after patching without touching Steam.
+  Copy-Item -LiteralPath $echoExe -Destination (Join-Path $runtimeRoot 'ECHO.exe') -Force
   foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -File -Force) {
     if ($item.Name -eq 'app.asar') { continue }
     New-HardLinkOrCopy $item.FullName (Join-Path (Join-Path $runtimeRoot 'resources') $item.Name)
@@ -671,7 +675,8 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
     catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
   }
   New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'ShinawaseLoader\backups') | Out-Null
-  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot | Out-Null
+  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot
+  if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime app.asar patch failed.' }
   return $runtimeRoot
 }
 
@@ -798,7 +803,8 @@ function Choose-OptionalPackages {
     @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true },
     @{ Key = '4'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
     @{ Key = '5'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
-    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true }
+    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true },
+    @{ Key = '7'; Label = T 'pkgWallpaper'; Folder = 'ECHO-WallpaperBridge'; Checked = $true }
   )
   $index = 0
   $visible = $true

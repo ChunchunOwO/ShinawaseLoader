@@ -1,4 +1,3 @@
 {
-  "remapWindows": true,
-  "disableBrokenFlags": false
+  "locale": "auto"
 }

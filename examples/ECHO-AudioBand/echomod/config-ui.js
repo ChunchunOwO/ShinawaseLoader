@@ -50,7 +50,7 @@ root.innerHTML = `
     .ab-cfg-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
     .ab-cfg-switch i { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--theme-field-border, rgba(0,0,0,0.18)); }
     .ab-cfg-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(16,19,24,0.2); }
-    .ab-cfg-switch input:checked + i { background: var(--theme-accent, #4da3ff); }
+    .ab-cfg-switch input:checked + i { background: var(--theme-accent, var(--color-accent, #4da3ff)); }
     .ab-cfg-switch input:checked + i::after { transform: translateX(18px); }
     .ab-cfg-color { display: flex; gap: 8px; align-items: center; }
     .ab-cfg-color input[type="color"] { width: 46px; height: 38px; padding: 4px; border-radius: 9px; border: 1px solid var(--theme-field-border, rgba(0,0,0,0.14)); background: var(--theme-field-bg, rgba(255,255,255,0.92)); cursor: pointer; }
@@ -123,6 +123,10 @@ const number = (key, min, max, step) => {
   if (step != null) node.step = String(step);
   node.value = String(draft[key] ?? '');
   node.addEventListener('input', () => {
+    if (node.value.trim() === '') {
+      draft[key] = defaults[key];
+      return;
+    }
     const n = Number(node.value);
     draft[key] = Number.isFinite(n) ? n : defaults[key];
   });
@@ -220,24 +224,30 @@ behavior.append(toggle('hoverPreview'));
 behavior.append(toggle('autoHideWhenStopped'));
 behavior.append(field('pollIntervalMs', number('pollIntervalMs', 250, 5000, 50)));
 
+const numOf = (key, min, max) => {
+  const n = Number(draft[key]);
+  if (!Number.isFinite(n)) return defaults[key];
+  return Math.min(max, Math.max(min, Math.round(n)));
+};
+
 const readDraft = () => ({
   locale: String(draft.locale || 'auto'),
-  widgetWidth: Number(draft.widgetWidth),
+  widgetWidth: numOf('widgetWidth', 200, 800),
   alignment: String(draft.alignment || 'right'),
-  offsetX: Number(draft.offsetX),
-  offsetY: Number(draft.offsetY),
+  offsetX: numOf('offsetX', 0, 600),
+  offsetY: numOf('offsetY', -80, 80),
   monitor: String(draft.monitor || 'primary'),
-  customHeight: Number(draft.customHeight),
+  customHeight: numOf('customHeight', 28, 80),
   showAlbumArt: draft.showAlbumArt === true,
   showControls: draft.showControls === true,
   showProgress: draft.showProgress === true,
   showTime: draft.showTime === true,
   theme: ['auto', 'dark', 'light'].includes(String(draft.theme)) ? String(draft.theme) : 'auto',
   accentColor: String(draft.accentColor || '#4da3ff'),
-  backgroundOpacity: Number(draft.backgroundOpacity),
+  backgroundOpacity: numOf('backgroundOpacity', 0, 100),
   scrollingText: draft.scrollingText === true,
   autoHideWhenStopped: draft.autoHideWhenStopped === true,
-  pollIntervalMs: Number(draft.pollIntervalMs),
+  pollIntervalMs: numOf('pollIntervalMs', 250, 5000),
   autoAvoidTray: draft.autoAvoidTray === true,
   seamlessMode: draft.seamlessMode === true,
   hoverPreview: draft.hoverPreview === true,

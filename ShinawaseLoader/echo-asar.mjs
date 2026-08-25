@@ -13,6 +13,37 @@ const archiveFor = (root) => join(root, 'resources', 'app.asar');
 const loaderFor = (root) => join(root, 'ShinawaseLoader');
 const backupFor = (root) => join(loaderFor(root), 'backups', 'app.asar.original');
 const stateFor = (root) => join(loaderFor(root), 'backups', 'app.asar.json');
+const echoExeFor = (root) => ['ECHO.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
+  .map((name) => join(root, name))
+  .find((file) => existsSync(file));
+const headerJsonBytes = (parsed) => {
+  const headerSize = parsed.bytes.readUInt32LE(4);
+  const header = parsed.bytes.subarray(8, 8 + headerSize);
+  const jsonSize = header.readInt32LE(4);
+  return header.subarray(8, 8 + jsonSize);
+};
+const headerJsonHash = (file) => sha256(headerJsonBytes(readArchive(file)));
+const APP_ASAR_INTEGRITY_PREFIX = Buffer.from('"file":"resources\\\\app.asar","alg":"SHA256","value":"', 'utf8');
+
+const replaceAppAsarIntegrity = (exePath, nextHash) => {
+  if (!exePath || !existsSync(exePath)) return { status: 'no-exe' };
+  if (!/^[0-9a-f]{64}$/u.test(nextHash)) throw new Error('asar_integrity_hash_invalid');
+  const bytes = Buffer.from(readFileSync(exePath));
+  const index = bytes.indexOf(APP_ASAR_INTEGRITY_PREFIX);
+  if (index < 0) return { status: 'no-integrity-resource' };
+  const hashAt = index + APP_ASAR_INTEGRITY_PREFIX.length;
+  const current = bytes.subarray(hashAt, hashAt + 64).toString('utf8');
+  if (!/^[0-9a-f]{64}$/u.test(current)) throw new Error('asar_integrity_value_invalid');
+  if (current === nextHash) return { status: 'already-synced', hash: nextHash };
+  Buffer.from(nextHash, 'utf8').copy(bytes, hashAt);
+  const temporary = `${exePath}.${process.pid}.integrity.tmp`;
+  writeFileSync(temporary, bytes);
+  rmSync(exePath, { force: true });
+  renameSync(temporary, exePath);
+  return { status: 'updated', previous: current, hash: nextHash };
+};
+
+const syncIntegrity = (root, archive = archiveFor(root)) => replaceAppAsarIntegrity(echoExeFor(root), headerJsonHash(archive));
 
 const bridge = `${marker}
 (() => {
@@ -320,6 +351,20 @@ const makeHeader = (value) => {
   return Buffer.concat([size, header]);
 };
 
+const fileIntegrity = (content) => {
+  const blockSize = 4 * 1024 * 1024;
+  const blocks = [];
+  for (let offset = 0; offset < content.length; offset += blockSize) {
+    blocks.push(sha256(content.subarray(offset, Math.min(content.length, offset + blockSize))));
+  }
+  return {
+    algorithm: 'SHA256',
+    hash: sha256(content),
+    blockSize,
+    blocks: blocks.length ? blocks : [sha256(Buffer.alloc(0))],
+  };
+};
+
 const writeArchive = (archive, replacements) => {
   const parsed = readArchive(archive);
   const chunks = [];
@@ -335,7 +380,7 @@ const writeArchive = (archive, replacements) => {
     if (entry.relativePath === 'out/main/index.js') found = true;
     info.offset = String(offset);
     info.size = content.length;
-    if (replacement !== undefined) delete info.integrity;
+    if (replacement !== undefined) info.integrity = fileIntegrity(content);
     chunks.push(content);
     offset += content.length;
   }
@@ -375,7 +420,10 @@ const patch = (root) => {
   const mainText = applyAuxiliaryWindowCrashFix(patchPlayback(mainWithNative));
   const preloadText = patchPreload(currentPreloadText);
   const playlistsText = currentPlaylistsText === null ? null : patchSteamPlaylistsPage(currentPlaylistsText);
-  if (mainText === currentText && preloadText === currentPreloadText && playlistsText === currentPlaylistsText) return { status: 'already-patched' };
+  const missingIntegrity = [main, preload, playlistsPage].filter(Boolean).some((entry) => !entry.info.integrity);
+  if (mainText === currentText && preloadText === currentPreloadText && playlistsText === currentPlaylistsText && !missingIntegrity) {
+    return { status: 'already-patched', integrity: syncIntegrity(root, archive) };
+  }
   const backup = backupFor(root);
   if (!existsSync(backup)) {
     const backupDir = dirname(backup);
@@ -386,12 +434,12 @@ const patch = (root) => {
     ['out/main/index.js', mainText],
     ['out/preload/index.mjs', preloadText],
   ]);
-  if (playlistsPage && playlistsText !== null && playlistsText !== currentPlaylistsText) {
+  if (playlistsPage && playlistsText !== null && (playlistsText !== currentPlaylistsText || !playlistsPage.info.integrity)) {
     replacements.set(playlistsPage.relativePath, playlistsText);
   }
   writeArchive(archive, replacements);
   writeFileSync(stateFor(root), `${JSON.stringify({ originalSha256: sha256(readFileSync(backup)), patchedSha256: sha256(readFileSync(archive)), patchedAt: new Date().toISOString() }, null, 2)}\n`);
-  return { status: 'patched' };
+  return { status: 'patched', integrity: syncIntegrity(root, archive) };
 };
 
 const restore = (root, force = false) => {
@@ -401,13 +449,20 @@ const restore = (root, force = false) => {
   const state = existsSync(stateFor(root)) ? JSON.parse(readFileSync(stateFor(root), 'utf8').replace(/^\uFEFF/u, '')) : {};
   if (!force && state.patchedSha256 && sha256(readFileSync(archive)) !== state.patchedSha256) throw new Error('app.asar_changed_since_patch');
   copyFileSync(backup, archive);
-  return { status: 'restored' };
+  return { status: 'restored', integrity: syncIntegrity(root, archive) };
 };
 
 const [action = 'status', root = join(dirname(new URL(import.meta.url).pathname), '..'), flag] = process.argv.slice(2);
 try {
-  const result = action === 'patch' ? patch(root) : action === 'restore' ? restore(root, flag === '--force') : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
-  console.log(`ShinawaseLoader app.asar ${result.status}`);
+  const result = action === 'patch'
+    ? patch(root)
+    : action === 'restore'
+      ? restore(root, flag === '--force')
+      : action === 'sync-integrity'
+        ? { status: 'synced', integrity: syncIntegrity(root) }
+        : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
+  const integrity = result.integrity?.status ? ` integrity=${result.integrity.status}` : '';
+  console.log(`ShinawaseLoader app.asar ${result.status}${integrity}`);
 } catch (error) {
   console.error(`ShinawaseLoader app.asar failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

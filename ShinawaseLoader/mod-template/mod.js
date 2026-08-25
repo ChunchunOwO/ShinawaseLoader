@@ -36,6 +36,13 @@ badge.onclick = () => {
 
 document.body.append(badge);
 
+// React to loader appearance changes (accent color, density, ...).
+const applyLoaderAccent = (settings) => {
+  badge.style.outline = settings?.accentColor ? `1px solid ${settings.accentColor}` : 'none';
+};
+const disposeSettingsWatch = echoExternalMod.loaderSettings?.onChange?.(applyLoaderAccent);
+echoExternalMod.loaderSettings?.get?.().then(applyLoaderAccent).catch(() => {});
+
 const disposeSidebar = echoExternalMod.sidebar?.register({
   id: 'main',
   label: manifest.name || 'External Mod',
@@ -52,6 +59,7 @@ const disposeSidebar = echoExternalMod.sidebar?.register({
 });
 
 return () => {
+  disposeSettingsWatch?.();
   disposeSidebar?.();
   badge.remove();
 };

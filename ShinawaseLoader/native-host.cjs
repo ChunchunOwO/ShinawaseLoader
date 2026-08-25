@@ -25,13 +25,17 @@ const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 };
+let logsDirReady = false;
 const log = (level, message, extra) => {
   const line = `[${new Date().toISOString()}] [NATIVE:${level}] ${message}${extra ? ` ${extra}` : ''}`;
   try {
-    mkdirSync(logsRoot, { recursive: true });
+    if (!logsDirReady) {
+      mkdirSync(logsRoot, { recursive: true });
+      logsDirReady = true;
+    }
     appendFileSync(logFile, `${line}\n`, 'utf8');
     if (level === 'ERROR') appendFileSync(errorFile, `${line}\n`, 'utf8');
-  } catch {}
+  } catch { logsDirReady = false; }
   try { console.log(line); } catch {}
 };
 const safeId = (id) => typeof id === 'string' && /^[a-z0-9][a-z0-9._-]{1,63}$/iu.test(id);
@@ -121,17 +125,19 @@ const packageFile = (record, relativePath) => {
   return target;
 };
 
+// resolveOverlay sits on the hooked fs.* fast path for the whole main process,
+// so the match variants are precomputed per overlay and the incoming path is
+// normalized exactly once per call.
 const applyOverlay = (virtualPath, realPath) => {
-  overlays.set(normalize(virtualPath).replaceAll('\\', '/'), realPath);
+  const clean = normalize(virtualPath).replaceAll('\\', '/');
+  overlays.set(clean, { realPath, suffix: clean, asarPath: `/app.asar/${clean}` });
 };
 
 const resolveOverlay = (input) => {
-  if (!input) return null;
-  const text = String(input);
-  for (const [virtualPath, realPath] of overlays) {
-    if (text.replaceAll('\\', '/').endsWith(virtualPath) || text.replaceAll('\\', '/').includes(`/app.asar/${virtualPath}`) || text.replaceAll('\\', '/').includes(`\\app.asar\\${virtualPath.replaceAll('/', '\\')}`)) {
-      return realPath;
-    }
+  if (!input || overlays.size === 0) return null;
+  const text = String(input).replaceAll('\\', '/');
+  for (const entry of overlays.values()) {
+    if (text.endsWith(entry.suffix) || text.includes(entry.asarPath)) return entry.realPath;
   }
   return null;
 };
@@ -222,9 +228,12 @@ const createPackageHost = (record) => {
     },
     broadcast(name, payload) {
       const windows = BrowserWindow?.getAllWindows?.() || [];
+      if (!windows.length) return;
+      const detail = { id: record.id, name, payload };
+      const script = `window.dispatchEvent(new CustomEvent('echo-native', { detail: ${JSON.stringify(detail)} }))`;
       for (const window of windows) {
-        window.webContents?.send?.('shinawase:native-event', { id: record.id, name, payload });
-        window.webContents?.executeJavaScript?.(`window.dispatchEvent(new CustomEvent('echo-native', { detail: ${JSON.stringify({ id: record.id, name, payload })} }))`).catch(() => undefined);
+        window.webContents?.send?.('shinawase:native-event', detail);
+        window.webContents?.executeJavaScript?.(script).catch(() => undefined);
       }
     },
     dispose() {

@@ -380,7 +380,9 @@ const activate = (host) => {
         return;
       }
       if (!stoppedSince) stoppedSince = Date.now();
+      // Keep the widget visible during the 8s grace window, hide afterwards.
       if (Date.now() - stoppedSince >= 8000) hideWidget();
+      else showWidget();
     } catch {}
   };
 
@@ -398,6 +400,7 @@ const activate = (host) => {
     if (!helperReady()) return;
     const res = await helperRequest('query');
     if (!res?.ok) return;
+    helperRestarts = 0;
     lastNotify = rectOk(res.notify) ? res.notify : null;
     const nextLight = res.lightTheme === true;
     const flipped = nextLight !== lastLightTheme;
@@ -577,9 +580,6 @@ const activate = (host) => {
     win.once('ready-to-show', () => {
       readyToShow = true;
       considerAutoHide();
-      if (!currentConfig.autoHideWhenStopped || isLiveStatus(lastStatus) || !isIdleStatus(lastStatus) || !stoppedSince) {
-        showWidget();
-      }
     });
     win.on('closed', () => { win = null; });
     win.loadFile(join(dir, 'widget.html')).catch((error) => {

@@ -1,4 +1,4 @@
-;(()=>{if(window.__echoTogetherInjected)return;window.__echoTogetherInjected=true;
+return (()=>{if(window.__echoTogetherInjected)return window.__echoTogetherExternalDispose;window.__echoTogetherInjected=true;
 const echoTogetherLocal='http://127.0.0.1:47891';
 const echoTogetherServers=['https://echo.shiinasuki.com/echo-together','https://47-243-198-176.sslip.io'];
 const echoTogetherStorage='echo-together-session-v1';
@@ -13,6 +13,8 @@ echoTogetherState.serverUrl=echoTogetherServerHost(echoTogetherState.serverUrl||
 echoTogetherState.syncIntervalMs=echoTogetherSyncInterval(echoTogetherState.syncIntervalMs);
 echoTogetherState.maxMembers=echoTogetherRoomSize(echoTogetherState.maxMembers);
 echoTogetherState.opusEnabled=echoTogetherState.opusEnabled!==false;
+echoTogetherState.autoSync=echoTogetherState.autoSync!==false;
+echoTogetherState.name=String(echoTogetherState.name||echoTogetherState.displayName||'').replace(/\s+/gu,' ').trim().slice(0,32);
 echoTogetherState.publishedRoomCode=String(echoTogetherState.publishedRoomCode||'');
 echoTogetherState.publishedMediaId=String(echoTogetherState.publishedMediaId||'');
 echoTogetherState.publishedLocalPath=String(echoTogetherState.publishedLocalPath||'');
@@ -25,7 +27,9 @@ const echoTogetherClearPublished=()=>{echoTogetherPublishedRoomCode='';echoToget
 const echoTogetherSource=local=>JSON.stringify([String(local?.currentFilePath||''),String(local?.currentTrackId||'')]);
 const echoTogetherIsPublishedLocal=(value,path,sourceId)=>Boolean(value?.track&&!/^https?:\/\//iu.test(String(path||''))&&((echoTogetherPublishedRoomCode===echoTogetherState.roomCode&&echoTogetherPublishedMediaId===String(value.track.id)&&String(path||'')===echoTogetherPublishedLocalPath&&(!echoTogetherPublishedSourceId||String(sourceId||'')===echoTogetherPublishedSourceId))||(sourceId&&String(sourceId)===String(value.track.sourceId||value.track.metadata?.sourceId||''))));
 const echoTogetherResetSync=()=>{echoTogetherLastLocalSource='';echoTogetherLastLocalSample=null;echoTogetherLastPublish=0;echoTogetherApplyingUntil=0;};
+const echoTogetherClearRoom=()=>{const{serverUrl,name,syncIntervalMs,maxMembers,opusEnabled,autoSync}=echoTogetherState;echoTogetherState={serverUrl,name,syncIntervalMs,maxMembers,opusEnabled,autoSync};echoTogetherClearPublished();echoTogetherResetSync();echoTogetherSnapshot=null;echoTogetherSave();};
 const echoTogetherName=value=>String(value||'').replace(/\s+/gu,' ').trim().slice(0,32);
+const echoTogetherEscape=value=>String(value??'').replace(/[&<>"']/gu,c=>c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':c==='"'?'&quot;':'&#39;');
 const echoTogetherId=id=>`echo-together:${id}`;
 const echoTogetherEl=id=>document.getElementById(id);
 const echoTogetherJson=async(response)=>{const value=await response.json();if(!response.ok||value.error)throw new Error(value.error||`http_${response.status}`);return value};
@@ -511,6 +515,15 @@ const echoTogetherMount=()=>{
         </label>
       </div>
 
+      <div class="et-field">
+        <label class="et-field-title">🔄 自动跟随同步</label>
+        <span class="et-field-desc">自动跟随房间的曲目与播放进度；关闭后可用“强制同步”手动对齐</span>
+        <label style="display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:12px">
+          <input id="echo-together-autosync" type="checkbox">
+          自动跟随房间播放
+        </label>
+      </div>
+
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;align-items:center">
         <span>⚡ 本地中继核心 (127.0.0.1:47891)</span>
         <span style="color:#34d399">● 就绪</span>
@@ -542,16 +555,15 @@ const echoTogetherMount=()=>{
 const echoTogetherRender=()=>{
   if(!echoTogetherEl('echo-together-panel'))return;
   const server=echoTogetherServerHost(echoTogetherState.serverUrl||echoTogetherServers[0]);
-  echoTogetherEl('echo-together-name').value=echoTogetherState.name||'';
-  echoTogetherEl('echo-together-server').value=server;
-  echoTogetherEl('echo-together-sync-interval').value=String(echoTogetherSyncInterval(echoTogetherState.syncIntervalMs));
-  echoTogetherEl('echo-together-max-members').value=String(echoTogetherRoomSize(echoTogetherState.maxMembers));
-  echoTogetherEl('echo-together-opus').checked=echoTogetherState.opusEnabled!==false;
-  const serverSelect=echoTogetherEl('echo-together-server-select');
-  if(serverSelect){
-    serverSelect.value=echoTogetherServers.includes(server)?server:'custom';
-    echoTogetherEl('echo-together-server').style.display=serverSelect.value==='custom'?'block':'none';
-  }
+  const echoTogetherSetField=(id,apply)=>{const node=echoTogetherEl(id);if(node&&document.activeElement!==node)apply(node);return node;};
+  echoTogetherSetField('echo-together-name',node=>{node.value=echoTogetherState.name||'';});
+  echoTogetherSetField('echo-together-server',node=>{node.value=server;});
+  echoTogetherSetField('echo-together-sync-interval',node=>{node.value=String(echoTogetherSyncInterval(echoTogetherState.syncIntervalMs));});
+  echoTogetherSetField('echo-together-max-members',node=>{node.value=String(echoTogetherRoomSize(echoTogetherState.maxMembers));});
+  echoTogetherSetField('echo-together-opus',node=>{node.checked=echoTogetherState.opusEnabled!==false;});
+  echoTogetherSetField('echo-together-autosync',node=>{node.checked=echoTogetherState.autoSync!==false;});
+  const serverSelect=echoTogetherSetField('echo-together-server-select',node=>{node.value=echoTogetherServers.includes(server)?server:'custom';});
+  if(serverSelect)echoTogetherEl('echo-together-server').style.display=serverSelect.value==='custom'?'block':'none';
 
   const latencyBadge=echoTogetherEl('echo-together-latency-badge');
   const latencyText=echoTogetherEl('echo-together-latency-text');
@@ -559,7 +571,7 @@ const echoTogetherRender=()=>{
     if(echoTogetherLastLatency!==null){
       latencyText.textContent=echoTogetherLastLatency+' ms';
       if(latencyBadge){
-        latencyBadge.className='et-latency-badge '+(echoTogetherLastLatency<100?'':'warning'===(echoTogetherLastLatency<250?'warning':'danger')?echoTogetherLastLatency<250?'warning':'danger':'');
+        latencyBadge.className='et-latency-badge '+(echoTogetherLastLatency<100?'':echoTogetherLastLatency<250?'warning':'danger');
       }
     }else{
       latencyText.textContent='-- ms';
@@ -622,7 +634,7 @@ const echoTogetherRender=()=>{
   if(listEl){
     listEl.innerHTML=(echoTogetherSnapshot.members||[]).map(m=>{
       const isCtrl=m.id===echoTogetherSnapshot.controllerId;
-      return `<div class="et-member-row"><span class="et-member-name">${m.name||'听众'}${isCtrl?'<span class="et-host-pill">👑 控制者</span>':''}</span><span style="font-size:10px;color:#8899ac">${m.ipLocation||'在线'}</span></div>`;
+      return `<div class="et-member-row"><span class="et-member-name">${echoTogetherEscape(m.name||'听众')}${isCtrl?'<span class="et-host-pill">👑 控制者</span>':''}</span><span style="font-size:10px;color:#8899ac">${echoTogetherEscape(m.ipLocation||'在线')}</span></div>`;
     }).join('');
   }
 };
@@ -709,7 +721,7 @@ const echoTogetherTick=async()=>{
     if(localSourceChanged&&!/^https?:\/\//iu.test(localPath)&&!publishedLocal&&!echoTogetherSyncing&&now>=echoTogetherApplyingUntil&&uploadAvailable&&canPublish){
       await echoTogetherShare(local);
     }else if(value?.track&&localTrack!==expected&&!publishedLocal){
-      if(!echoTogetherSyncing&&now>=echoTogetherApplyingUntil){
+      if(echoTogetherState.autoSync!==false&&!echoTogetherSyncing&&now>=echoTogetherApplyingUntil){
         await echoTogetherApplyRemote(value,local);
       }
     }else if(value?.track&&(localTrack===expected||publishedLocal)&&!echoTogetherSyncing&&now>=echoTogetherApplyingUntil){
@@ -718,7 +730,7 @@ const echoTogetherTick=async()=>{
       const localDiffersRemote=local.state!==remoteState||Math.abs(localPosition-remotePosition)>echoTogetherDriftThreshold();
       if(localChanged&&localDiffersRemote){
         await echoTogetherRemote(echoTogetherRoomPath('/state'),{method:'POST',body:{mediaId:value.track.id,state:local.state==='playing'?'playing':local.state==='ended'?'ended':'paused',positionSeconds:Number(local.positionSeconds)||0}});
-      }else if(localDiffersRemote){
+      }else if(localDiffersRemote&&echoTogetherState.autoSync!==false){
         await echoTogetherApplyRemote(value,local,publishedLocal);
       }
     }else if(!value?.track&&uploadAvailable&&value?.members?.[0]?.id===value?.clientId&&!/^https?:\/\//iu.test(localPath)&&localPath&&canPublish){
@@ -727,6 +739,12 @@ const echoTogetherTick=async()=>{
     if(now>=echoTogetherApplyingUntil||!localChanged)echoTogetherLastLocalSample={track:localTrack,state:local.state,position:localPosition,at:now};
     if(now>=echoTogetherApplyingUntil||!localSourceChanged)echoTogetherLastLocalSource=localSource;
   }catch(error){
+    const reason=String(error?.message||error||'');
+    if(reason.includes('room_not_found')||reason.includes('room_session_invalid')){
+      echoTogetherClearRoom();
+      echoTogetherSwitchTab('lobby');
+      echoTogetherRender();
+    }
     echoTogetherStatus(error.message||error,true);
   }finally{
     echoTogetherBusy=false;
@@ -823,11 +841,7 @@ const echoTogetherBind=()=>{
     try{
       if(echoTogetherState.roomCode&&echoTogetherState.roomToken)await echoTogetherRemote(echoTogetherRoomPath('/leave'),{method:'POST',body:{}});
     }catch{}
-    echoTogetherState={serverUrl:echoTogetherState.serverUrl,name:echoTogetherState.name};
-    echoTogetherClearPublished();
-    echoTogetherResetSync();
-    echoTogetherSnapshot=null;
-    echoTogetherSave();
+    echoTogetherClearRoom();
     echoTogetherSwitchTab('lobby');
     echoTogetherRender();
     echoTogetherStatus('✅ 已退出房间');
@@ -854,6 +868,11 @@ const echoTogetherBind=()=>{
     echoTogetherSave();
     echoTogetherStatus(echoTogetherState.opusEnabled?'✅ Opus 压缩已开启':'ℹ️ Opus 压缩已关闭');
   };
+  echoTogetherEl('echo-together-autosync').onchange=()=>{
+    echoTogetherState.autoSync=echoTogetherEl('echo-together-autosync').checked;
+    echoTogetherSave();
+    echoTogetherStatus(echoTogetherState.autoSync?'✅ 自动跟随同步已开启':'ℹ️ 自动跟随已关闭，可用“强制同步”手动对齐');
+  };
 
   echoTogetherRender();
   return true;
@@ -861,15 +880,16 @@ const echoTogetherBind=()=>{
 const echoTogetherStart=()=>{if(echoTogetherBind())echoTogetherRestartTimer()};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',echoTogetherStart,{once:true});else echoTogetherStart();
 window.__echoTogetherExternalDispose=()=>{
+  echoTogetherMatching=false;
   try{echoTogetherStopMatchTimer();echoTogetherStopUploadProgress();}catch{}
-  if(echoTogetherSyncTimer)clearTimeout(echoTogetherSyncTimer);
-  if(echoTogetherStatusTimer)clearTimeout(echoTogetherStatusTimer);
+  if(echoTogetherSyncTimer){clearInterval(echoTogetherSyncTimer);echoTogetherSyncTimer=null;}
+  if(echoTogetherStatusTimer){clearTimeout(echoTogetherStatusTimer);echoTogetherStatusTimer=null;}
   document.getElementById('echo-together-tab')?.remove();
   document.getElementById('echo-together-panel')?.remove();
   document.getElementById('echo-together-style')?.remove();
   window.__echoTogetherInjected=false;
   delete window.__echoTogetherExternalDispose;
 };
-
+return window.__echoTogetherExternalDispose;
 })();
 // ECHO_TOGETHER_RENDERER_V6 ECHO_TOGETHER_ECHOSTEAM_SOURCE_V1

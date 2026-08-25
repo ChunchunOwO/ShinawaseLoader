@@ -13,30 +13,30 @@
 .osu-dl-chip img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
 .osu-dl-chip button { all: unset; cursor: pointer; font-size: 12px; text-decoration: underline; }
 
-.osu-dl-settings { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--theme-card-border, rgba(127,127,127,.16)); background: var(--theme-card-bg, rgba(127,127,127,.05)); }
+.osu-dl-settings { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--theme-card-border, var(--theme-panel-border, rgba(127,127,127,.16))); background: var(--theme-card-bg, var(--theme-panel-bg, rgba(127,127,127,.05))); }
 .osu-dl-settings label { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--theme-muted-text, #8a8f98); min-width: 0; }
 .osu-dl-settings select { min-height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--theme-field-border, rgba(127,127,127,.25)); background: var(--theme-field-bg, rgba(127,127,127,.06)); color: inherit; font-size: 12.5px; }
-.osu-dl-settings input[type="checkbox"] { accent-color: var(--theme-accent, #ec4899); width: 15px; height: 15px; }
+.osu-dl-settings input[type="checkbox"] { accent-color: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); width: 15px; height: 15px; }
 .osu-dl-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: inherit; }
 
 .osu-dl-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .osu-dl-tab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 999px; font-size: 13px; cursor: pointer; border: 1px solid var(--theme-field-border, rgba(127,127,127,.22)); background: transparent; color: inherit; transition: background .15s ease, border-color .15s ease; }
-.osu-dl-tab:hover { background: var(--theme-hover-bg, rgba(127,127,127,.1)); }
-.osu-dl-tab[data-active="true"] { background: var(--theme-accent, #ec4899); border-color: transparent; color: #fff; }
+.osu-dl-tab:hover { background: var(--theme-hover-bg, var(--theme-list-row-bg-hover, rgba(127,127,127,.1))); }
+.osu-dl-tab[data-active="true"] { background: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); border-color: transparent; color: var(--theme-on-accent, #fff); }
 .osu-dl-tab .osu-dl-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; font-size: 11px; background: rgba(255,255,255,.28); }
 .osu-dl-tab:not([data-active="true"]) .osu-dl-badge { background: var(--theme-field-bg, rgba(127,127,127,.14)); }
 
 .osu-dl-search-row { display: flex; gap: 10px; }
 .osu-dl-search-row input { flex: 1; min-width: 0; min-height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--theme-field-border, rgba(127,127,127,.25)); background: var(--theme-field-bg, rgba(127,127,127,.06)); color: inherit; font-size: 13.5px; }
-.osu-dl-search-row input:focus { outline: 2px solid var(--theme-accent, #ec4899); outline-offset: -1px; }
+.osu-dl-search-row input:focus { outline: 2px solid var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); outline-offset: -1px; }
 
 .osu-dl-hint { margin: 0; font-size: 12px; color: var(--theme-muted-text, #8a8f98); }
 .osu-dl-state { padding: 26px 0; text-align: center; color: var(--theme-muted-text, #8a8f98); font-size: 13px; }
 .osu-dl-state--error { color: var(--theme-danger-text, #d64545); }
 
 .osu-dl-list { display: grid; gap: 10px; }
-.osu-dl-card { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--theme-card-border, rgba(127,127,127,.14)); background: var(--theme-card-bg, rgba(127,127,127,.045)); min-width: 0; }
-.osu-dl-card:hover { border-color: var(--theme-accent, #ec4899); }
+.osu-dl-card { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--theme-card-border, var(--theme-panel-border, rgba(127,127,127,.14))); background: var(--theme-card-bg, var(--theme-panel-bg, rgba(127,127,127,.045))); min-width: 0; }
+.osu-dl-card:hover { border-color: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); }
 .osu-dl-cover { width: 72px; height: 50px; border-radius: 9px; object-fit: cover; background: rgba(127,127,127,.15); flex: none; }
 .osu-dl-card-body { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .osu-dl-card-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -46,14 +46,14 @@
 .osu-dl-card-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 
 .osu-dl-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--theme-field-border, rgba(127,127,127,.25)); background: var(--theme-field-bg, rgba(127,127,127,.06)); color: inherit; font-size: 12.5px; cursor: pointer; transition: background .15s ease, border-color .15s ease; white-space: nowrap; }
-.osu-dl-btn:hover:not(:disabled) { background: var(--theme-hover-bg, rgba(127,127,127,.12)); }
+.osu-dl-btn:hover:not(:disabled) { background: var(--theme-hover-bg, var(--theme-list-row-bg-hover, rgba(127,127,127,.12))); }
 .osu-dl-btn:disabled { opacity: .55; cursor: default; }
-.osu-dl-btn--primary { background: var(--theme-accent, #ec4899); border-color: transparent; color: #fff; }
-.osu-dl-btn--primary:hover:not(:disabled) { background: var(--theme-accent, #ec4899); filter: brightness(1.08); }
+.osu-dl-btn--primary { background: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); border-color: transparent; color: var(--theme-on-accent, #fff); }
+.osu-dl-btn--primary:hover:not(:disabled) { background: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); filter: brightness(1.08); }
 .osu-dl-btn--ghost { border-color: transparent; background: transparent; color: var(--theme-muted-text, #8a8f98); }
 .osu-dl-btn--danger { color: var(--theme-danger-text, #d64545); }
 
-.osu-dl-profile { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--theme-card-border, rgba(127,127,127,.16)); background: linear-gradient(120deg, rgba(236,72,153,.12), transparent 55%), var(--theme-card-bg, rgba(127,127,127,.045)); flex-wrap: wrap; }
+.osu-dl-profile { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--theme-card-border, var(--theme-panel-border, rgba(127,127,127,.16))); background: linear-gradient(120deg, rgba(236,72,153,.12), transparent 55%), var(--theme-card-bg, var(--theme-panel-bg, rgba(127,127,127,.045))); flex-wrap: wrap; }
 .osu-dl-avatar { width: 62px; height: 62px; border-radius: 16px; object-fit: cover; background: rgba(127,127,127,.15); flex: none; }
 .osu-dl-profile-name { display: grid; gap: 3px; min-width: 130px; }
 .osu-dl-profile-name strong { font-size: 17px; }
@@ -67,17 +67,23 @@
 .osu-dl-kind-row .osu-dl-spacer { flex: 1; }
 
 .osu-dl-job-progress { position: relative; height: 5px; border-radius: 999px; background: var(--theme-field-bg, rgba(127,127,127,.14)); overflow: hidden; margin-top: 6px; }
-.osu-dl-job-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--theme-accent, #ec4899); transition: width .3s ease; }
+.osu-dl-job-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); transition: width .3s ease; }
 .osu-dl-job-status { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--theme-field-bg, rgba(127,127,127,.12)); color: var(--theme-muted-text, #8a8f98); flex: none; }
 .osu-dl-job-status[data-status="completed"] { color: var(--theme-success-text, #2f9e57); background: rgba(52,199,89,.14); }
 .osu-dl-job-status[data-status="failed"] { color: var(--theme-danger-text, #d64545); background: rgba(214,69,69,.12); }
-.osu-dl-job-status[data-status="downloading"], .osu-dl-job-status[data-status="extracting_audio"], .osu-dl-job-status[data-status="importing"] { color: var(--theme-accent, #ec4899); background: rgba(236,72,153,.12); }
+.osu-dl-job-status[data-status="downloading"], .osu-dl-job-status[data-status="extracting_audio"], .osu-dl-job-status[data-status="importing"] { color: var(--theme-accent, var(--theme-accent-solid-bg, #ec4899)); background: rgba(236,72,153,.12); }
 .osu-dl-job-error { font-size: 11.5px; color: var(--theme-danger-text, #d64545); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .osu-dl-login { display: grid; place-items: center; gap: 12px; padding: 44px 20px; border-radius: 16px; border: 1px dashed var(--theme-field-border, rgba(127,127,127,.3)); text-align: center; }
 .osu-dl-login p { margin: 0; font-size: 13px; color: var(--theme-muted-text, #8a8f98); max-width: 420px; }
 
 .osu-dl-footer-row { display: flex; justify-content: center; padding: 6px 0 2px; }
+
+/* Loader UI v21 propagates the density appearance setting onto mod pages. */
+[data-density="compact"] .osu-dl-page { padding: 20px 28px 20px; gap: 13px; }
+[data-density="compact"] .osu-dl-card { padding: 8px 12px; }
+[data-density="compact"] .osu-dl-settings { padding: 9px 13px; }
+
 @media (max-width: 860px) {
   .osu-dl-page { padding: 24px 20px; }
   .osu-dl-stats { margin-left: 0; }

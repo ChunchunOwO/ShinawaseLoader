@@ -31,6 +31,9 @@ window.__echoAudioBandWidget = true;
   let lastMarqueeTitle = null;
   let lastMarqueeArtist = null;
   let lastMarqueeScroll = null;
+  let lastRatio = -1;
+  let lastTimeText = null;
+  let lastTimeHidden = null;
 
   const hexOk = (value) => typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(value.trim());
 
@@ -67,17 +70,32 @@ window.__echoAudioBandWidget = true;
     return Math.min(dur, Math.max(0, base + elapsed));
   };
 
+  // Runs every animation frame: only touch the DOM when a value changed so
+  // idle/paused frames stay free of style and text mutations.
   const applyProgress = () => {
     const dur = Number(status?.durationSeconds) || 0;
     const pos = displayedPosition();
     const ratio = dur > 0 ? Math.min(1, pos / dur) : 0;
-    fill.style.transform = `scaleX(${ratio})`;
+    if (ratio !== lastRatio) {
+      lastRatio = ratio;
+      fill.style.transform = `scaleX(${ratio})`;
+    }
+    let hidden;
+    let text;
     if (config.showTime && !isIdle(status) && dur > 0) {
-      timeEl.hidden = false;
-      timeEl.textContent = `${formatTime(pos)} / ${formatTime(dur)}`;
+      hidden = false;
+      text = `${formatTime(pos)} / ${formatTime(dur)}`;
     } else {
-      timeEl.hidden = !config.showTime || isIdle(status);
-      if (config.showTime && isIdle(status)) timeEl.textContent = '';
+      hidden = config.showTime !== true || isIdle(status);
+      text = '';
+    }
+    if (hidden !== lastTimeHidden) {
+      lastTimeHidden = hidden;
+      timeEl.hidden = hidden;
+    }
+    if (text !== lastTimeText) {
+      lastTimeText = text;
+      timeEl.textContent = text;
     }
   };
 
@@ -132,7 +150,11 @@ window.__echoAudioBandWidget = true;
     bar.classList.toggle('no-progress', config.showProgress === false);
     bar.classList.toggle('no-time', config.showTime !== true);
     progress.hidden = config.showProgress === false;
-    timeEl.hidden = config.showTime !== true;
+    // Invalidate the applyProgress caches so the next frame rewrites the
+    // time/progress DOM under the new config.
+    lastRatio = -1;
+    lastTimeText = null;
+    lastTimeHidden = null;
     document.documentElement.lang = chinese() ? 'zh-CN' : 'en';
     if (config.hoverPreview === false) hidePreview();
   };
