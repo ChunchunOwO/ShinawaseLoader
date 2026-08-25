@@ -38,8 +38,7 @@ $script:Strings = @{
     extrasTitle = '可选包'
     extrasHint = '数字键或 ↑↓ 选中    空格 开关    Enter 下一步'
     pkgStreaming = 'ECHO Streaming'
-    pkgTogether = 'ECHO Together'
-    pkgFix = 'ECHO Auxiliary Fix'
+    pkgPet = 'ECHO Classic Pet'
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
@@ -77,8 +76,7 @@ $script:Strings = @{
     extrasTitle = 'optional packages'
     extrasHint = 'Number or arrows    Space toggle    Enter next'
     pkgStreaming = 'ECHO Streaming'
-    pkgTogether = 'ECHO Together'
-    pkgFix = 'ECHO Auxiliary Fix'
+    pkgPet = 'ECHO Classic Pet'
     pkgOsu = 'ECHO osu!downloader'
     pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
@@ -799,12 +797,11 @@ function Get-ExamplePackagePath([string]$folderName) {
 function Choose-OptionalPackages {
   $source = @(
     @{ Key = '1'; Label = T 'pkgStreaming'; Folder = 'ECHO-Streaming'; Checked = $true },
-    @{ Key = '2'; Label = T 'pkgTogether'; Folder = 'ECHO-Together'; Checked = $true },
-    @{ Key = '3'; Label = T 'pkgFix'; Folder = 'ECHO-AuxiliaryFix'; Checked = $true },
-    @{ Key = '4'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
-    @{ Key = '5'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
-    @{ Key = '6'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true },
-    @{ Key = '7'; Label = T 'pkgWallpaper'; Folder = 'ECHO-WallpaperBridge'; Checked = $true }
+    @{ Key = '2'; Label = T 'pkgPet'; Folder = 'ECHO-Pet'; Checked = $true },
+    @{ Key = '3'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
+    @{ Key = '4'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
+    @{ Key = '5'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true },
+    @{ Key = '6'; Label = T 'pkgWallpaper'; Folder = 'ECHO-WallpaperBridge'; Checked = $true }
   )
   $index = 0
   $visible = $true

@@ -56,7 +56,7 @@ cd ShinawaseLoader
 .\setup-modloader.bat -Action menu
 ```
 
-安装结束后会进入 **可选包**：默认勾选全部官方示例（ECHO Streaming、ECHO Together、ECHO Auxiliary Fix、ECHO osu!downloader、ECHO AudioBand、ECHO MV、ECHO Wallpaper Bridge）。空格开关，Enter 导入到游戏 `Mods`。
+安装结束后会进入 **可选包**：默认勾选全部官方示例（ECHO Streaming、ECHO Classic Pet、ECHO osu!downloader、ECHO AudioBand、ECHO MV、ECHO Wallpaper Bridge）。空格开关，Enter 导入到游戏 `Mods`。
 
 安装后，请使用游戏目录下 `ShinawaseLoader` 中的启动器（Steam 快捷方式不会走 inspector bootstrap）：
 
@@ -225,11 +225,10 @@ flowchart TB
 │   └── verify-echo-runtime.mjs
 ├── examples/                  # 官方示例（不随安装复制）
 │   ├── ECHO-AudioBand/
-│   ├── ECHO-AuxiliaryFix/
 │   ├── ECHO-MV/
 │   ├── ECHO-OsuDownloader/
+│   ├── ECHO-Pet/
 │   ├── ECHO-Streaming/
-│   ├── ECHO-Together/
 │   ├── ECHO-WallpaperBridge/
 │   └── packages/
 ├── setup-modloader.bat
@@ -244,8 +243,7 @@ flowchart TB
 | 名称 | 说明 | 清单 |
 | --- | --- | --- |
 | [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质，网易云与 QQ 歌单走登录扫描。 | `echo.community-streaming` · 1.6.2 |
-| [ECHO Together](examples/ECHO-Together) | 联机 / 一起听；含 Python `launcher.py` 与 `service/`。 | `echo.listen-together` · 2.0.2 |
-| [ECHO Auxiliary Fix](examples/ECHO-AuxiliaryFix) | 辅助修复：消除桌面歌词、宠物、迷你播放器的原生崩溃循环（透明置顶窗口延迟置顶，随 Loader ≥ 1.6.0 的 `app-asar-bridge` 生效）。含 `main.cjs`。 | `echo.auxiliary-fix` · 1.2.1 |
+| [ECHO Classic Pet](examples/ECHO-Pet) | 把官方桌宠小窗换成经典像素桌宠，带 VPet 式商店 / 打工 / 状态面板与侧栏控制。 | `echo.classic-pet` · 3.2.0 |
 | [ECHO osu!downloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.1 |
 | [ECHO AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.1 |
 | [ECHO MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条只留 MV 入口，歌词页面板与设置为 Mod 自建（不劫持官方舞台）；Bilibili 应用内播放 + YouTube 搜索、本地绑定。含 `main.cjs`。 | `echo.mv` · 1.0.10 |
@@ -255,8 +253,7 @@ flowchart TB
 
 ```powershell
 .\pack-mod.bat .\examples\ECHO-Streaming\echomod .\examples\packages\ECHO-Streaming.echomod --zip
-.\pack-mod.bat .\examples\ECHO-Together\echomod .\examples\packages\ECHO-Together.echomod --zip
-.\pack-mod.bat .\examples\ECHO-AuxiliaryFix\echomod .\examples\packages\ECHO-AuxiliaryFix.echomod --zip
+.\pack-mod.bat .\examples\ECHO-Pet\echomod .\examples\packages\ECHO-Pet.echomod --zip
 .\pack-mod.bat .\examples\ECHO-OsuDownloader\echomod .\examples\packages\ECHO-OsuDownloader.echomod --zip
 .\pack-mod.bat .\examples\ECHO-AudioBand\echomod .\examples\packages\ECHO-AudioBand.echomod --zip
 .\pack-mod.bat .\examples\ECHO-MV\echomod .\examples\packages\ECHO-MV.echomod --zip

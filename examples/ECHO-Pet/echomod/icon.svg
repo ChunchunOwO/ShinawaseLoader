@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <defs>
+    <linearGradient id="ecp-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#182335"/>
+      <stop offset="0.52" stop-color="#0d1420"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <radialGradient id="ecp-glow" cx="0.28" cy="0.08" r="0.9">
+      <stop offset="0" stop-color="#64b5ff" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#58d5c4" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#58d5c4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="24" height="24" rx="6" fill="url(#ecp-bg)"/>
+  <rect width="24" height="24" rx="6" fill="url(#ecp-glow)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="none" stroke="#8fb8e8" stroke-opacity="0.28"/>
+  <g fill="#cce9ff" shape-rendering="crispEdges">
+    <rect x="7" y="3" width="2" height="2"/>
+    <rect x="15" y="3" width="2" height="2"/>
+    <rect x="6" y="5" width="12" height="2"/>
+    <rect x="5" y="7" width="14" height="6"/>
+    <rect x="6" y="13" width="12" height="2"/>
+    <rect x="7" y="15" width="3" height="2"/>
+    <rect x="14" y="15" width="3" height="2"/>
+  </g>
+  <g fill="#0d1420" shape-rendering="crispEdges">
+    <rect x="8" y="8" width="2" height="3"/>
+    <rect x="14" y="8" width="2" height="3"/>
+  </g>
+  <g fill="#5eead4" shape-rendering="crispEdges">
+    <rect x="6" y="19" width="2" height="2"/>
+    <rect x="9" y="18" width="2" height="3"/>
+    <rect x="12" y="19" width="2" height="2"/>
+    <rect x="15" y="17" width="2" height="4"/>
+    <rect x="18" y="19" width="1" height="2"/>
+  </g>
+</svg>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    The title starts as "ECHO Pet": the native main process identifies the
+    live pet window by this title or by the pet=1 query when routing
+    moveTo / resetBounds / hide IPC calls. status.js later mirrors the pet
+    status line into document.title; the pet=1 query keeps routing intact.
+  -->
+  <title>ECHO Pet</title>
+  <link rel="stylesheet" href="ui/echo-theme.css">
+  <link rel="stylesheet" href="assets/pet-sprite.css">
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body data-echo-classic-pet="1">
+  <!-- inline SVG sprite container; pet.js injects assets/ui-icons.svg and
+       assets/fx-icons.svg here so <use href="#…"> resolves offline -->
+  <div id="cp-sprites" hidden aria-hidden="true"></div>
+
+  <main class="echo-pet-app" aria-label="ECHO desktop pet">
+    <!--
+      cp-canvas fills the transparent pet window; the window itself is never
+      resized. Shop / work / stats open as separate panel BrowserWindows
+      managed by main.cjs (panel.html), not inside this page.
+    -->
+    <div class="cp-canvas" id="cp-canvas">
+      <div class="echo-pet-stage" id="pet-stage" data-mode="nomal" data-state="nomal">
+        <img
+          alt="ECHO pet character"
+          class="echo-pet-character eps-anim--idle"
+          id="pet-character"
+          draggable="false"
+          src="assets/echo-pet-idle.gif"
+        >
+        <button
+          aria-label="ECHO pet character"
+          class="echo-pet-character-trigger"
+          id="pet-trigger"
+          title="ECHO pet character"
+          type="button"
+        ></button>
+
+        <!-- speech bubble -->
+        <div class="cp-bubble ec-glass-card" id="cp-bubble" role="status" aria-live="polite">
+          <span class="cp-bubble-text" id="cp-bubble-text"></span>
+        </div>
+
+        <!-- first-run discoverability hint (shown once by pet.js, gated by
+             the echo.classic-pet.hint.v1 localStorage key) -->
+        <div class="cp-hint ec-glass-card" id="cp-hint" role="status" hidden>
+          <span class="cp-hint-text">悬停打开操作栏 · 点击宠物互动</span>
+          <button class="cp-hint-close" type="button" aria-label="关闭提示" title="关闭提示">×</button>
+        </div>
+
+        <!-- sleep overlay -->
+        <div class="cp-sleep-overlay" id="cp-sleep-overlay" aria-hidden="true">
+          <span class="cp-sleep-tag">💤 睡大觉</span>
+        </div>
+
+        <!-- status chip (VPet rich-presence style line) -->
+        <span class="cp-status-bar" id="cp-status-bar" role="status"></span>
+
+        <!-- window controls -->
+        <div class="echo-pet-controls">
+          <button
+            aria-label="Reset position"
+            class="echo-pet-control"
+            id="pet-reset"
+            title="重置位置"
+            type="button"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+              <path d="M3 4v5h5"></path>
+            </svg>
+          </button>
+          <button
+            aria-label="Hide pet"
+            class="echo-pet-control"
+            id="pet-hide"
+            title="隐藏桌宠"
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 6l12 12"></path>
+              <path d="M18 6L6 18"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- action dock (native-pet style pixel chip buttons; wired by pet.js) -->
+        <nav class="cp-dock" id="cp-dock" aria-label="桌宠操作">
+          <button class="cp-dock-btn" id="dock-shop" title="商店 · 喂食" type="button" aria-label="打开商店">
+            <svg class="cp-icon" aria-hidden="true"><use href="#icon-shop"></use></svg>
+          </button>
+          <button class="cp-dock-btn" id="dock-work" title="安排日程（工作/学习/玩耍）" type="button" aria-label="打开日程面板">
+            <svg class="cp-icon" aria-hidden="true"><use href="#icon-work"></use></svg>
+          </button>
+          <button class="cp-dock-btn" id="dock-stats" title="状态面板" type="button" aria-label="打开状态面板">
+            <svg class="cp-icon" aria-hidden="true"><use href="#icon-stats"></use></svg>
+          </button>
+          <span class="cp-dock-sep" aria-hidden="true"></span>
+          <button class="cp-dock-btn" id="dock-sleep" title="睡觉 / 起床" type="button" aria-label="睡觉或起床">
+            <svg class="cp-icon" aria-hidden="true"><use href="#icon-sleep"></use></svg>
+          </button>
+          <button class="cp-dock-btn" id="dock-dance" title="跟着节拍跳舞" type="button" aria-label="跳舞">
+            <svg class="cp-icon" aria-hidden="true"><use href="#icon-dance"></use></svg>
+          </button>
+        </nav>
+
+        <!-- transport dock: original ECHO pixel sprite sheet
+             (assets/echo-pet-controls.png) cropped per button, exactly like
+             the native pet window -->
+        <div class="echo-pet-track-controls" id="pet-track-controls">
+          <button
+            aria-label="Previous track"
+            class="echo-pet-track-control echo-pet-track-control--previous"
+            id="pet-previous"
+            title="上一首"
+            type="button"
+          >
+            <span class="echo-pet-track-art echo-pet-track-art--previous" aria-hidden="true">
+              <img alt="" draggable="false" src="assets/echo-pet-controls.png">
+            </span>
+          </button>
+          <button
+            aria-label="Play or pause"
+            class="echo-pet-track-control echo-pet-track-control--play-pause"
+            id="pet-play-pause"
+            title="播放 / 暂停"
+            type="button"
+          >
+            <span class="echo-pet-track-art echo-pet-track-art--play-pause" aria-hidden="true">
+              <img alt="" draggable="false" src="assets/echo-pet-controls.png">
+            </span>
+          </button>
+          <button
+            aria-label="Next track"
+            class="echo-pet-track-control echo-pet-track-control--next"
+            id="pet-next"
+            title="下一首"
+            type="button"
+          >
+            <span class="echo-pet-track-art echo-pet-track-art--next" aria-hidden="true">
+              <img alt="" draggable="false" src="assets/echo-pet-controls.png">
+            </span>
+          </button>
+        </div>
+        <span class="echo-pet-status" id="pet-status" role="status"></span>
+      </div>
+
+      <!-- right-click context menu, appended by pet.js -->
+      <div class="cp-menu-root" id="cp-menu-root"></div>
+    </div>
+  </main>
+  <script src="assets/echo-pet-states.js"></script>
+  <script src="game/engine.js"></script>
+  <script src="game/save.js"></script>
+  <script src="game/work.js"></script>
+  <script src="game/touch.js"></script>
+  <script src="game/say.js"></script>
+  <script src="game/status.js"></script>
+  <script src="pet.js"></script>
+</body>
+</html>

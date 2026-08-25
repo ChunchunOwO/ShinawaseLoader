@@ -1,0 +1,362 @@
+/*
+ * ECHO Classic Pet — pet action sprite/animation styles.
+ *
+ * Standalone asset stylesheet: nothing here is wired up until pet.html links
+ * it and pet.js applies the classes (see assets/echo-pet-states.js for the
+ * state -> class map).
+ *
+ * Three layers:
+ *   1. Character animation classes (.eps-anim--*) for the pet <img>
+ *      (.echo-pet-character). Each maps to at most one keyframe animation:
+ *        idle-breathe · happy-bounce · work-pulse · sleep-zzz · ill-sway ·
+ *        poor-slump · dance-spin · walk-step · raised-dangle
+ *      Every non-idle state swaps to a dedicated GIF frame set
+ *      (echo-pet-*.gif — see echo-pet-states.js), so the CSS animation only
+ *      adds gentle secondary motion; eat, climb and levelup have no CSS
+ *      transform at all because their motion is baked into the frames.
+ *      State filters (happy = brightness, ill = grayscale, poor = washed
+ *      out) are baked into the keyframes so they win over the pet.css
+ *      [data-mode] filter rules while the animation runs, and are mirrored
+ *      as class-level filters for reduced-motion fallback (the state GIFs
+ *      additionally bake a light version of each tint into their frames).
+ *   2. Stage FX overlay classes (.eps-fx--*) for the stage element
+ *      (.echo-pet-stage): floating pixel SVG glyphs (zzz, notes, sparkles,
+ *      crumbs, dizzy star, work gear). echo-pet-states.js injects one
+ *      .eps-fx-layer of <use href="#fx-*"> glyph elements into the stage;
+ *      the stage's .eps-fx--* class decides which glyphs are visible and
+ *      the rules below position, color and animate them.
+ *
+ * Pixel icons live in assets/controls-echo.svg, assets/ui-icons.svg and
+ * assets/fx-icons.svg as <symbol> collections; pet.js inlines them so
+ * <use href="#ctrl-*">, <use href="#icon-*"> and <use href="#fx-*"> resolve
+ * offline. UI icon sizing/coloring is handled by the .cp-icon rules in
+ * pet.css (icons inherit currentColor).
+ */
+
+/* ======================================================================
+   1. Character animation states (apply to the pet <img>)
+   ====================================================================== */
+
+.eps-anim--idle,
+.eps-anim--walk,
+.eps-anim--interact,
+.eps-anim--happy,
+.eps-anim--poor,
+.eps-anim--ill,
+.eps-anim--sleep,
+.eps-anim--work,
+.eps-anim--eat,
+.eps-anim--dance,
+.eps-anim--climb,
+.eps-anim--levelup,
+.eps-anim--raised {
+  transform-origin: 50% 86%; /* feet, matches .echo-pet-character */
+  will-change: transform;
+}
+
+.eps-anim--idle {
+  animation: idle-breathe 3.4s ease-in-out infinite;
+}
+
+/* roaming stroll: the walk GIF frames waddle in place while pet.js moves
+   the window; walk-step adds the footstep rhythm on top. */
+.eps-anim--walk {
+  animation: walk-step 0.55s linear infinite;
+}
+/*
+ * Horizontal flip while walking left (roam controller in pet.js toggles it).
+ * Uses the independent `scale` property (Chromium 104+) so it composes with
+ * the animated `transform` from the keyframes instead of being overwritten.
+ */
+.echo-pet-character.eps-face--left {
+  scale: -1 1;
+}
+
+/* interact = a quicker, shorter happy-bounce (tap feedback) */
+.eps-anim--interact {
+  animation: happy-bounce 0.62s ease-in-out infinite;
+}
+
+.eps-anim--happy {
+  animation: happy-bounce 1.05s ease-in-out infinite;
+  filter: brightness(1.06) saturate(1.08);
+}
+
+/* poor condition = drained: slow drooping slump, washed out. The poor
+   frames (echo-pet-poor.gif) bake the slouch + sweat drop; this keyframe
+   adds the heavy breathing rhythm. */
+.eps-anim--poor {
+  animation: poor-slump 4.4s ease-in-out infinite;
+  filter: saturate(0.66) brightness(0.94);
+}
+
+/* ill frames (echo-pet-ill.gif) bake the pale tint, temple sweat and heat
+   shimmer; the CSS sway keeps the woozy pendulum on top. */
+.eps-anim--ill {
+  animation: ill-sway 2.4s ease-in-out infinite;
+  filter: grayscale(0.6) brightness(0.84);
+}
+
+/* sleep frames (echo-pet-sleep.gif) ship pre-dimmed with pixel Zzz, so the
+   CSS layer only adds a slow bob and a whisper of extra dimming. */
+.eps-anim--sleep {
+  animation: sleep-zzz 4.2s ease-in-out infinite;
+  filter: brightness(0.9);
+}
+
+/* work frames (echo-pet-work.gif) carry the laptop + screen glow; the CSS
+   pulse just keeps the focused rhythm on top. */
+.eps-anim--work {
+  animation: work-pulse 1.5s ease-in-out infinite;
+}
+
+/* eat frames (echo-pet-eat.gif) bake in the chew bob and shrinking snack;
+   a CSS squash on top would double the motion, so none is applied. */
+.eps-anim--eat {
+  animation: none;
+}
+
+.eps-anim--dance {
+  animation: dance-spin 1.9s ease-in-out infinite;
+}
+
+/* climb frames (echo-pet-climb.gif) bake the alternating mitt reaches and
+   body pulls, so no CSS transform is layered on top. */
+.eps-anim--climb {
+  animation: none;
+}
+
+/* levelup frames (echo-pet-levelup.gif) bake the crouch-leap-land arc and
+   the starburst, so no CSS transform is layered on top. */
+.eps-anim--levelup {
+  animation: none;
+}
+
+/* raised = picked up / dragged: the raised frames (echo-pet-raised.gif)
+   bake the startled look + leg kicks; the CSS pendulum sways the whole
+   body from the grip point so both motions compose. */
+.eps-anim--raised {
+  transform-origin: 50% 8%; /* hang from the top, not the feet */
+  animation: raised-dangle 1.6s ease-in-out infinite;
+}
+
+/* --- keyframes ------------------------------------------------------- */
+
+/* Soft breathing: barely-there squash and stretch from the feet. */
+@keyframes idle-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50%      { transform: scale(1.018, 0.972) translateY(0.4%); }
+}
+
+/* Crouch, hop, land with a squash. Bright + saturated while it runs. */
+@keyframes happy-bounce {
+  0%   { transform: translateY(0) scale(1, 1);           filter: brightness(1.06) saturate(1.08); }
+  18%  { transform: translateY(1.5%) scale(1.06, 0.9);   filter: brightness(1.06) saturate(1.08); }
+  45%  { transform: translateY(-9%) scale(0.95, 1.07);   filter: brightness(1.12) saturate(1.1) drop-shadow(0 0 6px rgba(169, 239, 255, 0.35)); }
+  72%  { transform: translateY(0.5%) scale(1.05, 0.93);  filter: brightness(1.06) saturate(1.08); }
+  100% { transform: translateY(0) scale(1, 1);           filter: brightness(1.06) saturate(1.08); }
+}
+
+/* Focused scale pulse, like the pet is powering through a task. */
+@keyframes work-pulse {
+  0%, 100% { transform: scale(1);     filter: contrast(1) brightness(1); }
+  50%      { transform: scale(1.045); filter: contrast(1.06) brightness(1.03) drop-shadow(0 0 5px rgba(139, 216, 242, 0.3)); }
+}
+
+/* Slow sleepy bob; the heavy night dim is baked into the sleep GIF frames,
+   so only a whisper of extra darkening here. Pairs with .eps-fx--zzz. */
+@keyframes sleep-zzz {
+  0%, 100% { transform: translateY(0) scale(1, 1);          filter: brightness(0.92); }
+  50%      { transform: translateY(1.8%) scale(1.02, 0.98); filter: brightness(0.86); }
+}
+
+/* Woozy pendulum sway; grayscale keeps the "unwell" tint while swaying. */
+@keyframes ill-sway {
+  0%, 100% { transform: rotate(-2.2deg) translateX(-0.6%); filter: grayscale(0.6) brightness(0.84); }
+  50%      { transform: rotate(2.2deg) translateX(0.6%);   filter: grayscale(0.6) brightness(0.84); }
+}
+
+/* Drained slump: a heavy sink with a slow recovering breath; keeps the
+   washed-out poor-condition tint while it runs. */
+@keyframes poor-slump {
+  0%, 100% { transform: translateY(0) scale(1, 1);          filter: saturate(0.66) brightness(0.94); }
+  55%      { transform: translateY(2.2%) scale(1.02, 0.96); filter: saturate(0.6) brightness(0.9); }
+}
+
+/* Grooving to the music: rocking twist with hops and a teal glow. */
+@keyframes dance-spin {
+  0%   { transform: rotate(0deg) translateY(0) scale(1, 1);          filter: drop-shadow(0 0 4px rgba(139, 216, 242, 0.25)); }
+  20%  { transform: rotate(-7deg) translateY(-5%) scale(0.98, 1.03); filter: drop-shadow(0 0 7px rgba(169, 239, 255, 0.4)); }
+  40%  { transform: rotate(0deg) translateY(0.5%) scale(1.04, 0.94); filter: drop-shadow(0 0 4px rgba(139, 216, 242, 0.25)); }
+  60%  { transform: rotate(7deg) translateY(-5%) scale(0.98, 1.03);  filter: drop-shadow(0 0 7px rgba(169, 239, 255, 0.4)); }
+  80%  { transform: rotate(0deg) translateY(0.5%) scale(1.04, 0.94); filter: drop-shadow(0 0 4px rgba(139, 216, 242, 0.25)); }
+  100% { transform: rotate(0deg) translateY(0) scale(1, 1);          filter: drop-shadow(0 0 4px rgba(139, 216, 242, 0.25)); }
+}
+
+/* Footstep rhythm on top of the walk GIF's waddle (~1.8 steps/s matches
+   the roam controller's 26–46 px/s walking speed). */
+@keyframes walk-step {
+  0%   { transform: translateY(0) rotate(0deg) scale(1, 1); }
+  25%  { transform: translateY(-3%) rotate(-2deg) scale(0.99, 1.02); }
+  50%  { transform: translateY(0.5%) rotate(0deg) scale(1.02, 0.97); }
+  75%  { transform: translateY(-3%) rotate(2deg) scale(0.99, 1.02); }
+  100% { transform: translateY(0) rotate(0deg) scale(1, 1); }
+}
+
+/* Dangling from the cursor's grip: pendulum sway + a hint of stretch. */
+@keyframes raised-dangle {
+  0%, 100% { transform: rotate(-5deg) scale(0.99, 1.02); }
+  50%      { transform: rotate(5deg) scale(0.99, 1.02); }
+}
+
+/* ======================================================================
+   2. Stage FX overlays (apply to .echo-pet-stage)
+
+   Pixel SVG glyphs (<use href="#fx-*">, symbols in assets/fx-icons.svg).
+   echo-pet-states.js injects the .eps-fx-layer once per stage; each glyph
+   stays display:none until the stage carries the matching .eps-fx--*
+   class, so adding the class starts the animation exactly like the old
+   pseudo-element FX did. Colors follow the ECHO cyan/teal palette
+   (#8bd8f2 · #a9efff · #cce9ff) via currentColor.
+   ====================================================================== */
+
+.eps-fx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4; /* above pet + sleep overlay, below speech bubble/panels */
+  pointer-events: none;
+}
+
+.eps-fx-glyph {
+  display: none;
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  filter: drop-shadow(0 1px 0 rgba(13, 27, 52, 0.55));
+}
+
+/* sleep: one drifting zzz */
+.eps-fx--zzz .eps-fx-glyph--zzz {
+  display: block;
+  top: 12%;
+  right: 16%;
+  color: #cce9ff;
+  animation: eps-fx-drift 2.8s ease-in-out infinite;
+}
+
+/* dance / music: two alternating notes */
+.eps-fx--notes .eps-fx-glyph--note-a {
+  display: block;
+  top: 18%;
+  left: 12%;
+  color: #8bd8f2;
+  animation: eps-fx-drift 1.9s ease-in-out infinite;
+}
+
+.eps-fx--notes .eps-fx-glyph--note-b {
+  display: block;
+  top: 10%;
+  right: 12%;
+  color: #a9efff;
+  animation: eps-fx-drift 1.9s ease-in-out 0.95s infinite;
+}
+
+/* happy / interact: two twinkling sparkles */
+.eps-fx--sparkle .eps-fx-glyph--sparkle-a {
+  display: block;
+  top: 16%;
+  left: 14%;
+  color: #cce9ff;
+  animation: eps-fx-twinkle 1.3s ease-in-out infinite;
+}
+
+.eps-fx--sparkle .eps-fx-glyph--sparkle-b {
+  display: block;
+  top: 8%;
+  right: 14%;
+  color: #8bd8f2;
+  animation: eps-fx-twinkle 1.3s ease-in-out 0.65s infinite;
+}
+
+/* eat: nibbled snack */
+.eps-fx--crumbs .eps-fx-glyph--crumb {
+  display: block;
+  bottom: 18%;
+  right: 12%;
+  color: #a9efff;
+  animation: eps-fx-nibble 0.9s ease-in-out infinite;
+}
+
+/* ill: orbiting dizzy star */
+.eps-fx--dizzy .eps-fx-glyph--dizzy {
+  display: block;
+  top: 8%;
+  left: 50%;
+  margin-left: -7px;
+  color: #a9efff;
+  animation: eps-fx-orbit 2.2s linear infinite;
+}
+
+/* work: slow orbiting gear */
+.eps-fx--work .eps-fx-glyph--gear {
+  display: block;
+  top: 12%;
+  right: 14%;
+  color: #8bd8f2;
+  animation: eps-fx-orbit 3.2s linear infinite;
+}
+
+@keyframes eps-fx-drift {
+  0%   { opacity: 0; transform: translateY(4px) scale(0.85); }
+  25%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-12px) scale(1.1); }
+}
+
+@keyframes eps-fx-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8) rotate(0deg); }
+  50%      { opacity: 1;    transform: scale(1.15) rotate(20deg); }
+}
+
+@keyframes eps-fx-nibble {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.75; transform: scale(0.82); }
+}
+
+@keyframes eps-fx-orbit {
+  0%   { transform: rotate(0deg) translateX(3px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(3px) rotate(-360deg); }
+}
+
+/* ======================================================================
+   Reduced motion: freeze animations, keep the state tints readable
+   ====================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .eps-anim--idle,
+  .eps-anim--walk,
+  .eps-anim--interact,
+  .eps-anim--happy,
+  .eps-anim--poor,
+  .eps-anim--ill,
+  .eps-anim--sleep,
+  .eps-anim--work,
+  .eps-anim--eat,
+  .eps-anim--dance,
+  .eps-anim--climb,
+  .eps-anim--levelup,
+  .eps-anim--raised {
+    animation: none;
+  }
+
+  .eps-fx--zzz .eps-fx-glyph--zzz,
+  .eps-fx--notes .eps-fx-glyph--note-a,
+  .eps-fx--notes .eps-fx-glyph--note-b,
+  .eps-fx--sparkle .eps-fx-glyph--sparkle-a,
+  .eps-fx--sparkle .eps-fx-glyph--sparkle-b,
+  .eps-fx--crumbs .eps-fx-glyph--crumb,
+  .eps-fx--dizzy .eps-fx-glyph--dizzy,
+  .eps-fx--work .eps-fx-glyph--gear {
+    animation: none;
+    opacity: 0.85;
+  }
+}

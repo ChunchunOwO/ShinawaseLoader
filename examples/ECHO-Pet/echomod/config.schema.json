@@ -1,0 +1,110 @@
+{
+  "type": "object",
+  "properties": {
+    "petName": {
+      "type": "string",
+      "title": "Pet name",
+      "description": "Name used in the status line and speech (e.g. \"ECHO正在幸福地听 …\").",
+      "default": "ECHO"
+    },
+    "enableSteamStatus": {
+      "type": "boolean",
+      "title": "Steam Rich Presence augmentation",
+      "description": "Augment ECHO's native Steam Rich Presence with the pet status line (listening / working / idle), keeping ECHO's own steam_display tokens. Event-driven — no polling. When off (or when ECHO is not running as its Steam build), the native presence is never touched.",
+      "default": true
+    },
+    "steamStatusMode": {
+      "type": "string",
+      "title": "Steam status mode",
+      "description": "What the Steam Rich Presence line contains while the bridge is enabled. \"native-augment\": the full pet line fused with ECHO's now-playing info (\"ECHO正在幸福地听 …\", current behavior). \"pet-only\": only the pet's own doings (打工 / 睡大觉 / 发呆), never the track, leaving music status to ECHO itself. \"off\": push nothing (same effect as disabling the bridge).",
+      "enum": ["native-augment", "pet-only", "off"],
+      "default": "native-augment"
+    },
+    "steamCustomTemplate": {
+      "type": "string",
+      "title": "Custom Steam status template",
+      "description": "Optional template that overrides the composed status line for Steam only (the on-pet status chip keeps the composed line). Placeholders: {petName}, {mode} (happy/nomal/poorcondition/ill), {state} (nomal/work/sleep), {track} and {artist} (empty when no music), {petLine} (the composed pet line). Example: \"{petName} ♪ {track} — {artist}\". Leave empty to use the composed line.",
+      "default": ""
+    },
+    "steamShowTrackInPetLine": {
+      "type": "boolean",
+      "title": "Show track in Steam pet line",
+      "description": "Include the current track (\"正在听 {title} · {artist}\") in the pet line pushed to Steam (native-augment mode and the {petLine} template placeholder). When off, Steam gets the plain pet line (发呆 / 打工 / 睡大觉) even while music plays; the on-pet status chip is unaffected.",
+      "default": true
+    },
+    "autoBuy": {
+      "type": "boolean",
+      "title": "Auto-buy food & drink",
+      "description": "When hunger or thirst falls below 25%, automatically buy the cheapest suitable meal/drink if the pet can afford it (pays a 20% convenience fee, like VPet).",
+      "default": true
+    },
+    "enableRoaming": {
+      "type": "boolean",
+      "title": "Pet roaming",
+      "description": "When idle, the pet occasionally strolls left/right along its screen edge (VPet-style walk), staying inside the display work area. Pauses automatically while dragging, sleeping, working, or when panels/menus are open.",
+      "default": true
+    },
+    "showActivationToast": {
+      "type": "boolean",
+      "title": "Show activation toast",
+      "description": "Show a toast in the main window when the classic pet takes over.",
+      "default": true
+    },
+    "persistentDock": {
+      "type": "boolean",
+      "title": "Always-visible action dock",
+      "description": "Keep the action dock (shop / schedule / stats / sleep / dance) always visible instead of only showing it while hovering the pet.",
+      "default": false
+    },
+    "interactDurationMs": {
+      "type": "number",
+      "title": "Interact animation duration (ms)",
+      "description": "How long the interact animation plays after clicking the pet (500–20000 ms).",
+      "minimum": 500,
+      "maximum": 20000,
+      "default": 3600
+    },
+    "showActionDock": {
+      "type": "boolean",
+      "title": "Show action dock",
+      "description": "Show the hover action dock (商店 / 日程 / 状态 / 睡觉 / 跳舞) on the pet. When hidden, the same actions stay available from the right-click menu.",
+      "default": true
+    },
+    "showTransportControls": {
+      "type": "boolean",
+      "title": "Show transport controls",
+      "description": "Show the hover playback pill (上一首 / 播放暂停 / 下一首) at the bottom of the pet.",
+      "default": true
+    },
+    "showWindowControls": {
+      "type": "boolean",
+      "title": "Show window controls",
+      "description": "Show the hover reset-position / hide buttons in the pet's top-right corner. When hidden, 重置位置 / 隐藏桌宠 stay available from the right-click menu and the sidebar page.",
+      "default": true
+    },
+    "showStatusBar": {
+      "type": "boolean",
+      "title": "Show status chip",
+      "description": "Show the VPet-style status line chip (\"ECHO正在幸福地听 …\") at the bottom of the pet. Steam Rich Presence keeps working while it is hidden.",
+      "default": true
+    },
+    "showSpeechBubble": {
+      "type": "boolean",
+      "title": "Show speech bubble",
+      "description": "Show the pet speech bubble (eating / work / level-up / begging / chatter lines). Gameplay effects still apply while it is hidden.",
+      "default": true
+    },
+    "showWorkTimer": {
+      "type": "boolean",
+      "title": "Show work timer card",
+      "description": "Show the running work/study/play timer card pinned above the pet. Jobs still run and finish normally while it is hidden (stop them from the 日程 panel).",
+      "default": true
+    },
+    "showContextMenu": {
+      "type": "boolean",
+      "title": "Enable right-click menu",
+      "description": "Enable the VPet-style right-click menu on the pet. The action dock and panel windows keep working when disabled.",
+      "default": true
+    }
+  }
+}

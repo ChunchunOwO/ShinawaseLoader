@@ -1,0 +1,755 @@
+/*
+ * ECHO Classic Pet — pet window styles (v3).
+ *
+ * v3 redesign: ECHO dark glass theme (ui/echo-theme.css) and an action dock
+ * of icon buttons. The shop / work / stats panels open as separate frameless
+ * BrowserWindows (panel.html + panel.css); the pet window stays its original
+ * small square and only hosts the pet stage, docks, bubble and menu.
+ */
+
+:root,
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+body {
+  user-select: none;
+  font-family: var(--echo-font-family);
+  font-size: var(--echo-base-font-size);
+  line-height: var(--echo-ui-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+.echo-pet-app {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.cp-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* ==========================================================================
+   Pet stage — fills the pet window (which is always exactly the pet square)
+   ========================================================================== */
+
+.echo-pet-stage {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 6px;
+  cursor: grab;
+  perspective: 520px;
+  -webkit-app-region: drag;
+}
+
+.echo-pet-stage:active {
+  cursor: grabbing;
+}
+
+.echo-pet-character {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  image-rendering: pixelated;
+  transform-origin: 50% 86%;
+  transition: filter 300ms ease;
+  will-change: transform, filter;
+}
+
+/* --- mode visuals (VPet Happy / Nomal / PoorCondition / Ill) --- */
+
+.echo-pet-stage[data-mode="happy"] .echo-pet-character {
+  filter: brightness(1.06) saturate(1.08) drop-shadow(0 0 7px rgba(100, 181, 255, 0.32));
+}
+
+.echo-pet-stage[data-mode="poorcondition"] .echo-pet-character {
+  filter: saturate(0.66) brightness(0.94);
+}
+
+.echo-pet-stage[data-mode="ill"] .echo-pet-character {
+  filter: grayscale(0.6) brightness(0.82);
+}
+
+.echo-pet-stage[data-state="sleep"] .echo-pet-character {
+  filter: brightness(0.55) saturate(0.7);
+}
+
+.cp-sleep-overlay {
+  position: absolute;
+  inset: 4px;
+  z-index: 2;
+  display: none;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 40%, rgba(5, 9, 16, 0.16), rgba(5, 9, 16, 0.52));
+  border-radius: 20px;
+}
+
+.echo-pet-stage[data-state="sleep"] .cp-sleep-overlay {
+  display: block;
+}
+
+.cp-sleep-tag {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  font-size: 11px;
+  color: var(--theme-accent-text-strong);
+  background: var(--theme-panel-bg-strong);
+  border: 1px solid var(--theme-accent-border);
+  border-radius: 999px;
+  animation: cp-sleep-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes cp-sleep-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+
+.echo-pet-character-trigger {
+  position: absolute;
+  z-index: 1;
+  inset: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 42%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-character-trigger:active {
+  cursor: grabbing;
+}
+
+.echo-pet-character-trigger:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- shared pixel icon sizing --- */
+
+.cp-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Action dock — vertical rail of native-pet pixel chips on the left edge
+   (same deep-blue chip recipe as the native window controls)
+   ========================================================================== */
+
+.cp-dock {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition: opacity 150ms ease, transform 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-stage:hover .cp-dock,
+.cp-dock:focus-within,
+.cp-dock.is-persistent {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+/* First-run pulse: briefly fades the dock in and out (pet.js applies the
+   class for 3s alongside the first-run hint) to reveal where it lives. */
+.cp-dock--pulse {
+  animation: cp-dock-pulse 1.5s ease-in-out 2;
+}
+
+@keyframes cp-dock-pulse {
+  0%, 100% { opacity: 0; }
+  45%, 60% { opacity: 0.9; }
+}
+
+.cp-dock-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: #f8fdff;
+  background: rgba(24, 53, 94, 0.78);
+  border: 1px solid rgba(139, 216, 242, 0.62);
+  border-radius: 9px;
+  box-shadow: 0 4px 12px rgba(11, 31, 62, 0.24);
+  cursor: pointer;
+  transition: color 130ms ease, background 130ms ease, border-color 130ms ease, transform 130ms ease;
+}
+
+.cp-dock-btn:hover {
+  border-color: rgba(169, 239, 255, 0.92);
+  background: rgba(44, 88, 147, 0.9);
+  transform: translateY(-1px);
+}
+
+.cp-dock-btn:active {
+  transform: translateY(0) scale(0.94);
+}
+
+.cp-dock-btn:focus-visible {
+  outline: 2px solid rgba(169, 239, 255, 0.96);
+  outline-offset: 2px;
+}
+
+.cp-dock-btn.is-active {
+  color: #0b1f3e;
+  background: rgba(169, 239, 255, 0.92);
+  border-color: rgba(210, 247, 255, 0.95);
+}
+
+.cp-dock-sep {
+  width: 16px;
+  height: 1px;
+  margin: 1px 0;
+  background: rgba(139, 216, 242, 0.45);
+}
+
+/* ==========================================================================
+   Transport dock — original ECHO pixel sprites, cropped per button from
+   assets/echo-pet-controls.png exactly like the native pet window
+   (bottom offset raised above the mod's status chip; native uses 7px)
+   ========================================================================== */
+
+.echo-pet-track-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  display: grid;
+  z-index: 3;
+  grid-template-columns: 30px 34px 30px;
+  gap: 6px;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-stage:hover .echo-pet-track-controls,
+.echo-pet-track-controls:focus-within {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.echo-pet-stage:hover .echo-pet-track-control,
+.echo-pet-track-controls:focus-within .echo-pet-track-control {
+  pointer-events: auto;
+}
+
+.echo-pet-track-control {
+  position: relative;
+  width: 30px;
+  height: 34px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  color: #f8fdff;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: none;
+  transition: filter 140ms ease, transform 140ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-track-control--play-pause {
+  width: 34px;
+  height: 38px;
+}
+
+.echo-pet-track-control:hover:not(:disabled) {
+  filter: brightness(1.14) drop-shadow(0 4px 5px rgba(24, 53, 94, 0.32));
+  transform: translateY(-2px) scale(1.06);
+}
+
+.echo-pet-track-control:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.echo-pet-track-control:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.echo-pet-track-control:focus-visible {
+  outline: 2px solid rgba(169, 239, 255, 0.96);
+  outline-offset: 1px;
+  border-radius: 10px;
+}
+
+/* Sprite-sheet crops: the <img> is the full 900×900 sheet scaled down, the
+   span is a fixed viewport whose offsets pick out one glyph. */
+
+.echo-pet-track-art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 44px;
+  height: 36px;
+  overflow: hidden;
+  image-rendering: pixelated;
+  transform: translate(-50%, -50%) scale(0.62);
+}
+
+.echo-pet-track-art img {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  max-width: none;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+.echo-pet-track-art--previous img {
+  top: -32px;
+  left: -40px;
+}
+
+.echo-pet-track-art--next img {
+  top: -32px;
+  left: -104px;
+}
+
+.echo-pet-track-art--play-pause {
+  width: 54px;
+  height: 46px;
+}
+
+.echo-pet-track-art--play-pause img {
+  top: -74px;
+  left: -20px;
+  width: 142px;
+  height: 142px;
+}
+
+.echo-pet-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   Window controls (reset position / hide) — native pet chip style
+   ========================================================================== */
+
+.echo-pet-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  z-index: 4;
+  gap: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-stage:hover .echo-pet-controls,
+.echo-pet-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.echo-pet-control {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(139, 216, 242, 0.62);
+  border-radius: 9px;
+  color: #f8fdff;
+  background: rgba(24, 53, 94, 0.78);
+  box-shadow: 0 4px 12px rgba(11, 31, 62, 0.24);
+  cursor: pointer;
+  transition: background 130ms ease, border-color 130ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.echo-pet-control:hover {
+  border-color: rgba(169, 239, 255, 0.92);
+  background: rgba(44, 88, 147, 0.9);
+}
+
+.echo-pet-control:focus-visible {
+  outline: 2px solid rgba(169, 239, 255, 0.96);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   First-run hint — one-time discoverability banner (dismissed on click or
+   after 8s; pet.js gates it on the echo.classic-pet.hint.v1 storage key)
+   ========================================================================== */
+
+.cp-hint {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 94%;
+  box-sizing: border-box;
+  padding: 4px 6px 4px 9px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--theme-page-text);
+  border-radius: var(--radius-md);
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.cp-hint[hidden] {
+  display: none;
+}
+
+.cp-hint.is-open {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.cp-hint-close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--theme-muted-text);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cp-hint-close:hover {
+  color: var(--theme-page-text);
+  background: var(--theme-control-bg-hover);
+}
+
+/* ==========================================================================
+   Speech bubble & status chip
+   ========================================================================== */
+
+.cp-bubble {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  z-index: 6;
+  max-width: 94%;
+  padding: 4px 9px;
+  transform: translate(-50%, -4px);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--theme-page-text);
+  border-radius: var(--radius-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+  white-space: pre-line;
+}
+
+.cp-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--theme-panel-bg-strong);
+  border-right: 1px solid var(--theme-panel-border);
+  border-bottom: 1px solid var(--theme-panel-border);
+}
+
+.cp-bubble.is-open {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.cp-status-bar {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  z-index: 2;
+  max-width: 96%;
+  padding: 1px 8px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--theme-muted-text);
+  background: var(--theme-panel-bg-muted);
+  border: 1px solid var(--theme-list-row-border);
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.echo-pet-stage:hover .cp-status-bar {
+  opacity: 0.96;
+  color: var(--theme-page-text);
+}
+
+.cp-status-bar:empty {
+  display: none;
+}
+
+/* --- floating stat label (体力-2 心情+1) --- */
+
+.cp-float-label {
+  position: absolute;
+  z-index: 7;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--theme-warning-text);
+  background: var(--theme-panel-bg-strong);
+  border: 1px solid var(--theme-warning-border);
+  border-radius: 999px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  animation: cp-float-up 1.5s ease-out forwards;
+}
+
+@keyframes cp-float-up {
+  0% { opacity: 0; margin-top: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; margin-top: -26px; }
+}
+
+/* ==========================================================================
+   Work timer card (pinned above the pet while a job runs)
+   ========================================================================== */
+
+.cp-work-timer {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  width: 90%;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  color: var(--theme-page-text);
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--work-bg, #413d39) 40%, transparent),
+      transparent 80%),
+    var(--theme-panel-bg-strong);
+  border: 1px solid color-mix(in srgb, var(--work-accent, #322e2b) 60%, var(--theme-panel-border));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  -webkit-app-region: no-drag;
+}
+
+.cp-work-timer.is-open {
+  display: flex;
+}
+
+.cp-work-timer-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--theme-heading-text);
+}
+
+.cp-work-timer-numbers {
+  font-size: 11px;
+  color: var(--theme-muted-text);
+}
+
+.cp-work-timer-stop {
+  align-self: flex-end;
+  margin-top: 1px;
+}
+
+.cp-work-timer-bar {
+  height: 5px;
+}
+
+/* ==========================================================================
+   Context menu
+   ========================================================================== */
+
+.cp-menu-root {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+}
+
+.cp-menu-root.is-open {
+  display: block;
+  pointer-events: auto;
+}
+
+.cp-menu {
+  position: absolute;
+  min-width: 110px;
+  max-width: 60%;
+  max-height: 92%;
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+  background:
+    linear-gradient(180deg, var(--theme-glass-bg-subtle), transparent 40%),
+    var(--theme-panel-bg-strong);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-app-region: no-drag;
+}
+
+.cp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  color: var(--theme-page-text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cp-menu-item:hover:not(:disabled) {
+  color: var(--theme-accent-text-strong);
+  background: var(--theme-control-bg-active);
+}
+
+.cp-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cp-menu-item .cp-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--theme-accent-text);
+}
+
+.cp-menu-item .cp-menu-caret {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.cp-menu-sub {
+  display: none;
+  flex-direction: column;
+  padding-left: 10px;
+}
+
+.cp-menu-group.is-expanded .cp-menu-sub {
+  display: flex;
+}
+
+.cp-menu-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--theme-list-row-border);
+}
+
+/* ==========================================================================
+   Config-driven UI part visibility
+
+   pet.js adds one body class per show* config key set to false
+   (showActionDock / showTransportControls / showWindowControls /
+   showStatusBar / showSpeechBubble / showWorkTimer / showContextMenu).
+   !important so the hover/focus reveal rules above can never resurface a
+   section the user turned off.
+   ========================================================================== */
+
+body.cp-hide-dock .cp-dock,
+body.cp-hide-transport .echo-pet-track-controls,
+body.cp-hide-window-controls .echo-pet-controls,
+body.cp-hide-status-bar .cp-status-bar,
+body.cp-hide-bubble .cp-bubble,
+body.cp-hide-work-timer .cp-work-timer,
+body.cp-hide-menu .cp-menu-root {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .echo-pet-character,
+  .echo-pet-controls,
+  .echo-pet-track-controls,
+  .echo-pet-track-control,
+  .cp-dock,
+  .cp-dock-btn,
+  .cp-bubble,
+  .cp-hint,
+  .ec-meter-fill {
+    transition: none;
+  }
+
+  .cp-sleep-tag,
+  .cp-float-label,
+  .cp-dock--pulse {
+    animation: none;
+  }
+}

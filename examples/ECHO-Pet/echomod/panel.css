@@ -1,0 +1,284 @@
+/*
+ * ECHO Classic Pet — panel window styles.
+ *
+ * Each game panel (shop / work / stats) lives in its own frameless
+ * transparent BrowserWindow opened by main.cjs; this stylesheet turns the
+ * whole window into a single ECHO dark glass card. The shop/work/stats UI
+ * styles moved here from pet.css — the pet window no longer hosts panels.
+ */
+
+:root,
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+body {
+  user-select: none;
+  font-family: var(--echo-font-family);
+  font-size: var(--echo-base-font-size);
+  line-height: var(--echo-ui-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* shared pixel icon sizing */
+
+.cp-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Window shell — one glass card filling the frameless window
+   ========================================================================== */
+
+.cp-panel-window {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 var(--echo-polish-hairline),
+    var(--shadow-soft);
+}
+
+/* The titlebar doubles as the native window drag region. */
+.cp-panel-titlebar {
+  -webkit-app-region: drag;
+}
+
+.cp-panel-titlebar button,
+.cp-panel-titlebar .ec-titlebar-aux {
+  -webkit-app-region: no-drag;
+}
+
+.cp-panel-close {
+  margin-left: 2px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.cp-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 7px 7px;
+}
+
+.cp-panel-wait {
+  margin: auto;
+  font-size: 11px;
+  color: var(--theme-subtle-text);
+}
+
+/* --- money chip (titlebar aux) --- */
+
+.cp-money-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--theme-warning-text);
+  background: var(--theme-glass-bg-muted);
+  border: 1px solid var(--theme-warning-border);
+  border-radius: 999px;
+}
+
+.cp-money-chip .cp-icon {
+  width: 11px;
+  height: 11px;
+}
+
+/* ==========================================================================
+   Tab rows & quantity selector
+   ========================================================================== */
+
+.cp-shop-tabs {
+  display: flex;
+  gap: 3px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.cp-shop-qty {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.cp-shop-qty-label {
+  font-size: 11px;
+  color: var(--theme-subtle-text);
+}
+
+/* ==========================================================================
+   Item lists (shop / work)
+   ========================================================================== */
+
+.cp-shop-list,
+.cp-work-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.cp-work-item {
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--work-bg, #413d39) 42%, transparent),
+      transparent 72%),
+    var(--theme-list-row-bg);
+  border-color: color-mix(in srgb, var(--work-accent, #322e2b) 55%, var(--theme-list-row-border));
+}
+
+.cp-shop-item-info,
+.cp-work-item-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cp-shop-item-name,
+.cp-work-item-name {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--theme-page-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cp-shop-item-price {
+  font-size: 11px;
+  color: var(--theme-warning-text);
+}
+
+.cp-shop-item-bored {
+  font-size: 10px;
+  color: var(--theme-danger-text);
+}
+
+.cp-work-item-lv {
+  font-size: 10px;
+  color: var(--theme-accent-text);
+}
+
+.cp-shop-item-stats,
+.cp-work-item-stats {
+  font-size: 10px;
+  color: var(--theme-subtle-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cp-empty {
+  margin: 14px 0;
+  font-size: 11px;
+  text-align: center;
+  color: var(--theme-subtle-text);
+}
+
+/* ==========================================================================
+   Stat meters (stats panel)
+   ========================================================================== */
+
+.cp-stats-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+}
+
+.cp-stats-idrow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--theme-muted-text);
+}
+
+.cp-stats-name {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--theme-heading-text);
+}
+
+.cp-stats-mode {
+  margin-left: auto;
+  padding: 1px 7px;
+  font-size: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--theme-list-row-border);
+  background: var(--theme-chip-bg);
+}
+
+.cp-stats-mode[data-mode="happy"] { color: var(--theme-success-text); border-color: var(--theme-success-border); background: var(--theme-success-bg); }
+.cp-stats-mode[data-mode="nomal"] { color: var(--theme-muted-text); }
+.cp-stats-mode[data-mode="poorcondition"] { color: var(--theme-warning-text); border-color: var(--theme-warning-border); background: var(--theme-warning-bg); }
+.cp-stats-mode[data-mode="ill"] { color: var(--theme-danger-text); border-color: var(--theme-danger-border); background: var(--theme-danger-bg); }
+
+.cp-stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cp-stat-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--theme-muted-text);
+}
+
+.cp-stat-delta {
+  font-size: 10px;
+}
+
+.cp-stat-delta[data-sign="up"] { color: var(--theme-success-text); }
+.cp-stat-delta[data-sign="down"] { color: var(--theme-danger-text); }
+
+.cp-meter--exp .ec-meter-fill { background: linear-gradient(90deg, #7a5cd6, #c3a8ff); }
+.cp-meter--strength .ec-meter-fill { background: linear-gradient(90deg, #2e9e5b, #8fe6b0); }
+.cp-meter--feeling .ec-meter-fill { background: linear-gradient(90deg, #d98a2b, #ffd9a1); }
+.cp-meter--food .ec-meter-fill { background: linear-gradient(90deg, #bd9a2f, #f2e0a0); }
+.cp-meter--drink .ec-meter-fill { background: linear-gradient(90deg, #2f86a3, #9adcf2); }
+
+.ec-meter.cp-meter--low .ec-meter-fill {
+  background: linear-gradient(90deg, #c5534b, #ff9b9f);
+}
+
+.cp-stats-footer {
+  font-size: 10px;
+  color: var(--theme-subtle-text);
+}
+
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-meter-fill {
+    transition: none;
+  }
+}

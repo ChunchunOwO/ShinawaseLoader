@@ -1,0 +1,12 @@
+{
+  "id": "echo.classic-pet",
+  "name": "ECHO Classic Pet",
+  "version": "3.2.0",
+  "minEchoVersion": "26.8.15",
+  "description": "Replaces the native ECHO desktop pet with the original ECHO pixel pet and adds full VPet-style gameplay in a fully redesigned ECHO-style UI (v3): shop / work / stats each open in their own frameless glass-morphism window next to the pet (the pet window itself never resizes), a quick-action dock (商店 | 日程 | 状态 | 睡觉 | 跳舞) plus pixel transport controls, expanded character action states (idle-breathe / happy-bounce / work-pulse / sleep-zzz / eat-nom / ill-sway / dance-spin), and an ECHO-styled ShinawaseLoader sidebar page. Gameplay: stats (money/exp/level/strength/hunger/thirst/mood/health), a shop with 60+ music/HiFi-themed items (lossless vouchers, ASIO brews, vinyl treats), ECHO-flavored work/study/play jobs (library curation, radio streaming, plugin testing), music-player-voiced speech lines, touch interactions, sleep, speech bubbles, and a VPet-style status line fused with ECHO's now-playing info (optionally augmenting ECHO's native Steam Rich Presence, event-driven with no polling).",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "main": "main.cjs",
+  "config": "config.json",
+  "configSchema": "config.schema.json"
+}

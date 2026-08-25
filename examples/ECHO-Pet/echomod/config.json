@@ -1,0 +1,19 @@
+{
+  "petName": "ECHO",
+  "enableSteamStatus": true,
+  "steamStatusMode": "native-augment",
+  "steamCustomTemplate": "",
+  "steamShowTrackInPetLine": true,
+  "autoBuy": true,
+  "enableRoaming": true,
+  "showActivationToast": true,
+  "persistentDock": false,
+  "interactDurationMs": 3600,
+  "showActionDock": true,
+  "showTransportControls": true,
+  "showWindowControls": true,
+  "showStatusBar": true,
+  "showSpeechBubble": true,
+  "showWorkTimer": true,
+  "showContextMenu": true
+}

@@ -1,0 +1,324 @@
+/*
+ * ECHO Classic Pet — ECHO dark glass theme (v3).
+ *
+ * Token values are lifted from ECHO's renderer theme
+ * (src/renderer/styles/tokens.css, html[data-theme="dark"] block) so the pet
+ * UI matches the host app's dark glass look 1:1. The pet floats over the
+ * desktop, so the dark variant is always used.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- typography (ECHO --echo-font-family) --- */
+  --echo-font-family:
+    Outfit, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --echo-mono-font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --echo-base-font-size: 14px;
+  --echo-ui-line-height: 1.35;
+
+  /* --- base palette --- */
+  --color-bg: #0c1016;
+  --color-surface: rgba(23, 29, 38, 0.86);
+  --color-surface-strong: rgba(30, 38, 49, 0.98);
+  --color-border: rgba(232, 238, 247, 0.13);
+  --color-border-strong: rgba(232, 238, 247, 0.22);
+  --color-text: hsl(216 30% 90%);
+  --color-muted: hsl(216 18% 74%);
+  --color-subtle: hsl(216 13% 60%);
+  --color-accent: #64b5ff;
+  --color-teal: #58d5c4;
+  --color-red: #ff6961;
+
+  /* --- theme tokens (ECHO --theme-*) --- */
+  --theme-page-text: var(--color-text);
+  --theme-heading-text: hsl(214 32% 94%);
+  --theme-muted-text: var(--color-muted);
+  --theme-subtle-text: var(--color-subtle);
+  --theme-panel-bg: rgba(23, 29, 38, 0.86);
+  --theme-panel-bg-strong: rgba(30, 38, 49, 0.98);
+  --theme-panel-bg-muted: rgba(18, 24, 33, 0.84);
+  --theme-panel-border: var(--color-border);
+  --theme-panel-border-strong: var(--color-border-strong);
+  --theme-field-bg: rgba(15, 21, 30, 0.94);
+  --theme-field-border: rgba(232, 238, 247, 0.14);
+  --theme-button-bg: rgba(29, 37, 49, 0.9);
+  --theme-button-bg-hover: rgba(42, 53, 68, 0.97);
+  --theme-button-border: rgba(232, 238, 247, 0.125);
+  --theme-button-text: var(--color-text);
+  --theme-list-row-bg: rgba(23, 29, 38, 0.76);
+  --theme-list-row-bg-hover: rgba(31, 39, 51, 0.92);
+  --theme-list-row-bg-active: rgba(64, 151, 204, 0.2);
+  --theme-list-row-border: rgba(232, 238, 247, 0.095);
+  --theme-chip-bg: rgba(27, 34, 45, 0.78);
+  --theme-chip-bg-active: rgba(71, 151, 204, 0.28);
+  --theme-control-bg: rgba(232, 238, 247, 0.1);
+  --theme-control-bg-hover: rgba(232, 238, 247, 0.16);
+  --theme-control-bg-active: rgba(100, 181, 255, 0.18);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.48);
+  --theme-glass-bg-subtle: rgba(255, 255, 255, 0.06);
+  --theme-glass-bg-muted: rgba(255, 255, 255, 0.08);
+  --theme-glass-bg-soft: rgba(255, 255, 255, 0.1);
+  --theme-glass-bg: rgba(255, 255, 255, 0.12);
+  --theme-glass-bg-strong: rgba(255, 255, 255, 0.14);
+  --theme-glass-bg-hover: rgba(255, 255, 255, 0.18);
+  --theme-scrollbar-thumb: rgba(154, 170, 192, 0.34);
+  --theme-scrollbar-thumb-hover: rgba(184, 198, 216, 0.5);
+  --theme-focus-ring: rgba(100, 181, 255, 0.34);
+  --theme-danger-bg: rgba(255, 105, 97, 0.16);
+  --theme-danger-text: #ff9b9f;
+  --theme-danger-border: rgba(255, 105, 97, 0.26);
+  --theme-success-bg: rgba(88, 213, 196, 0.16);
+  --theme-success-text: #9de8dd;
+  --theme-success-border: rgba(88, 213, 196, 0.26);
+  --theme-warning-bg: rgba(245, 189, 84, 0.18);
+  --theme-warning-text: #ffe2a3;
+  --theme-warning-border: rgba(245, 189, 84, 0.26);
+  --theme-accent-bg: rgba(100, 181, 255, 0.16);
+  --theme-accent-bg-strong: rgba(100, 181, 255, 0.24);
+  --theme-accent-border: rgba(100, 181, 255, 0.3);
+  --theme-accent-solid-bg: #2f6da8;
+  --theme-accent-text: #9bd4ff;
+  --theme-accent-text-strong: #cce9ff;
+  --theme-on-accent: #ffffff;
+
+  /* --- ECHO polish accents (teal glass, used for active/play states) --- */
+  --echo-polish-accent-text: #8de6d8;
+  --echo-polish-accent-bg: rgba(94, 234, 212, 0.1);
+  --echo-polish-active-bg: rgba(36, 95, 101, 0.32);
+  --echo-polish-active-border: rgba(94, 234, 212, 0.24);
+  --echo-polish-play-bg: linear-gradient(180deg, #45b7a7, #2f86a3);
+  --echo-polish-hairline: rgba(255, 255, 255, 0.09);
+
+  /* --- radii & shadows --- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-soft: 0 24px 60px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.22);
+  --shadow-panel: 0 12px 30px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ==========================================================================
+   Glass primitives shared by the pet stage, floating panels and menus
+   ========================================================================== */
+
+.ec-glass-card {
+  color: var(--theme-page-text);
+  background:
+    linear-gradient(180deg, var(--theme-glass-bg-subtle), transparent 46%),
+    var(--theme-panel-bg-strong);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--echo-polish-hairline),
+    var(--shadow-panel);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.ec-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 4px 6px 4px 8px;
+  border-bottom: 1px solid var(--theme-list-row-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--theme-glass-bg-subtle);
+  cursor: grab;
+  user-select: none;
+}
+
+.ec-titlebar:active {
+  cursor: grabbing;
+}
+
+.ec-titlebar-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  color: var(--theme-accent-text);
+  flex: 0 0 auto;
+}
+
+.ec-titlebar-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ec-titlebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--theme-heading-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ec-titlebar-aux {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--theme-muted-text);
+}
+
+.ec-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 9px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--theme-button-text);
+  background: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 130ms ease, border-color 130ms ease, filter 130ms ease;
+}
+
+.ec-btn:hover:not(:disabled) {
+  background: var(--theme-button-bg-hover);
+  border-color: var(--theme-panel-border-strong);
+}
+
+.ec-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ec-btn--accent {
+  font-weight: 700;
+  color: var(--theme-on-accent);
+  background: var(--theme-accent-solid-bg);
+  border-color: var(--theme-accent-border);
+}
+
+.ec-btn--accent:hover:not(:disabled) {
+  background: var(--theme-accent-solid-bg);
+  filter: brightness(1.18);
+}
+
+.ec-btn--danger {
+  color: var(--theme-danger-text);
+  background: var(--theme-danger-bg);
+  border-color: var(--theme-danger-border);
+}
+
+.ec-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--theme-muted-text);
+  background: var(--theme-control-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.ec-icon-btn:hover {
+  color: var(--theme-page-text);
+  background: var(--theme-control-bg-hover);
+}
+
+.ec-icon-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ec-chip {
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--theme-muted-text);
+  background: var(--theme-chip-bg);
+  border: 1px solid var(--theme-list-row-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+
+.ec-chip:hover {
+  color: var(--theme-page-text);
+  background: var(--theme-list-row-bg-hover);
+}
+
+.ec-chip.is-active {
+  color: var(--theme-accent-text-strong);
+  font-weight: 700;
+  background: var(--theme-chip-bg-active);
+  border-color: var(--theme-accent-border);
+}
+
+.ec-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--theme-list-row-bg);
+  border: 1px solid var(--theme-list-row-border);
+  border-radius: var(--radius-md);
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.ec-row:hover {
+  background: var(--theme-list-row-bg-hover);
+}
+
+/* --- meters (stat / progress bars) --- */
+
+.ec-meter {
+  position: relative;
+  height: 8px;
+  background: var(--theme-field-bg);
+  border: 1px solid var(--theme-field-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ec-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--theme-accent-solid-bg), var(--theme-accent-text));
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+/* --- scrollbars --- */
+
+.ec-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.ec-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ec-scroll::-webkit-scrollbar-thumb {
+  background: var(--theme-scrollbar-thumb);
+  border-radius: 999px;
+}
+
+.ec-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-thumb-hover);
+}
+
+/* --- focus --- */
+
+:where(button, input, select):focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
