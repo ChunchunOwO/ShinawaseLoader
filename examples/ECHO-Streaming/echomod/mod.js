@@ -20,9 +20,9 @@ const locale = String(config.locale || 'zh-CN');
 const chinese = locale.toLowerCase().startsWith('zh');
 const accountText = (zh, en) => chinese ? zh : en;
 const copy = chinese ? {
-  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', readingAlbum: '读取专辑', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO Next 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO Next 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO Next 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。',
+  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', readingAlbum: '读取专辑', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO Next 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO Next 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO Next 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。', neteaseLoginRequired: '读取这个歌单需要登录（私密歌单仅登录后可见）。请先在账号页登录网易云音乐，再重试下载。',
 } : {
-  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', readingAlbum: 'Reading album', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO Next streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO Next to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO Next and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.',
+  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', readingAlbum: 'Reading album', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO Next streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO Next to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO Next and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.', neteaseLoginRequired: 'Reading this playlist requires a signed-in account (private playlists are only visible after login). Connect NetEase Cloud Music on the accounts page and retry.',
 };
 
 const lyricsCopy = chinese ? {
@@ -252,12 +252,12 @@ const appendTrackRow = (parent, track, options = {}) => {
   if (current) titleLine.append(make('em', '', copy.playing));
   main.append(titleLine);
   appendTrackCredits(main, track);
-  if (!spatial) main.append(make('small', '', track.playable === false ? (track.unavailableReason || copy.unavailable) : `${track.provider} · ${(track.qualities || []).join(' / ') || 'standard'}`));
+  if (!spatial) main.append(make('small', '', track.playable === false ? (track.unavailableReason || copy.unavailable) : `${track.provider} · ${trackQualitySummary(track)}`));
   row.append(main);
   if (spatial) {
     const meta = make('span', 'streaming-source-meta');
     meta.append(make('strong', '', currentProvider?.displayName || track.provider || ''));
-    meta.append(make('small', '', track.playable === false ? (track.unavailableReason || copy.unavailable) : ((track.qualities || []).join(' / ') || 'standard')));
+    meta.append(make('small', '', track.playable === false ? (track.unavailableReason || copy.unavailable) : trackQualitySummary(track)));
     row.append(meta);
   }
   row.append(make('span', 'streaming-duration', formatDuration(track.duration)));
@@ -295,7 +295,7 @@ const appendAccountPlaylistRow = (parent, playlist) => { const row = make('div',
 const renderNoticeModal = () => { if (!state.noticeOpen) return null; const backdrop = make('div', 'settings-modal-backdrop settings-streaming-notice-backdrop'); backdrop.dataset.state = 'open'; backdrop.addEventListener('mousedown', () => cancelNotice()); const dialog = make('section', 'settings-font-modal settings-streaming-notice-modal'); dialog.dataset.state = 'open'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'settings-streaming-notice-title'); dialog.addEventListener('mousedown', (event) => event.stopPropagation()); const header = make('header', 'settings-font-modal-header'); const heading = make('div', 'settings-streaming-notice-heading'); heading.append(makeIcon('shield', 18), make('h3', '', copy.noticeTitle)); header.append(heading, actionButton(copy.close, 'close', cancelNotice, { iconOnly: true, className: 'settings-icon-button', title: copy.noticeClose })); dialog.append(header); const body = make('div', 'settings-streaming-notice-body'); body.append(make('p', '', copy.noticeBody)); const list = make('ul'); copy.noticeItems.forEach((item) => list.append(make('li', '', item))); body.append(list, make('p', '', copy.noticeAcceptance)); dialog.append(body); const label = make('label', 'settings-danger-confirm-field settings-streaming-notice-confirm'); label.append(make('span', '', copy.consentInput(copy.consentPhrase))); const input = document.createElement('input'); input.value = state.noticeConsent; input.autofocus = true; input.addEventListener('input', () => { state.noticeConsent = input.value; confirm.disabled = input.value.trim() !== copy.consentPhrase; }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && input.value.trim() === copy.consentPhrase) confirmNotice(); }); label.append(input); dialog.append(label); const actions = make('div', 'settings-streaming-notice-actions'); actions.append(actionButton(copy.noticeCancel, null, cancelNotice, { className: 'settings-action-button' })); const confirm = actionButton(copy.noticeConfirm, null, confirmNotice, { className: 'settings-danger-button', disabled: state.noticeConsent.trim() !== copy.consentPhrase }); actions.append(confirm); dialog.append(actions); backdrop.append(dialog); return backdrop; };
 const renderGate = () => { const page = make('div', 'streaming-page streaming-hub'); const empty = make('div', 'streaming-results-empty'); const gate = make('div', 'streaming-entry-notice-gate'); gate.append(make('strong', '', copy.noticeTitle), make('span', '', copy.noticeAcceptance)); gate.append(actionButton(copy.noticeTitle, null, () => { state.noticeOpen = true; render(); }, { className: 'streaming-load-more' })); empty.append(gate); page.append(empty); if (state.noticeOpen) page.append(renderNoticeModal()); return page; };
 
-const renderAlbumDetail = () => { const album = state.selectedAlbumDetail || state.selectedAlbum; const page = make('div', 'album-detail-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedAlbum = null; state.selectedAlbumDetail = null; state.albumError = null; render(); }, { className: 'album-back-button', title: copy.back })); const hero = make('section', 'album-detail-hero'); const cover = make('div', 'album-detail-cover'); const coverSrc = album?.coverThumb || album?.coverUrl || defaultCover; cover.dataset.empty = String(coverSrc === defaultCover); const image = document.createElement('img'); image.src = coverSrc; image.alt = ''; image.width = 320; image.height = 320; image.decoding = 'async'; cover.append(image); hero.append(cover); const consoleBox = make('div', 'album-detail-console'); const details = make('div', 'album-detail-copy'); details.append(make('span', 'album-detail-kicker', copy.albumKicker), make('h1', '', album?.title || ''), make('p', '', album?.artist || '')); const meta = make('div', 'album-detail-meta'); [album?.releaseDate, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount), formatAlbumDuration(state.selectedAlbumDetail?.tracks || []), album?.provider].filter(Boolean).forEach((item) => meta.append(make('span', '', item))); details.append(meta); consoleBox.append(details); const actions = make('div', 'album-detail-actions'); actions.append(actionButton(state.albumLoading ? copy.readingAlbum : copy.playNow, state.albumLoading ? 'refresh' : 'play', handlePlayAlbum, { className: 'album-primary-action', disabled: state.albumLoading || !(state.selectedAlbumDetail?.tracks || []).length, title: copy.playNow })); const downloadable = (state.selectedAlbumDetail?.tracks || []).filter((track) => track.playable && !unsupportedDownloadProviders.has(track.provider) && streamingTrackWebUrl(track)).length; if (state.downloadEnabled) actions.append(actionButton(state.albumDownload ? copy.downloading : copy.downloadAlbum, state.albumDownload ? 'refresh' : 'download', handleDownloadAlbum, { className: 'album-secondary-action', disabled: state.albumLoading || !downloadable || Boolean(state.albumDownload), title: copy.downloadAlbum })); consoleBox.append(actions); if (state.albumError) consoleBox.append(make('p', 'album-detail-error', state.albumError)); hero.append(consoleBox); const facts = make('aside', 'album-detail-facts'); [[copy.source, album?.provider || ''], [copy.tracks, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount)], [copy.released, album?.releaseDate || copy.unknown], [copy.quality, (state.selectedAlbumDetail?.tracks?.[0]?.qualities || []).join(' / ') || (chinese ? '读取中' : 'Reading signal')]].forEach(([label, value]) => { const fact = make('div', 'album-fact'); fact.append(make('span', '', label), make('strong', '', value)); facts.append(fact); }); hero.append(facts); page.append(hero); const section = make('section', 'album-detail-track-console'); section.append(make('header', 'album-detail-tabs')); const tracks = state.selectedAlbumDetail?.tracks || []; if (state.albumLoading && !tracks.length) section.append(make('div', 'streaming-state', chinese ? '正在读取专辑...' : 'Reading album...')); else if (!state.albumLoading && !tracks.length && !state.albumError) section.append(make('div', 'streaming-state', chinese ? '这张专辑没有可显示的歌曲。' : 'This album has no tracks to display.')); const list = make('div', 'streaming-album-track-list'); tracks.slice(0, state.albumTrackLimit).forEach((track) => appendTrackRow(list, track)); if (tracks.length > state.albumTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.albumTrackLimit += albumTrackRenderStep; render(); }, { className: 'streaming-load-more' })); section.append(list); page.append(section); return page; };
+const renderAlbumDetail = () => { const album = state.selectedAlbumDetail || state.selectedAlbum; const page = make('div', 'album-detail-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedAlbum = null; state.selectedAlbumDetail = null; state.albumError = null; render(); }, { className: 'album-back-button', title: copy.back })); const hero = make('section', 'album-detail-hero'); const cover = make('div', 'album-detail-cover'); const coverSrc = album?.coverThumb || album?.coverUrl || defaultCover; cover.dataset.empty = String(coverSrc === defaultCover); const image = document.createElement('img'); image.src = coverSrc; image.alt = ''; image.width = 320; image.height = 320; image.decoding = 'async'; cover.append(image); hero.append(cover); const consoleBox = make('div', 'album-detail-console'); const details = make('div', 'album-detail-copy'); details.append(make('span', 'album-detail-kicker', copy.albumKicker), make('h1', '', album?.title || ''), make('p', '', album?.artist || '')); const meta = make('div', 'album-detail-meta'); [album?.releaseDate, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount), formatAlbumDuration(state.selectedAlbumDetail?.tracks || []), album?.provider].filter(Boolean).forEach((item) => meta.append(make('span', '', item))); details.append(meta); consoleBox.append(details); const actions = make('div', 'album-detail-actions'); actions.append(actionButton(state.albumLoading ? copy.readingAlbum : copy.playNow, state.albumLoading ? 'refresh' : 'play', handlePlayAlbum, { className: 'album-primary-action', disabled: state.albumLoading || !(state.selectedAlbumDetail?.tracks || []).length, title: copy.playNow })); const downloadable = (state.selectedAlbumDetail?.tracks || []).filter((track) => track.playable && !unsupportedDownloadProviders.has(track.provider) && streamingTrackWebUrl(track)).length; if (state.downloadEnabled) actions.append(actionButton(state.albumDownload ? copy.downloading : copy.downloadAlbum, state.albumDownload ? 'refresh' : 'download', handleDownloadAlbum, { className: 'album-secondary-action', disabled: state.albumLoading || !downloadable || Boolean(state.albumDownload), title: copy.downloadAlbum })); consoleBox.append(actions); if (state.albumError) consoleBox.append(make('p', 'album-detail-error', state.albumError)); hero.append(consoleBox); const facts = make('aside', 'album-detail-facts'); [[copy.source, album?.provider || ''], [copy.tracks, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount)], [copy.released, album?.releaseDate || copy.unknown], [copy.quality, state.selectedAlbumDetail?.tracks?.length ? trackQualitySummary(state.selectedAlbumDetail.tracks[0]) : (chinese ? '读取中' : 'Reading signal')]].forEach(([label, value]) => { const fact = make('div', 'album-fact'); fact.append(make('span', '', label), make('strong', '', value)); facts.append(fact); }); hero.append(facts); page.append(hero); const section = make('section', 'album-detail-track-console'); section.append(make('header', 'album-detail-tabs')); const tracks = state.selectedAlbumDetail?.tracks || []; if (state.albumLoading && !tracks.length) section.append(make('div', 'streaming-state', chinese ? '正在读取专辑...' : 'Reading album...')); else if (!state.albumLoading && !tracks.length && !state.albumError) section.append(make('div', 'streaming-state', chinese ? '这张专辑没有可显示的歌曲。' : 'This album has no tracks to display.')); const list = make('div', 'streaming-album-track-list'); tracks.slice(0, state.albumTrackLimit).forEach((track) => appendTrackRow(list, track)); if (tracks.length > state.albumTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.albumTrackLimit += albumTrackRenderStep; render(); }, { className: 'streaming-load-more' })); section.append(list); page.append(section); return page; };
 const renderArtistDetail = () => { const artist = state.selectedArtistDetail || state.selectedArtist; const name = artistName(artist); const page = make('div', 'streaming-artist-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedArtist = null; state.selectedArtistDetail = null; state.artistError = null; render(); }, { className: 'streaming-artist-back', title: copy.back })); const hero = make('section', 'streaming-artist-hero'); const avatar = make('div', 'streaming-artist-avatar'); const src = artist?.coverUrl || artist?.avatarUrl; avatar.dataset.cover = String(Boolean(src)); if (src) { const image = document.createElement('img'); image.src = src; image.alt = ''; image.width = 512; image.height = 512; avatar.append(image); } else avatar.append(make('span', '', name.slice(0, 1).toUpperCase())); hero.append(avatar); const body = make('div', 'streaming-artist-copy'); body.append(make('span', 'streaming-artist-kicker', copy.artistKicker), make('h1', '', name)); const meta = make('div', 'streaming-artist-meta'); meta.append(make('span', '', artist?.provider || state.provider), make('span', '', formatTrackCount(state.selectedArtistDetail?.topTracks?.length || 0)), make('span', '', `${state.selectedArtistDetail?.albums?.length || 0} ${copy.albums.toLowerCase()}`)); body.append(meta, make('p', '', `${copy.streaming} catalog from ${artist?.provider || state.provider}.`)); const actions = make('div', 'streaming-artist-actions'); const top = state.selectedArtistDetail?.topTracks || []; actions.append(actionButton(state.artistLoading ? copy.readingArtist : copy.playArtist, state.artistLoading ? 'refresh' : 'play', handlePlayArtist, { className: 'streaming-artist-primary-action', disabled: state.artistLoading || !top.some((track) => track.playable), title: copy.playArtist }), actionButton(copy.addToQueue, 'list', handleQueueArtist, { className: 'streaming-artist-secondary-action', disabled: !top.some((track) => track.playable), title: copy.addToQueue })); body.append(actions); if (state.artistError) body.append(make('p', 'streaming-artist-error', state.artistError)); hero.append(body); const stats = make('div', 'streaming-artist-stats'); [[copy.source, artist?.provider || state.provider], [copy.tracks, top.length], [copy.albums, state.selectedArtistDetail?.albums?.length || 0]].forEach(([label, value]) => { const item = make('div'); item.append(make('span', '', label), make('strong', '', value)); stats.append(item); }); hero.append(stats); page.append(hero); const trackSection = make('section', 'streaming-artist-section'); const heading = make('div', 'streaming-artist-section-heading'); const headingCopy = make('div'); headingCopy.append(make('span', '', copy.topTracks), make('h2', '', copy.songs)); heading.append(headingCopy); trackSection.append(heading); if (state.artistLoading && !top.length) trackSection.append(make('div', 'streaming-state', chinese ? '正在读取艺人...' : 'Reading artist...')); else if (!state.artistLoading && !top.length && !state.artistError) trackSection.append(make('div', 'streaming-state', chinese ? '这个艺人没有可显示的歌曲。' : 'This artist has no tracks to display.')); const list = make('div', 'streaming-artist-track-list'); top.forEach((track) => appendTrackRow(list, track)); trackSection.append(list); page.append(trackSection); const albums = state.selectedArtistDetail?.albums || []; if (albums.length) { const albumSection = make('section', 'streaming-artist-section'); const albumHeading = make('div', 'streaming-artist-section-heading'); const albumHeadingCopy = make('div'); albumHeadingCopy.append(make('span', '', copy.albums), make('h2', '', copy.discography)); albumHeading.append(albumHeadingCopy); albumSection.append(albumHeading); const albumList = make('div', 'streaming-artist-album-list'); albums.forEach((item) => appendAlbumCard(albumList, item)); albumSection.append(albumList); page.append(albumSection); } return page; };
 
 const renderPlaylistPanel = (playlists) => { const panel = make('div', 'streaming-playlist-panel'); const form = make('form', 'streaming-playlist-import'); const copyBox = make('div', 'streaming-playlist-import-copy'); const copyTitle = make('span', '', copy.addPlaylist); copyTitle.prepend(makeIcon('link', 18)); copyBox.append(copyTitle, make('p', '', copy.playlistHint)); form.append(copyBox); const label = make('label'); label.append(makeIcon('link', 18)); const input = document.createElement('input'); input.value = state.playlistUrl; input.placeholder = copy.playlistPlaceholder; input.disabled = Boolean(state.importingPlaylistKey); input.addEventListener('input', () => { state.playlistUrl = input.value; }); label.append(input); form.append(label); form.append(actionButton(state.importingPlaylistKey ? copy.adding : copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), { disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add })); form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); }); const sync = make('section', 'streaming-account-playlist-sync'); const syncCopy = make('div', 'streaming-playlist-import-copy'); const syncTitle = make('span', '', copy.syncPlaylists); syncTitle.prepend(makeIcon('refresh', 18)); syncCopy.append(syncTitle, make('p', '', copy.syncHint)); sync.append(syncCopy); const toolbar = make('div', 'streaming-account-playlist-toolbar'); if (state.accountPanelOpen) { const tabs = make('div', 'streaming-account-provider-tabs'); ['netease', 'qqmusic'].forEach((name) => { const descriptor = state.providers.find((item) => item.name === name); const tab = actionButton(descriptor?.displayName || (name === 'netease' ? '网易云音乐' : 'QQ 音乐'), null, () => { state.accountPlaylistProvider = name; state.accountPlaylists = []; state.selectedAccountPlaylistIds = {}; void loadAccountPlaylists(name); }, { className: name === state.accountPlaylistProvider ? 'active' : '', disabled: state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 }); if (descriptor?.accountConnected) tab.append(make('small', '', ` ${copy.signedIn}`)); tabs.append(tab); }); toolbar.append(tabs); } else toolbar.append(make('span', 'streaming-account-playlist-hint', state.providers.some((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected) ? copy.preferLoggedIn : copy.needLogin)); const stale = typeof streamApi()?.listAccountPlaylists !== 'function'; toolbar.append(actionButton(stale ? copy.restart : state.loadingAccountPlaylists ? copy.reading : state.accountPanelOpen ? copy.refresh : copy.syncMine, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), { className: 'streaming-playlist-add', disabled: stale || state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); sync.append(toolbar); if (state.accountPanelOpen) { const box = make('div', 'streaming-account-playlist-panel'); if (state.accountPlaylists.length) { const selection = make('div', 'streaming-account-playlist-selection'); const all = state.accountPlaylists.every((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true); selection.append(actionButton(all ? copy.deselectAll : copy.selectAll, all ? 'check' : 'list', () => { state.selectedAccountPlaylistIds = all ? {} : Object.fromEntries(state.accountPlaylists.map((item) => [item.providerPlaylistId, true])); render(); }, { className: 'streaming-inline-action' }), make('span', '', copy.selected(Object.values(state.selectedAccountPlaylistIds).filter(Boolean).length, state.accountPlaylists.length))); box.append(selection); const list = make('div', 'streaming-account-playlist-list'); state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item)); box.append(list); const actions = make('div', 'streaming-account-playlist-actions'); actions.append(make('span', '', state.accountPlaylistProvider), actionButton(copy.syncSelected, 'list', () => requestAccountPlaylistSync(state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId])), { className: 'streaming-playlist-add', disabled: !state.accountPlaylists.some((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId]) || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); box.append(actions); } else box.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists)); sync.append(box); } panel.append(sync); if (playlists.length) { const list = make('div', 'streaming-discovery-list'); playlists.forEach((item) => appendPlaylistCard(list, item)); panel.append(list); } panel.append(form); return panel; };
@@ -529,7 +529,7 @@ const loadProviders = async (force = false) => {
 };
 const loadFavorites = async () => { try { if (streamApi()?.getFavorites) state.favoriteTrackIds = favoriteIdsFromSnapshot(await streamApi().getFavorites()); } catch {} };
 const loadJobs = async () => { try { if (downloadApi()?.getJobs) { state.downloadJobs = await downloadApi().getJobs(); indexDownloadJobs(state.downloadJobs); } } catch {} };
-const runSearch = async (page = 1, mode = 'replace') => { const api = streamApi(); const query = state.query.trim(); if (!state.accepted || !query) { state.result = null; state.loading = false; state.error = null; render(); return; } if (!api?.search) { state.error = copy.noBridge; render(); return; } const requestId = ++state.requestId; state.loading = true; state.error = null; if (mode === 'replace' && document.activeElement !== pageRoot?.querySelector?.('.streaming-search-box input')) render(); try { const next = await api.search({ provider: state.provider, query, mediaTypes: [state.activeTab], page, pageSize }); if (requestId !== state.requestId) return; state.result = mode === 'append' && state.result ? { ...next, tracks: [...(state.result.tracks || []), ...(next.tracks || [])], albums: [...(state.result.albums || []), ...(next.albums || [])], artists: [...(state.result.artists || []), ...(next.artists || [])], playlists: [...(state.result.playlists || []), ...(next.playlists || [])], mvs: [...(state.result.mvs || []), ...(next.mvs || [])] } : next; state.result.page = page; state.input = state.query; if (mode === 'replace') rememberSearch(state.query); } catch (error) { if (requestId === state.requestId) { state.error = error instanceof Error ? error.message : String(error); if (mode === 'replace') state.result = null; } } finally { if (requestId === state.requestId) state.loading = false; persistMemory(); render(); } };
+const runSearch = async (page = 1, mode = 'replace') => { const api = streamApi(); const query = state.query.trim(); if (!state.accepted || !query) { state.result = null; state.loading = false; state.error = null; render(); return; } if (!api?.search) { state.error = copy.noBridge; render(); return; } const requestId = ++state.requestId; state.loading = true; state.error = null; if (mode === 'replace' && document.activeElement !== pageRoot?.querySelector?.('.streaming-search-box input')) render(); try { const next = await api.search({ provider: state.provider, query, mediaTypes: [state.activeTab], page, pageSize }); if (requestId !== state.requestId) return; state.result = mode === 'append' && state.result ? { ...next, tracks: [...(state.result.tracks || []), ...(next.tracks || [])], albums: [...(state.result.albums || []), ...(next.albums || [])], artists: [...(state.result.artists || []), ...(next.artists || [])], playlists: [...(state.result.playlists || []), ...(next.playlists || [])], mvs: [...(state.result.mvs || []), ...(next.mvs || [])] } : next; state.result.page = page; state.input = state.query; if (mode === 'replace') rememberSearch(state.query); if (state.activeTab === 'track') void probeVisibleTrackQualities(state.result?.tracks); } catch (error) { if (requestId === state.requestId) { state.error = error instanceof Error ? error.message : String(error); if (mode === 'replace') state.result = null; } } finally { if (requestId === state.requestId) state.loading = false; persistMemory(); render(); } };
 const handlePlay = async (track) => { const key = trackKey(track); if (state.resolvingTrackKey === key) return; if (track.playable === false) { state.actionError = track.unavailableReason || copy.unavailable; state.actionMessage = null; render(); return; } state.resolvingTrackKey = key; state.actionError = null; state.actionMessage = null; render(); try { const candidates = state.selectedArtistDetail?.topTracks?.some((item) => trackKey(item) === key) ? state.selectedArtistDetail.topTracks : state.selectedAlbumDetail?.tracks?.some((item) => trackKey(item) === key) ? state.selectedAlbumDetail.tracks : state.result?.tracks || []; const playable = candidates.filter((item) => item.playable !== false).map((item) => toLibraryTrack(item)); await playViaQueue(track, { replaceQueueWith: playable.length ? playable : undefined, source: sourceFor(track.provider, `${copy.streaming} / ${track.provider}`), forceNewQueueItem: !playable.length }); state.actionMessage = null; } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/cancel/i.test(message)) {
@@ -571,18 +571,22 @@ const canDownloadTrackToMusic = (track) => track?.playable !== false && track?.u
 /*
  * Download quality selection.
  *
- * Every StreamingTrack that ECHO's bridge returns from search / album /
- * playlist endpoints carries `qualities` — the list of audio qualities the
- * provider reports as actually available for that track (fee flags, account
- * tier, per-song descriptors). Tracks re-read from an imported 歌单 come from
- * the local library and lose that array, so those are probed again through
- * `streaming.getTrack`, which re-fetches fresh provider metadata (cached by
- * ECHO). A probe that fails (network hiccup, rate limit, stale cache) is
- * retried once and then reported as `failed` instead of being silently
- * downgraded to `standard`: the provider's resolve-time fallback chain picks
- * the best quality the account can actually access, and
- * `resolvePlayback({ quality })` reports the codec/bitrate that was really
- * delivered, which we surface in the completion toast.
+ * ECHO's bridge attaches a `qualities` array to every StreamingTrack, but the
+ * providers fill it with hard-coded guesses: NetEase derives 2-3 buckets from
+ * the `fee` flag (VIP tracks lose `lossless` even for VIP accounts, and
+ * `hires` is never reported at all), QQ Music reports a fixed 1-or-3 bucket
+ * list, and nothing carries bitrates or file sizes. That is why users saw
+ * "too few" qualities. The mod now probes the provider's own per-track file
+ * descriptors through the main process (`probeQualities` in main.cjs):
+ * NetEase `v3/song/detail` (batched — the l/m/h/sq/hr file maps), QQ Music
+ * `fcg_play_single_song` (`file.size_*`), and the HQ/SQ hashes KuGou embeds
+ * in its track ids. Each confirmed tier includes the real codec / bitrate /
+ * size, which the pickers display. Only when the rich probe is unavailable
+ * do we fall back to the provider-reported array, and then to
+ * `streaming.getTrack` (retried once; failures offer the full list instead
+ * of silently forcing `standard`). The resolve-time fallback chain and the
+ * delivered codec/bitrate toast are unchanged: a tier the account cannot
+ * access still downgrades gracefully inside `resolvePlayback({ quality })`.
  */
 const qualityRank = { hires: 3, lossless: 2, high: 1, standard: 0 };
 const sortQualities = (list) => [...new Set(Array.isArray(list) ? list : [])].filter((quality) => qualities.includes(quality)).sort((left, right) => (qualityRank[right] ?? 0) - (qualityRank[left] ?? 0));
@@ -591,21 +595,116 @@ const clampQuality = (preferred, available) => available.includes(preferred) ? p
 const configDownloadQuality = qualities.includes(config.defaultDownloadQuality) ? config.defaultDownloadQuality : null;
 const preferredDownloadQuality = () => state.downloadQuality || configDownloadQuality || state.quality;
 const rememberDownloadQuality = (quality) => { if (!qualities.includes(quality) || state.downloadQuality === quality) return; state.downloadQuality = quality; persistMemory(); };
+// Providers the main process can probe for true per-file quality data, and
+// the subset with batchable (or local) probes cheap enough to run eagerly
+// for whole lists. QQ Music needs one request per song, so its rich probe
+// only runs per-track (download panel / playlist dialog workers).
+const richProbeProviders = new Set(['netease', 'qqmusic', 'kugou']);
+const batchProbeProviders = new Set(['netease', 'kugou']);
+const formatProbeSize = (bytes) => {
+  const value = Number(bytes);
+  if (!(value > 0)) return null;
+  return value >= 1073741824 ? `${(value / 1073741824).toFixed(2)}GB` : `${(value / 1048576).toFixed(1)}MB`;
+};
+// "FLAC · 999kbps · 28.4MB" — real per-file facts from the provider probe.
+const qualityDetailText = (detail) => {
+  if (!detail) return '';
+  const parts = [];
+  const codec = String(detail.codec || '').trim();
+  if (codec) parts.push(codec.toUpperCase());
+  const kbps = Number(detail.bitrate) > 0 ? Math.round(Number(detail.bitrate) / 1000) : null;
+  if (kbps) parts.push(`${kbps}kbps`);
+  const size = formatProbeSize(detail.size);
+  if (size) parts.push(size);
+  return parts.join(' · ');
+};
+// Compact labels in the spirit of the platform tier names: 标准 128 /
+// 高音质 320 / 无损 FLAC / Hi-Res. Falls back to the plain bucket name when
+// no probe detail exists.
+const qualityChipText = (quality, detail) => {
+  const base = copy[quality] || quality;
+  if (quality === 'lossless' || quality === 'hires') {
+    const codec = String(detail?.codec || '').trim();
+    return codec ? `${base} ${codec.toUpperCase()}` : base;
+  }
+  const kbps = Number(detail?.bitrate) > 0 ? Math.round(Number(detail.bitrate) / 1000) : null;
+  return kbps ? `${base} ${kbps}` : base;
+};
+const normalizeRichProbe = (entry) => {
+  const details = {};
+  const list = [];
+  for (const tier of Array.isArray(entry?.qualities) ? entry.qualities : []) {
+    const quality = String(tier?.quality || '');
+    if (!qualities.includes(quality) || details[quality]) continue;
+    details[quality] = {
+      codec: typeof tier.codec === 'string' && tier.codec ? tier.codec : null,
+      bitrate: Number(tier.bitrate) > 0 ? Number(tier.bitrate) : null,
+      size: Number(tier.size) > 0 ? Number(tier.size) : null,
+    };
+    list.push(quality);
+  }
+  const sorted = sortQualities(list);
+  return sorted.length ? { qualities: sorted, details, failed: false } : null;
+};
 const qualityProbeCache = new Map();
-// Returns { qualities: string[], failed: boolean, error?: string }. When the
-// probe fails the full quality list is offered so the user still has a
-// choice; the provider falls back to its best deliverable quality on resolve.
+// Resolved probe entry (never an in-flight promise), for synchronous renders.
+const readyProbeEntry = (key) => {
+  const cached = qualityProbeCache.get(key);
+  return cached && typeof cached.then !== 'function' ? cached : null;
+};
+// One main-process call per provider fills the cache for a whole track list
+// (NetEase batches 100 ids per request; KuGou decodes locally). Failures are
+// silent — per-track probes pick up whatever is missing.
+const probeTrackQualitiesBatch = async (tracks, providers = batchProbeProviders) => {
+  const groups = new Map();
+  for (const track of Array.isArray(tracks) ? tracks : []) {
+    if (!providers.has(track?.provider) || !track?.providerTrackId) continue;
+    if (qualityProbeCache.has(trackKey(track))) continue;
+    const group = groups.get(track.provider) || new Map();
+    group.set(String(track.providerTrackId), trackKey(track));
+    groups.set(track.provider, group);
+  }
+  await Promise.all([...groups.entries()].map(async ([provider, group]) => {
+    try {
+      const response = await invokeMain('probeQualities', { provider, providerTrackIds: [...group.keys()] });
+      const results = response?.results && typeof response.results === 'object' ? response.results : {};
+      for (const [providerTrackId, key] of group) {
+        const normalized = normalizeRichProbe(results[providerTrackId]);
+        if (normalized && !qualityProbeCache.has(key)) qualityProbeCache.set(key, normalized);
+      }
+    } catch {}
+  }));
+};
+// Probes list rows right after they render (search / album / artist pages)
+// so the quality column shows provider truth instead of the coarse flags.
+const probeVisibleTrackQualities = async (tracks) => {
+  const pending = (Array.isArray(tracks) ? tracks : []).filter((track) => batchProbeProviders.has(track?.provider) && track?.providerTrackId && !qualityProbeCache.has(trackKey(track)));
+  if (!pending.length) return;
+  try { await probeTrackQualitiesBatch(pending); } catch { return; }
+  if (!disposed) render();
+};
+// Returns { qualities: string[], details?: object, failed: boolean,
+// error?: string }. When the probe fails the full quality list is offered so
+// the user still has a choice; the provider falls back to its best
+// deliverable quality on resolve.
 const probeTrackQualities = async (track) => {
   const key = trackKey(track);
   const cached = qualityProbeCache.get(key);
   if (cached) return cached;
-  const direct = sortQualities(track?.qualities);
-  if (direct.length) {
-    const result = { qualities: direct, failed: false };
-    qualityProbeCache.set(key, result);
-    return result;
-  }
   const work = (async () => {
+    // 1) Rich probe through the main process: the provider's own per-file
+    //    quality descriptors, with codec / bitrate / size.
+    if (richProbeProviders.has(track?.provider) && track?.providerTrackId) {
+      try {
+        const response = await invokeMain('probeQualities', { provider: track.provider, providerTrackIds: [String(track.providerTrackId)] });
+        const normalized = normalizeRichProbe(response?.results?.[String(track.providerTrackId)]);
+        if (normalized) return normalized;
+      } catch {}
+    }
+    // 2) Provider-reported flags from the search / album / playlist payload.
+    const direct = sortQualities(track?.qualities);
+    if (direct.length) return { qualities: direct, failed: false };
+    // 3) Re-fetch fresh provider metadata through ECHO's bridge.
     const stream = streamApi();
     if (!stream?.getTrack || !track?.provider || !track?.providerTrackId) return { qualities: allQualitiesSorted(), failed: true };
     let lastError = null;
@@ -628,6 +727,14 @@ const probeTrackQualities = async (track) => {
   if (result.failed) qualityProbeCache.delete(key);
   else qualityProbeCache.set(key, result);
   return result;
+};
+// Localized quality summary for list rows: prefers probed truth (with real
+// bitrates) over the provider's coarse flags.
+const trackQualitySummary = (track) => {
+  const entry = readyProbeEntry(trackKey(track));
+  const list = entry?.qualities?.length ? entry.qualities : sortQualities(track?.qualities);
+  if (!list.length) return copy.standard;
+  return list.map((quality) => qualityChipText(quality, entry?.details?.[quality])).join(' / ');
 };
 const describeDownloadQuality = (quality, source) => {
   const parts = [copy[quality] || quality];
@@ -733,6 +840,7 @@ const openTrackDownloadPanel = (event, track) => {
   void probeTrackQualities(track).then((probe) => {
     if (!panel.isConnected) return;
     const available = probe.qualities;
+    const details = probe.details || {};
     selected = clampQuality(preferredDownloadQuality(), available);
     body.replaceChildren(make('small', 'echo-streaming-quality-count', probe.failed ? copy.probeFailed : copy.qualityCount(available.length)));
     const options = make('div', 'echo-streaming-quality-options');
@@ -742,7 +850,7 @@ const openTrackDownloadPanel = (event, track) => {
       option.type = 'button';
       option.setAttribute('role', 'radio');
       const label = make('span');
-      label.append(make('strong', '', copy[quality] || quality), make('small', '', copy[`${quality}Description`] || ''));
+      label.append(make('strong', '', qualityChipText(quality, details[quality])), make('small', '', qualityDetailText(details[quality]) || copy[`${quality}Description`] || ''));
       option.append(label, makeIcon('check', 14));
       option.dataset.quality = quality;
       option.dataset.selected = String(quality === selected);
@@ -848,19 +956,78 @@ const listPlaylistStreamingTracks = async (playlistId) => {
   }
   return { tracks, skipped };
 };
+// The NetEase 歌单 id, from the provider playlist object or its web URL.
+const neteasePlaylistIdFor = (playlist) => {
+  if (playlist?.provider === 'netease' && /^\d+$/u.test(String(playlist.providerPlaylistId || '').trim())) return String(playlist.providerPlaylistId).trim();
+  const url = String(playlist?.webUrl || '');
+  const match = /music\.163\.com\/(?:#\/)?(?:m\/)?playlist(?:\/(\d+)|\?[^#]*?\bid=(\d+))/iu.exec(url);
+  return match ? (match[1] || match[2]) : null;
+};
+/*
+ * NetEase 歌单 are enumerated through the mod's own main-process handler
+ * (`neteasePlaylist` in main.cjs): playlist detail + song detail requests
+ * carry the same logged-in account cookie as playback, so 私密歌单 (private
+ * playlists) scan correctly instead of importing zero songs through the
+ * anonymous public bridge. Every row arrives with plain-https cover art and
+ * its true per-file quality tiers, which pre-fill the probe cache so the
+ * download dialog opens fully populated. Returns null when the main bridge
+ * is unavailable so the caller can fall back to the legacy import path.
+ */
+const loadNeteasePlaylistTracksViaMain = async (playlist, fallbackName) => {
+  const playlistId = neteasePlaylistIdFor(playlist);
+  if (!playlistId) return null;
+  let listed = null;
+  try {
+    listed = await invokeMain('neteasePlaylist', { playlistId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/netease_login_required/u.test(message)) throw new Error(copy.neteaseLoginRequired);
+    if (message === copy.mainBridgeUnavailable) return null;
+    throw new Error(message);
+  }
+  const tracks = (Array.isArray(listed?.tracks) ? listed.tracks : []).map((item) => {
+    const providerTrackId = String(item?.providerTrackId || '').trim();
+    if (!providerTrackId) return null;
+    const stableKey = `streaming:netease:${providerTrackId}`;
+    const track = {
+      id: stableKey,
+      mediaType: 'streaming',
+      path: stableKey,
+      provider: 'netease',
+      providerTrackId,
+      stableKey,
+      title: item.title || 'Untitled',
+      artist: item.artist || '',
+      album: item.album || '',
+      albumArtist: item.albumArtist || item.artist || '',
+      duration: Number(item.duration) || 0,
+      coverUrl: item.coverUrl || null,
+      coverThumb: item.coverThumb || item.coverUrl || null,
+      playable: true,
+    };
+    const probe = normalizeRichProbe(item);
+    if (probe) qualityProbeCache.set(trackKey(track), probe);
+    return track;
+  }).filter(Boolean);
+  if (!tracks.length) throw new Error(copy.musicNoDownloadableTracks);
+  return { name: sanitizeFolderName(listed?.name || fallbackName) || 'Playlist', tracks, skipped: 0 };
+};
 // Enumerates the downloadable streaming tracks of a streaming-page 歌单
-// (provider playlist). There is no playlist-detail bridge endpoint, so the
-// playlist is imported first and its items are read back from the library.
-// Tracks flagged unavailable at import time are intentionally kept: the flag
-// is often stale anonymous privilege data (VIP tracks become downloadable
-// once the account is connected) and the resolve step reports a precise
-// per-track error when a track truly cannot be fetched.
+// (provider playlist). NetEase lists go through the authenticated main
+// process (see above); other providers are imported through ECHO's public
+// bridge first and read back from the library. Tracks flagged unavailable at
+// import time are intentionally kept: the flag is often stale anonymous
+// privilege data (VIP tracks become downloadable once the account is
+// connected) and the resolve step reports a precise per-track error when a
+// track truly cannot be fetched.
 const loadPlaylistTracksForDownload = async (playlist) => {
+  const fallbackName = playlist.title || playlist.name || 'Playlist';
+  const viaMain = await loadNeteasePlaylistTracksViaMain(playlist, fallbackName);
+  if (viaMain) return viaMain;
   const stream = streamApi();
   if (!stream?.importPlaylistFromUrl || !stream?.resolvePlayback) throw new Error(copy.noBridge);
   const url = playlist.webUrl || streamingPlaylistWebUrl(playlist);
   if (!url) throw new Error(copy.playlistItemsUnavailable);
-  const fallbackName = playlist.title || playlist.name || 'Playlist';
   const imported = await stream.importPlaylistFromUrl(url);
   const name = sanitizeFolderName(imported?.playlistName || fallbackName) || 'Playlist';
   const listed = await listPlaylistStreamingTracks(imported?.playlistId);
@@ -946,6 +1113,7 @@ const openPlaylistDownloadDialog = (playlist) => {
     name: sanitizeFolderName(playlist.title || playlist.name || 'Playlist') || 'Playlist',
     tracks: [],
     available: new Map(),
+    details: new Map(),
     probeFailed: new Set(),
     choices: new Map(),
     globalQuality: null,
@@ -996,11 +1164,11 @@ const openPlaylistDownloadDialog = (playlist) => {
     updateQueued = true;
     window.setTimeout(() => { updateQueued = false; update(); }, 120);
   };
-  const qualityChip = (quality, active, onPick, disabled = false) => {
-    const chip = make('button', 'echo-streaming-quality-chip', copy[quality] || quality);
+  const qualityChip = (quality, active, onPick, disabled = false, detail = null) => {
+    const chip = make('button', 'echo-streaming-quality-chip', qualityChipText(quality, detail));
     chip.type = 'button';
     chip.dataset.active = String(active);
-    chip.title = copy[`${quality}Description`] || copy[quality] || quality;
+    chip.title = qualityDetailText(detail) || copy[`${quality}Description`] || copy[quality] || quality;
     if (disabled) chip.disabled = true;
     chip.addEventListener('click', (event) => { event.stopPropagation(); onPick(quality); });
     return chip;
@@ -1030,10 +1198,11 @@ const openPlaylistDownloadDialog = (playlist) => {
         chips.append(marker);
       }
       const active = effectiveQuality(track);
+      const details = model.details.get(key) || null;
       available.forEach((quality) => chips.append(qualityChip(quality, quality === active, (picked) => {
         model.choices.set(key, picked);
         update();
-      }, model.stage !== 'select')));
+      }, model.stage !== 'select', details ? details[quality] : null)));
     }
     row.append(chips);
     if (model.stage === 'downloading' || model.stage === 'done') {
@@ -1158,6 +1327,11 @@ const openPlaylistDownloadDialog = (playlist) => {
       model.skipped = loaded.skipped || 0;
       model.stage = 'select';
       update();
+      // One batched main-process probe per provider first (NetEase resolves a
+      // whole 歌单 in 1-2 requests; KuGou needs none); the workers below then
+      // hit the cache instantly and only fall back per-track for the rest.
+      await probeTrackQualitiesBatch(loaded.tracks);
+      if (model.closed) return;
       const queue = [...loaded.tracks];
       await Promise.all(Array.from({ length: 4 }, async () => {
         while (queue.length && !model.closed) {
@@ -1165,6 +1339,7 @@ const openPlaylistDownloadDialog = (playlist) => {
           const probe = await probeTrackQualities(track);
           if (model.closed) return;
           model.available.set(trackKey(track), probe.qualities);
+          if (probe.details) model.details.set(trackKey(track), probe.details);
           if (probe.failed) model.probeFailed.add(trackKey(track));
           else model.probeFailed.delete(trackKey(track));
           model.probeDone += 1;
@@ -1203,8 +1378,8 @@ const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) =>
 const openAccountPlaylistSync = () => { const connected = state.providers.find((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected); state.accountPlaylistProvider = connected?.name || state.accountPlaylistProvider; void loadAccountPlaylists(state.accountPlaylistProvider).catch(reportError); };
 const syncAccountPlaylists = async (items) => { if (!items?.length || Object.keys(state.syncingAccountPlaylistIds).length) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); let ok = 0; let failed = 0; for (const playlist of items) { state.syncingAccountPlaylistIds[playlist.providerPlaylistId] = true; render(); try { await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist)); ok += 1; } catch { failed += 1; } finally { delete state.syncingAccountPlaylistIds[playlist.providerPlaylistId]; } } state.selectedAccountPlaylistIds = {}; await openImportedPlaylist({ playlistId: true }); state.actionMessage = copy.synced(ok, failed); render(); };
 const requestAccountPlaylistSync = (items) => { if (!items?.length) return; if (!state.accepted) { state.pendingAccountSync = items; state.noticeOpen = true; render(); return; } void syncAccountPlaylists(items).catch(reportError); };
-const openAlbum = async (album) => { state.selectedAlbum = album; state.selectedAlbumDetail = null; state.albumError = null; state.albumLoading = true; render(); try { if (!streamApi()?.getAlbum) throw new Error(copy.noBridge); state.selectedAlbumDetail = await streamApi().getAlbum({ provider: album.provider, providerAlbumId: album.providerAlbumId }); } catch (error) { state.albumError = error instanceof Error ? error.message : String(error); } finally { state.albumLoading = false; render(); } };
-const openArtist = async (artist) => { state.selectedArtist = artist; state.selectedArtistDetail = null; state.artistError = null; state.artistLoading = true; render(); try { if (!streamApi()?.getArtist) throw new Error(copy.noBridge); state.selectedArtistDetail = await streamApi().getArtist({ provider: artist.provider, providerArtistId: artist.providerArtistId }); } catch (error) { state.artistError = error instanceof Error ? error.message : String(error); } finally { state.artistLoading = false; render(); } };
+const openAlbum = async (album) => { state.selectedAlbum = album; state.selectedAlbumDetail = null; state.albumError = null; state.albumLoading = true; render(); try { if (!streamApi()?.getAlbum) throw new Error(copy.noBridge); state.selectedAlbumDetail = await streamApi().getAlbum({ provider: album.provider, providerAlbumId: album.providerAlbumId }); void probeVisibleTrackQualities(state.selectedAlbumDetail?.tracks); } catch (error) { state.albumError = error instanceof Error ? error.message : String(error); } finally { state.albumLoading = false; render(); } };
+const openArtist = async (artist) => { state.selectedArtist = artist; state.selectedArtistDetail = null; state.artistError = null; state.artistLoading = true; render(); try { if (!streamApi()?.getArtist) throw new Error(copy.noBridge); state.selectedArtistDetail = await streamApi().getArtist({ provider: artist.provider, providerArtistId: artist.providerArtistId }); void probeVisibleTrackQualities(state.selectedArtistDetail?.topTracks); } catch (error) { state.artistError = error instanceof Error ? error.message : String(error); } finally { state.artistLoading = false; render(); } };
 const handlePlayAlbum = async () => { const detail = state.selectedAlbumDetail; const playable = (detail?.tracks || []).filter((track) => track.playable).map((track) => toLibraryTrack(track)); if (!playable.length) { state.albumError = chinese ? '这张专辑暂时没有可播放的歌曲。' : 'This album has no playable tracks.'; render(); return; } try { state.albumError = null; await playViaQueue(playable[0], { replaceQueueWith: playable, source: sourceFor(detail.provider, `${detail.title} / ${detail.provider}`) }); } catch (error) { state.albumError = error instanceof Error ? error.message : String(error); render(); } };
 const handlePlayArtist = async () => { const detail = state.selectedArtistDetail; const playable = (detail?.topTracks || []).filter((track) => track.playable).map((track) => toLibraryTrack(track)); if (!playable.length) { state.artistError = chinese ? '这个艺人暂时没有可播放的歌曲。' : 'This artist has no playable tracks.'; render(); return; } try { state.artistError = null; await playViaQueue(playable[0], { replaceQueueWith: playable, source: sourceFor(detail.provider, `${artistName(detail)} / ${detail.provider}`) }); } catch (error) { state.artistError = error instanceof Error ? error.message : String(error); render(); } };
 const handleQueueArtist = () => { const detail = state.selectedArtistDetail; const source = sourceFor(detail?.provider || state.provider, `${artistName(detail)} / ${detail?.provider || state.provider}`); (detail?.topTracks || []).filter((track) => track.playable).forEach((track) => appendViaQueue(track, source)); setMessage(copy.queued); };

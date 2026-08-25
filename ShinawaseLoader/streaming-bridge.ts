@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { createRequire } from 'node:module';
 import { IpcChannels } from 'ECHOSTEAM_ROOT/src/shared/constants/ipcChannels';
+import { getAccountService } from 'ECHOSTEAM_ROOT/src/main/accounts/AccountService';
 import { registerAccountIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/accountIpc';
 import { registerDownloadsIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/downloadsIpc';
 import { registerQobuzIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/qobuzIpc';
@@ -32,6 +33,21 @@ export const registerShinawaseStreamingBridge = (): void => {
       try { service.invalidatePlayback(payload as never); } catch {}
     }
     return service.resolvePlayback(payload as never);
+  };
+  // Main-process mods (e.g. the Streaming example's download bridge) need the
+  // same account session ECHO's own providers use — NetEase private 歌单
+  // enumeration, VIP quality probes and cover fetches all require the login
+  // cookie, and the renderer-facing IPC deliberately never exposes it. This
+  // getter reads the decrypted per-provider cookie from AccountService.
+  (globalThis as typeof globalThis & {
+    __shinawaseStreamingAccountCookie?: (provider: unknown) => string | null;
+  }).__shinawaseStreamingAccountCookie = (providerName) => {
+    try {
+      const cookie = getAccountService().getCredentials(String(providerName ?? '').trim() as never).cookie;
+      return typeof cookie === 'string' && cookie.trim() ? cookie.trim() : null;
+    } catch {
+      return null;
+    }
   };
   try {
     require('./playback-shim.cjs').installStreamingPlaybackShim();

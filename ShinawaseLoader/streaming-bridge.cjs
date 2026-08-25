@@ -164711,6 +164711,14 @@ var registerShinawaseStreamingBridge = () => {
     }
     return service.resolvePlayback(payload);
   };
+  globalThis.__shinawaseStreamingAccountCookie = (providerName) => {
+    try {
+      const cookie = getAccountService().getCredentials(String(providerName ?? "").trim()).cookie;
+      return typeof cookie === "string" && cookie.trim() ? cookie.trim() : null;
+    } catch {
+      return null;
+    }
+  };
   try {
     require_playback_shim().installStreamingPlaybackShim();
   } catch {

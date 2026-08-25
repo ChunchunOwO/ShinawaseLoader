@@ -98,6 +98,41 @@ const cleanHeaders = (value) => {
 const headersCarryCredentials = (headers) => Object.keys(headers).some((name) => /^(cookie|authorization)$/iu.test(name));
 
 /*
+ * Account session access.
+ *
+ * ShinawaseLoader's bridge exposes `__shinawaseStreamingAccountCookie`, which
+ * reads the decrypted per-provider login cookie straight from ECHO's
+ * AccountService — the exact same session playback uses. On older bridge
+ * builds without that getter the cookie is captured opportunistically from
+ * `resolveAuthenticatedSource` results (playback resolutions carry the
+ * account cookie in their headers), so any played or downloaded NetEase
+ * track "primes" the session for later playlist scans and cover fetches.
+ */
+const capturedProviderCookies = {};
+
+const streamingAccountCookie = (provider) => {
+  try {
+    const getter = globalThis.__shinawaseStreamingAccountCookie;
+    if (typeof getter === 'function') {
+      const cookie = getter(provider);
+      if (typeof cookie === 'string' && cookie.trim()) return cookie.trim();
+    }
+  } catch {}
+  const captured = capturedProviderCookies[provider];
+  return typeof captured === 'string' && captured ? captured : null;
+};
+
+const captureProviderCookie = (provider, headers) => {
+  if (provider !== 'netease' && provider !== 'qqmusic') return;
+  for (const [name, value] of Object.entries(headers)) {
+    if (/^cookie$/iu.test(name) && typeof value === 'string' && value.trim()) {
+      capturedProviderCookies[provider] = value.trim();
+      return;
+    }
+  }
+};
+
+/*
  * Resolve the playback source inside the main process. ECHO's renderer IPC
  * (`streaming:resolvePlayback`) deliberately strips Cookie / Authorization /
  * token headers before results reach page scripts, so a download started from
@@ -119,6 +154,7 @@ const resolveAuthenticatedSource = async (body) => {
     const url = String(source?.url || '');
     if (!/^https?:\/\//iu.test(url)) return null;
     const headers = cleanHeaders(source.headers);
+    captureProviderCookie(provider, headers);
     return {
       url,
       headers,
@@ -132,13 +168,323 @@ const resolveAuthenticatedSource = async (body) => {
   }
 };
 
-const fetchCoverImage = async (coverUrl) => {
-  const url = String(coverUrl || '').trim();
-  if (!/^https?:\/\//iu.test(url)) return null;
+/*
+ * Provider quality probing.
+ *
+ * ECHO's `StreamingTrack.qualities` arrays are hard-coded guesses: NetEase
+ * maps the `fee` flag to 2-3 buckets (never `hires`, and VIP tracks lose
+ * `lossless` even for VIP accounts), QQ Music reports a fixed 1-or-3 bucket
+ * list, and none of them carry bitrates or file sizes. The real per-file
+ * descriptors are public metadata, so this section asks the providers
+ * directly:
+ *   - NetEase `POST /api/v3/song/detail` (batched, up to 100 ids per call)
+ *     returns `l`/`m`/`h`/`sq`/`hr` objects with the true bitrate + size of
+ *     each encoded file (128/192/320 MP3, FLAC, Hi-Res FLAC).
+ *   - QQ Music `fcg_play_single_song.fcg` (the same endpoint ECHO's own
+ *     resolvePlayback uses) returns `file.size_128mp3/size_320mp3/size_flac`.
+ *     QQ playback mints F000 (standard FLAC) for both lossless and hires, so
+ *     the probe tops out at `lossless` — advertising `hires` would deliver
+ *     the identical file.
+ *   - KuGou track ids already embed the HQ (320) and SQ (FLAC) file hashes
+ *     (`hash.albumId.albumAudioId.hqHash.sqHash`), so those are decoded
+ *     locally with no network call. Ids without the hash parts return
+ *     nothing so the renderer can re-fetch instead of under-reporting.
+ * A tier is only reported when the provider confirms the file exists; the
+ * account-tier fallback still happens inside `resolvePlayback` at download
+ * time exactly as before.
+ */
+const probeParseJson = (raw) => {
+  const trimmed = String(raw ?? '').trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Some QQ endpoints wrap JSON in a jsonp callback even with format=json.
+    return JSON.parse(trimmed.replace(/^[^(]*\((.*)\);?$/su, '$1'));
+  }
+};
+
+const probeFetchJson = async (url, init = {}) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.ok) throw new Error(`probe_http_${response.status}`);
+    return probeParseJson(await response.text());
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const chunkList = (list, size) => {
+  const chunks = [];
+  for (let index = 0; index < list.length; index += size) chunks.push(list.slice(index, index + size));
+  return chunks;
+};
+
+const neteaseTier = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  const bitrate = Number(value.br) > 0 ? Number(value.br) : null;
+  const size = Number(value.size) > 0 ? Number(value.size) : null;
+  return bitrate || size ? { bitrate, size } : null;
+};
+
+// The standard NetEase web-API header set, with the logged-in account cookie
+// attached when one is available (bridge getter or captured from playback).
+const neteaseApiHeaders = (cookie = streamingAccountCookie('netease')) => ({
+  'User-Agent': defaultUserAgent,
+  Referer: 'https://music.163.com/',
+  Origin: 'https://music.163.com',
+  ...(cookie ? { Cookie: cookie } : {}),
+});
+
+// Batched `POST /api/v3/song/detail` (up to 100 ids per call), sent through
+// the authenticated session so VIP tracks report their true file maps and
+// private-playlist songs resolve at all. Returns a Map keyed by song id;
+// failed chunks are skipped so one bad batch cannot sink a whole 歌单.
+const fetchNeteaseSongDetails = async (ids) => {
+  const songsById = new Map();
+  for (const chunk of chunkList(ids, 100)) {
+    let data;
+    try {
+      data = await probeFetchJson('https://music.163.com/api/v3/song/detail', {
+        method: 'POST',
+        headers: { ...neteaseApiHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          c: JSON.stringify(chunk.map((id) => ({ id: /^\d+$/u.test(id) ? Number(id) : id }))),
+        }).toString(),
+      });
+    } catch {
+      continue;
+    }
+    for (const song of Array.isArray(data?.songs) ? data.songs : []) {
+      const id = song && song.id != null ? String(song.id) : '';
+      if (id && !songsById.has(id)) songsById.set(id, song);
+    }
+  }
+  return songsById;
+};
+
+const neteaseQualityTiers = (song) => {
+  const tiers = [];
+  const hires = neteaseTier(song.hr);
+  const losslessTier = neteaseTier(song.sq);
+  // `h` = 320kbps, `m` = 192kbps, `l` = 128kbps; the `high` request tries
+  // exhigh(320) then higher(192), so `m` backs the high bucket when the
+  // 320 encode is missing.
+  const high = neteaseTier(song.h) || neteaseTier(song.m);
+  const standard = neteaseTier(song.l) || neteaseTier(song.m);
+  if (hires) tiers.push({ quality: 'hires', codec: 'flac', ...hires });
+  if (losslessTier) tiers.push({ quality: 'lossless', codec: 'flac', ...losslessTier });
+  if (high) tiers.push({ quality: 'high', codec: 'mp3', ...high });
+  if (standard) tiers.push({ quality: 'standard', codec: 'mp3', ...standard });
+  return tiers;
+};
+
+const probeNeteaseQualities = async (ids) => {
+  const results = {};
+  for (const [id, song] of await fetchNeteaseSongDetails(ids)) {
+    const tiers = neteaseQualityTiers(song);
+    if (tiers.length) results[id] = { qualities: tiers };
+  }
+  return results;
+};
+
+// Plain https NetEase artwork URL with the CDN resize suffix; unlike ECHO's
+// own `echo-image://` proxy wrapper these fetch fine from the main process.
+const neteaseImageUrl = (value, size) => {
+  const raw = String(value ?? '').trim();
+  if (!/^https?:\/\//iu.test(raw)) return null;
+  const url = raw.replace(/^http:\/\//iu, 'https://');
+  return `${url}${url.includes('?') ? '&' : '?'}param=${size}y${size}`;
+};
+
+const mapNeteasePlaylistSong = (song) => {
+  if (!song || typeof song !== 'object') return null;
+  const id = song.id != null ? String(song.id) : '';
+  if (!id) return null;
+  const album = (song.al && typeof song.al === 'object' ? song.al : song.album) || {};
+  const artists = Array.isArray(song.ar) ? song.ar : Array.isArray(song.artists) ? song.artists : [];
+  const artist = artists.map((item) => String(item?.name || '').trim()).filter(Boolean).join(' / ');
+  const durationMs = Number(song.dt ?? song.duration) || 0;
+  const cover = album.picUrl ?? album.blurPicUrl ?? null;
+  return {
+    providerTrackId: id,
+    title: String(song.name || '').trim() || `NetEase ${id}`,
+    artist,
+    album: String(album.name || '').trim(),
+    albumArtist: artist,
+    duration: durationMs > 0 ? durationMs / 1000 : 0,
+    coverUrl: neteaseImageUrl(cover, 800),
+    coverThumb: neteaseImageUrl(cover, 300),
+    qualities: neteaseQualityTiers(song),
+  };
+};
+
+/*
+ * Authenticated NetEase 歌单 enumeration.
+ *
+ * The renderer used to import a playlist through ECHO's public
+ * `importPlaylistFromUrl` and read the items back from the library — an
+ * anonymous flow that returns nothing for 私密歌单 (private playlists are
+ * invisible without the owner's session, so the import "scans" zero songs).
+ * This lists tracks the way ECHO's own NeteaseStreamingProvider.getPlaylist
+ * does: `GET /api/v6/playlist/detail` with the account cookie for the full
+ * `trackIds` list, then batched `v3/song/detail` (also with the cookie) for
+ * titles, artists, durations, artwork and real per-file quality tiers.
+ */
+const listNeteasePlaylistTracks = async (playlistId) => {
+  const cookie = streamingAccountCookie('netease');
+  const params = new URLSearchParams({ id: playlistId, n: '100000' });
+  const data = await probeFetchJson(`https://music.163.com/api/v6/playlist/detail?${params.toString()}`, {
+    headers: neteaseApiHeaders(cookie),
+  });
+  const playlist = data && typeof data === 'object' && data.playlist && typeof data.playlist === 'object'
+    ? data.playlist
+    : data && typeof data === 'object' && data.result && typeof data.result === 'object' ? data.result : null;
+  const code = Number(data?.code);
+  if (!playlist) {
+    // Anonymous sessions cannot see private playlists at all: NetEase answers
+    // with a non-200 code and no playlist object. Tell the renderer to ask
+    // for a login instead of pretending the 歌单 is empty.
+    if (!cookie) throw new Error('netease_login_required');
+    throw new Error(String(data?.message || data?.msg || `netease_playlist_${Number.isFinite(code) ? code : 'unavailable'}`));
+  }
+  const trackIds = (Array.isArray(playlist.trackIds) ? playlist.trackIds : [])
+    .map((item) => (item && typeof item === 'object' ? item.id : item))
+    .map((id) => (id == null ? '' : String(id).trim()))
+    .filter((id) => /^\d+$/u.test(id));
+  const embedded = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  let tracks = [];
+  if (trackIds.length) {
+    const songs = await fetchNeteaseSongDetails(trackIds);
+    tracks = trackIds.map((id) => mapNeteasePlaylistSong(songs.get(id))).filter(Boolean);
+  }
+  if (!tracks.length && embedded.length) tracks = embedded.map(mapNeteasePlaylistSong).filter(Boolean);
+  return {
+    id: playlistId,
+    name: String(playlist.name || '').trim() || null,
+    trackCount: Number(playlist.trackCount) > 0 ? Number(playlist.trackCount) : tracks.length,
+    privacy: Number(playlist.privacy) || 0,
+    authenticated: Boolean(cookie),
+    tracks,
+  };
+};
+
+const qqSongWrapperKeys = ['songinfo', 'songInfo', 'track_info', 'trackinfo', 'trackInfo', 'data'];
+const unwrapQqSong = (value) => {
+  let record = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (let index = 0; index < 5; index += 1) {
+    const nested = qqSongWrapperKeys
+      .map((key) => record[key])
+      .find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate) && Object.keys(candidate).length > 0);
+    if (!nested) break;
+    record = { ...record, ...nested };
+  }
+  return record;
+};
+
+const probeQqTrack = async (providerTrackId) => {
+  const variants = [
+    { key: 'songmid', value: providerTrackId },
+    ...(/^\d+$/u.test(providerTrackId) ? [{ key: 'songid', value: providerTrackId }] : []),
+  ];
+  for (const variant of variants) {
+    const params = new URLSearchParams({ tpl: 'yqq_song_detail', format: 'json' });
+    params.set(variant.key, variant.value);
+    let data;
+    try {
+      data = await probeFetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?${params.toString()}`, {
+        headers: { 'User-Agent': defaultUserAgent, Referer: 'https://y.qq.com/', Origin: 'https://y.qq.com' },
+      });
+    } catch {
+      continue;
+    }
+    const song = unwrapQqSong(Array.isArray(data?.data) ? data.data[0] : null);
+    if (!Object.keys(song).length) continue;
+    const file = song.file && typeof song.file === 'object' ? song.file : {};
+    const size = (key) => (Number(file[key]) > 0 ? Number(file[key]) : null);
+    const tiers = [];
+    const losslessSize = size('size_flac') ?? size('size_ape');
+    if (losslessSize) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: losslessSize });
+    const highSize = size('size_320mp3');
+    if (highSize) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: highSize });
+    const standardSize = size('size_128mp3');
+    if (standardSize) {
+      tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: standardSize });
+    } else {
+      const aacSize = size('size_96aac') ?? size('size_48aac');
+      if (aacSize) tiers.push({ quality: 'standard', codec: 'aac', bitrate: null, size: aacSize });
+    }
+    return tiers.length ? { qualities: tiers } : null;
+  }
+  return null;
+};
+
+const probeQqQualities = async (ids) => {
+  const results = {};
+  const queue = [...ids];
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      const entry = await probeQqTrack(id).catch(() => null);
+      if (entry) results[id] = entry;
+    }
+  }));
+  return results;
+};
+
+const probeKugouQualities = (ids) => {
+  const results = {};
+  for (const id of ids) {
+    const [hash, , , hqHash, sqHash] = String(id).split('.');
+    if (!/^[a-f0-9]{16,64}$/iu.test(hash || '')) continue;
+    const hq = hqHash && hqHash !== '0' ? hqHash : null;
+    const sq = sqHash && sqHash !== '0' ? sqHash : null;
+    if (!hq && !sq) continue;
+    const tiers = [];
+    if (sq) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: null });
+    if (hq) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: null });
+    tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: null });
+    results[id] = { qualities: tiers };
+  }
+  return results;
+};
+
+/*
+ * Cover download.
+ *
+ * ECHO's chinese providers wrap every artwork URL in
+ * `echo-image://remote/<encoded-url>?referer=<encoded-referer>` — a custom
+ * Electron protocol only ECHO's renderer can resolve. That is the reason
+ * downloaded NetEase songs had no embedded cover: the old fetch required a
+ * plain http(s) URL, so it silently returned null for every proxied cover.
+ * The wrapper is unwrapped here, the recorded Referer plus the standard
+ * provider headers (and, on NetEase image hosts, the account cookie) are
+ * attached, and a failed fetch retries once without the `?param=WxH` resize
+ * suffix that some NetEase CDN nodes reject.
+ */
+const decodeEchoImageUrl = (value) => {
+  const match = /^echo-image:\/\/remote\/([^?]+)(?:\?(.*))?$/iu.exec(String(value || '').trim());
+  if (!match) return null;
+  try {
+    const url = decodeURIComponent(match[1]);
+    if (!/^https?:\/\//iu.test(url)) return null;
+    const referer = new URLSearchParams(match[2] || '').get('referer');
+    return { url, referer: referer && /^https?:\/\//iu.test(referer) ? referer : null };
+  } catch {
+    return null;
+  }
+};
+
+const urlHost = (url) => {
+  try { return new URL(url).hostname.toLowerCase(); } catch { return ''; }
+};
+
+const fetchImageOnce = async (url, headers) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(url, { headers: { 'User-Agent': defaultUserAgent }, signal: controller.signal });
+    const response = await fetch(url, { headers, signal: controller.signal });
     if (!response.ok) return null;
     const data = Buffer.from(await response.arrayBuffer());
     if (!data.length || data.length > maxCoverBytes) return null;
@@ -151,6 +497,29 @@ const fetchCoverImage = async (coverUrl) => {
     return null;
   } finally {
     clearTimeout(timer);
+  }
+};
+
+const fetchCoverImage = async (coverUrl) => {
+  const decoded = decodeEchoImageUrl(coverUrl);
+  const url = decoded ? decoded.url : String(coverUrl || '').trim();
+  if (!/^https?:\/\//iu.test(url)) return null;
+  const headers = { 'User-Agent': defaultUserAgent };
+  if (decoded?.referer) headers.Referer = decoded.referer;
+  applyProviderHeaders(headers, url, '');
+  if (/(^|\.)music\.1(26|63)\.(net|com)$|(^|\.)126\.net$/u.test(urlHost(url))) {
+    const cookie = streamingAccountCookie('netease');
+    if (cookie && !hasHeader(headers, 'Cookie')) headers.Cookie = cookie;
+  }
+  const first = await fetchImageOnce(url, headers);
+  if (first) return first;
+  try {
+    const stripped = new URL(url);
+    if (!stripped.searchParams.has('param')) return null;
+    stripped.searchParams.delete('param');
+    return await fetchImageOnce(stripped.toString(), headers);
+  } catch {
+    return null;
   }
 };
 
@@ -177,6 +546,38 @@ const activate = (host) => {
     directory: streamDirectory(payload?.subfolder ?? null),
     mainResolveAvailable: typeof globalThis.__shinawaseResolveStreamingPlayback === 'function',
   }));
+
+  // Authenticated 歌单 scan (see listNeteasePlaylistTracks). Errors come back
+  // as `ok: false` so the renderer can map `netease_login_required` to a
+  // localized "please sign in to NetEase first" message.
+  host.handle('neteasePlaylist', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const playlistId = String(body.playlistId || '').trim();
+    if (!/^\d+$/u.test(playlistId)) return { ok: false, error: 'invalid_playlist_id' };
+    try {
+      const playlist = await listNeteasePlaylistTracks(playlistId);
+      try { host.log('INFO', `netease playlist ${playlistId}: ${playlist.tracks.length} tracks (auth=${playlist.authenticated}, privacy=${playlist.privacy})`); } catch {}
+      return { ok: true, ...playlist };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  host.handle('probeQualities', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const provider = String(body.provider || '').trim();
+    const ids = [...new Set(
+      (Array.isArray(body.providerTrackIds) ? body.providerTrackIds : [])
+        .map((id) => String(id ?? '').trim())
+        .filter(Boolean),
+    )].slice(0, 1000);
+    if (!ids.length) return { ok: true, provider, results: {} };
+    const results = provider === 'netease' ? await probeNeteaseQualities(ids)
+      : provider === 'qqmusic' ? await probeQqQualities(ids)
+      : provider === 'kugou' ? probeKugouQualities(ids)
+      : {};
+    return { ok: true, provider, results };
+  });
 
   host.handle('downloadToMusic', async (payload) => {
     const body = payload && typeof payload === 'object' ? payload : {};
@@ -237,7 +638,14 @@ const activate = (host) => {
     // Tag the saved file. Failures here never fail the download itself.
     let tagged = false;
     try {
-      const cover = await fetchCoverImage(body.coverUrl);
+      let cover = await fetchCoverImage(body.coverUrl);
+      if (!cover && String(body.provider || '') === 'netease' && /^\d+$/u.test(String(body.providerTrackId || '').trim())) {
+        // Playlist rows read back from ECHO's library often carry no cover at
+        // all; look the album art up through the authenticated song detail.
+        const songs = await fetchNeteaseSongDetails([String(body.providerTrackId).trim()]).catch(() => new Map());
+        const mapped = mapNeteasePlaylistSong(songs.values().next().value);
+        if (mapped?.coverUrl) cover = await fetchCoverImage(mapped.coverUrl);
+      }
       const result = await writeAudioTags(targetPath, extension, {
         title: String(body.title || '').trim() || null,
         artist: String(body.artist || '').trim() || null,
