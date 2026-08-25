@@ -187,7 +187,7 @@ const download = root.querySelector('[data-sec="download"]');
 download.append(field('defaultDownloadQuality', select('defaultDownloadQuality', downloadQualities),
   t('下载弹窗中预选的音质。“跟随播放音质”使用页面右上角的播放音质；每首歌只会显示它实际可用的音质，最近一次手动选择的音质会被记住。', 'Preselected quality in the download pickers. "Follow playback quality" mirrors the page quality selector; each song only lists the qualities it actually offers, and the last quality you pick is remembered.')));
 download.append(field('musicFolder', textInput('musicFolder', t('留空使用系统音乐文件夹', 'Empty = system Music folder')),
-  t('右键下载的保存位置。歌曲保存到 <文件夹>/Stream，歌单保存到 <文件夹>/Stream/<歌单名>。留空使用系统音乐文件夹。', 'Where right-click downloads are saved. Tracks go to <folder>/Stream and playlists to <folder>/Stream/<playlist>. Empty uses the system Music folder.')));
+  t('右键下载的保存位置。歌曲保存到 <文件夹>/Stream，歌单 / 专辑 / 热门歌曲保存到 <文件夹>/Stream/<名称>。留空使用系统音乐文件夹。', 'Where right-click downloads are saved. Tracks go to <folder>/Stream; playlists, albums, and artist top tracks go to <folder>/Stream/<name>. Empty uses the system Music folder.')));
 
 echoConfigUi.onSave(() => ({
   ...(config && typeof config === 'object' ? config : {}),

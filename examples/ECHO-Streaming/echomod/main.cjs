@@ -494,38 +494,251 @@ const unwrapQqSong = (value) => {
   return record;
 };
 
+const qqCookieValue = (cookie, ...names) => {
+  if (!cookie) return null;
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const match = cookie.match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]*)`, 'iu'));
+    if (!match) continue;
+    try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+  }
+  return null;
+};
+
+const qqUinFromCookie = (cookie) => {
+  const value = qqCookieValue(cookie, 'uin', 'qqmusic_uin', 'p_uin', 'pt2gguin', 'loginUin', 'wxuin');
+  const match = value?.match(/o?(\d+)/iu);
+  return match?.[1] || '0';
+};
+
+const qqApiHeaders = (cookie = streamingAccountCookie('qqmusic')) => ({
+  'User-Agent': defaultUserAgent,
+  Referer: 'https://y.qq.com/',
+  Origin: 'https://y.qq.com',
+  ...(cookie ? { Cookie: cookie } : {}),
+});
+
+const qqAlbumCoverUrl = (albumMid, size) => (
+  albumMid ? `https://y.gtimg.cn/music/photo_new/T002R${size}x${size}M000${albumMid}.jpg` : null
+);
+
+const qqTiersFromFile = (file) => {
+  const record = file && typeof file === 'object' ? file : {};
+  const size = (key) => (Number(record[key]) > 0 ? Number(record[key]) : null);
+  const tiers = [];
+  const losslessSize = size('size_flac') ?? size('size_ape');
+  if (losslessSize) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: losslessSize });
+  const highSize = size('size_320mp3');
+  if (highSize) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: highSize });
+  const standardSize = size('size_128mp3');
+  if (standardSize) {
+    tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: standardSize });
+  } else {
+    const aacSize = size('size_96aac') ?? size('size_48aac');
+    if (aacSize) tiers.push({ quality: 'standard', codec: 'aac', bitrate: null, size: aacSize });
+  }
+  return tiers;
+};
+
+const firstQqText = (record, keys) => {
+  if (!record || typeof record !== 'object') return '';
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const mapQqPlaylistSong = (songValue) => {
+  const song = unwrapQqSong(songValue);
+  if (!Object.keys(song).length) return null;
+  const album = song.album && typeof song.album === 'object' ? song.album : {};
+  const file = song.file && typeof song.file === 'object' ? song.file : {};
+  const singers = Array.isArray(song.singer) ? song.singer : Array.isArray(song.singers) ? song.singers : [];
+  const artist = singers.map((item) => String(item?.name || item?.singerName || '').trim()).filter(Boolean).join(' / ')
+    || firstQqText(song, ['singername', 'singerName', 'artist']);
+  const mid = firstQqText(song, ['mid', 'songmid', 'songMid', 'songMID', 'song_mid', 'strMediaMid', 'mediaMid'])
+    || firstQqText(file, ['media_mid', 'mediaMid', 'strMediaMid'])
+    || firstQqText(song, ['id', 'songid', 'songId']);
+  if (!mid) return null;
+  const albumMid = firstQqText(album, ['mid', 'pmid', 'albumMID', 'albumMid'])
+    || firstQqText(song, ['albummid', 'album_mid', 'albumMID']);
+  const durationSec = Number(song.interval ?? song.duration) || 0;
+  return {
+    providerTrackId: mid,
+    title: firstQqText(song, ['name', 'title', 'songname', 'songName']) || `QQ ${mid}`,
+    artist,
+    album: firstQqText(album, ['name', 'title', 'albumName', 'albumname'])
+      || firstQqText(song, ['albumname', 'albumtitle']) || '',
+    albumArtist: artist,
+    duration: durationSec > 0 ? durationSec : 0,
+    coverUrl: qqAlbumCoverUrl(albumMid, 800),
+    coverThumb: qqAlbumCoverUrl(albumMid, 300),
+    qualities: qqTiersFromFile(file),
+  };
+};
+
+const qqPlaylistCdFromData = (data, playlistId) => {
+  const legacy = Array.isArray(data?.cdlist) ? data.cdlist[0] : null;
+  if (legacy && typeof legacy === 'object' && Object.keys(legacy).length) return legacy;
+  const payload = data?.req_1 && typeof data.req_1 === 'object' && data.req_1.data && typeof data.req_1.data === 'object'
+    ? data.req_1.data : null;
+  if (!payload || typeof payload !== 'object') return null;
+  const info = (payload.dirinfo && typeof payload.dirinfo === 'object' ? payload.dirinfo : null)
+    || (payload.dirInfo && typeof payload.dirInfo === 'object' ? payload.dirInfo : null)
+    || (payload.info && typeof payload.info === 'object' ? payload.info : payload);
+  const songlist = Array.isArray(payload.songlist) ? payload.songlist
+    : Array.isArray(payload.songList) ? payload.songList : [];
+  return {
+    ...info,
+    disstid: info.disstid ?? info.dissid ?? playlistId,
+    dissname: info.dissname ?? info.title ?? info.name,
+    logo: info.logo ?? info.picurl ?? info.cover ?? info.coverUrl,
+    songlist,
+    total_song_num: Number(payload.total_song_num ?? payload.songnum ?? info.total_song_num ?? info.songnum) || songlist.length,
+  };
+};
+
+const fetchQqPlaylistPage = async (playlistId, begin, pageSize) => {
+  const cookie = streamingAccountCookie('qqmusic');
+  const headers = qqApiHeaders(cookie);
+  const params = new URLSearchParams({
+    type: '1',
+    json: '1',
+    utf8: '1',
+    onlysong: '0',
+    disstid: playlistId,
+    format: 'json',
+    g_tk: '5381',
+    loginUin: qqUinFromCookie(cookie),
+    hostUin: '0',
+    inCharset: 'utf8',
+    outCharset: 'utf-8',
+    notice: '0',
+    platform: 'yqq',
+    needNewCode: '0',
+    song_begin: String(begin),
+    song_num: String(pageSize),
+  });
+  const url = `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${params.toString()}`;
+  let data;
+  try {
+    data = await probeFetchJson(url, { headers });
+  } catch {
+    data = null;
+  }
+  const invalidReferer = (value) => /invalid referer/iu.test(String(value?.message || value?.msg || ''));
+  if (!data || invalidReferer(data)) {
+    try {
+      data = await probeFetchJson(url, { headers: { ...headers, Referer: 'https://c.y.qq.com/' } });
+    } catch {
+      data = null;
+    }
+  }
+  if (!data || invalidReferer(data) || !qqPlaylistCdFromData(data, playlistId)) {
+    data = await probeFetchJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comm: { ct: 24, cv: 0 },
+        req_1: {
+          module: 'music.srfDissInfo.aiDissInfo',
+          method: 'uniform_get_Dissinfo',
+          param: {
+            disstid: /^\d+$/u.test(playlistId) ? Number(playlistId) : playlistId,
+            dirid: 0,
+            song_begin: begin,
+            song_num: pageSize,
+            onlysong: 0,
+            enc_host_uin: '',
+            tag: 1,
+            userinfo: 1,
+          },
+        },
+      }),
+    });
+  }
+  return qqPlaylistCdFromData(data, playlistId);
+};
+
+/*
+ * Authenticated QQ 歌单 enumeration.
+ *
+ * Same shape as the NetEase path: ECHO's public importPlaylistFromUrl is
+ * anonymous and drops private / account-only lists. This mirrors
+ * QQMusicStreamingProvider.getPlaylist — legacy qzone cdinfo first, then the
+ * modern musicu Dissinfo call — both carrying the same cookie lookup as
+ * playback (bridge getter -> accounts.json -> captured playback).
+ */
+const listQqPlaylistTracks = async (playlistId) => {
+  const session = streamingAccountSession('qqmusic');
+  const cookie = session.cookie;
+  const pageSize = 100;
+  const tracks = [];
+  let name = null;
+  let total = 0;
+  for (let begin = 0, page = 0; page < 50; page += 1, begin += pageSize) {
+    let cd;
+    try {
+      cd = await fetchQqPlaylistPage(playlistId, begin, pageSize);
+    } catch {
+      cd = null;
+    }
+    if (!cd) {
+      if (!tracks.length && !cookie) {
+        logMod('WARN', `qq playlist ${playlistId}: no account cookie (${session.detail || 'no session'})`);
+        throw new Error('qq_login_required');
+      }
+      if (!tracks.length) throw new Error('qq_playlist_unavailable');
+      break;
+    }
+    name = name || String(cd.dissname || '').trim() || null;
+    const songlist = Array.isArray(cd.songlist) ? cd.songlist : [];
+    total = Number(cd.total_song_num ?? cd.songnum) > 0 ? Number(cd.total_song_num ?? cd.songnum) : Math.max(total, tracks.length + songlist.length);
+    for (const song of songlist) {
+      const mapped = mapQqPlaylistSong(song);
+      if (mapped) tracks.push(mapped);
+    }
+    if (!songlist.length || tracks.length >= total || songlist.length < pageSize) break;
+  }
+  if (!tracks.length) {
+    if (!cookie) {
+      logMod('WARN', `qq playlist ${playlistId}: empty list and no account cookie (${session.detail || 'no session'})`);
+      throw new Error('qq_login_required');
+    }
+    throw new Error('qq_playlist_empty');
+  }
+  return {
+    id: playlistId,
+    name,
+    trackCount: total || tracks.length,
+    authenticated: Boolean(cookie),
+    tracks,
+  };
+};
+
 const probeQqTrack = async (providerTrackId) => {
   const variants = [
     { key: 'songmid', value: providerTrackId },
     ...(/^\d+$/u.test(providerTrackId) ? [{ key: 'songid', value: providerTrackId }] : []),
   ];
+  const headers = qqApiHeaders();
   for (const variant of variants) {
     const params = new URLSearchParams({ tpl: 'yqq_song_detail', format: 'json' });
     params.set(variant.key, variant.value);
     let data;
     try {
       data = await probeFetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?${params.toString()}`, {
-        headers: { 'User-Agent': defaultUserAgent, Referer: 'https://y.qq.com/', Origin: 'https://y.qq.com' },
+        headers,
       });
     } catch {
       continue;
     }
     const song = unwrapQqSong(Array.isArray(data?.data) ? data.data[0] : null);
     if (!Object.keys(song).length) continue;
-    const file = song.file && typeof song.file === 'object' ? song.file : {};
-    const size = (key) => (Number(file[key]) > 0 ? Number(file[key]) : null);
-    const tiers = [];
-    const losslessSize = size('size_flac') ?? size('size_ape');
-    if (losslessSize) tiers.push({ quality: 'lossless', codec: 'flac', bitrate: null, size: losslessSize });
-    const highSize = size('size_320mp3');
-    if (highSize) tiers.push({ quality: 'high', codec: 'mp3', bitrate: 320000, size: highSize });
-    const standardSize = size('size_128mp3');
-    if (standardSize) {
-      tiers.push({ quality: 'standard', codec: 'mp3', bitrate: 128000, size: standardSize });
-    } else {
-      const aacSize = size('size_96aac') ?? size('size_48aac');
-      if (aacSize) tiers.push({ quality: 'standard', codec: 'aac', bitrate: null, size: aacSize });
-    }
+    const tiers = qqTiersFromFile(song.file);
     return tiers.length ? { qualities: tiers } : null;
   }
   return null;
@@ -676,6 +889,19 @@ const activate = (host) => {
     }
   });
 
+  host.handle('qqPlaylist', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const playlistId = String(body.playlistId || '').trim();
+    if (!playlistId) return { ok: false, error: 'invalid_playlist_id' };
+    try {
+      const playlist = await listQqPlaylistTracks(playlistId);
+      try { host.log('INFO', `qq playlist ${playlistId}: ${playlist.tracks.length} tracks (auth=${playlist.authenticated})`); } catch {}
+      return { ok: true, ...playlist };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   host.handle('probeQualities', async (payload) => {
     const body = payload && typeof payload === 'object' ? payload : {};
     const provider = String(body.provider || '').trim();
@@ -771,6 +997,16 @@ const activate = (host) => {
         const songs = await fetchNeteaseSongDetails([String(body.providerTrackId).trim()]).catch(() => new Map());
         const mapped = mapNeteasePlaylistSong(songs.values().next().value);
         if (mapped?.coverUrl) cover = await fetchCoverImage(mapped.coverUrl);
+      }
+      if (!cover && String(body.provider || '') === 'qqmusic' && String(body.providerTrackId || '').trim()) {
+        try {
+          const params = new URLSearchParams({ tpl: 'yqq_song_detail', format: 'json', songmid: String(body.providerTrackId).trim() });
+          const data = await probeFetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?${params.toString()}`, {
+            headers: qqApiHeaders(),
+          });
+          const mapped = mapQqPlaylistSong(Array.isArray(data?.data) ? data.data[0] : data);
+          if (mapped?.coverUrl) cover = await fetchCoverImage(mapped.coverUrl);
+        } catch {}
       }
       const result = await writeAudioTags(targetPath, extension, {
         title: String(body.title || '').trim() || null,

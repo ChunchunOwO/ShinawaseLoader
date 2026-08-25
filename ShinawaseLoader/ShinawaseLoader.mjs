@@ -77,7 +77,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.6.3';
+const loaderVersion = '1.6.4';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
 const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));
@@ -1469,7 +1469,7 @@ const injectEnabled = async () => {
       const targetState = probe?.result?.value;
       if (targetState?.ready !== true) continue;
       lastCycleReadyCount += 1;
-      const uiReloaded = targetState.uiVersion < 21;
+      const uiReloaded = targetState.uiVersion < 22;
       if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
       if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
       if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));

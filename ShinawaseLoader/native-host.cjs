@@ -275,6 +275,7 @@ const loadHostDll = (record, spec) => {
 };
 
 const activatePackage = async (record) => {
+  await deactivatePackage(record.id);
   const native = record.manifest.native && typeof record.manifest.native === 'object' ? record.manifest.native : {};
   const mainEntry = record.manifest.main || native.main;
   const modules = Array.isArray(native.modules) ? native.modules : (native.entry ? [{ kind: native.kind || 'host-dll', entry: native.entry, export: native.export, invoke: native.invoke }] : []);
@@ -312,7 +313,7 @@ const deactivatePackage = async (id) => {
   packages.delete(id);
 };
 
-const reloadPackages = async () => {
+const reloadPackagesUnsafe = async () => {
   for (const id of [...packages.keys()]) await deactivatePackage(id);
   overlays.clear();
   if (!nativeEnabled) return { enabled: false, packages: [] };
@@ -333,6 +334,13 @@ const reloadPackages = async () => {
     packages: [...packages.keys()],
     errors,
   };
+};
+
+let reloadChain = Promise.resolve();
+const reloadPackages = () => {
+  const run = reloadChain.then(reloadPackagesUnsafe, reloadPackagesUnsafe);
+  reloadChain = run.then(() => undefined, () => undefined);
+  return run;
 };
 
 const nativeModules = () => {
