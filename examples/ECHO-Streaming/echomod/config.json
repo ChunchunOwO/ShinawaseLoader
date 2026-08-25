@@ -2,6 +2,7 @@
   "locale": "zh-CN",
   "defaultProvider": "netease",
   "defaultQuality": "lossless",
+  "defaultDownloadQuality": "auto",
   "pageSize": 30,
   "hideUnavailable": false,
   "showDisabledProviders": true,

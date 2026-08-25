@@ -647,3 +647,419 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Single-song download quality picker (body-mounted cursor panel). */
+.echo-streaming-quality-panel {
+  min-width: 288px;
+  max-width: 360px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.echo-streaming-quality-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 0;
+}
+
+.echo-streaming-quality-panel-header > svg {
+  flex: none;
+  opacity: 0.72;
+}
+
+.echo-streaming-quality-panel-header span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.echo-streaming-quality-panel-header strong {
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.echo-streaming-quality-panel-header small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-quality-panel-body {
+  display: grid;
+  gap: 6px;
+}
+
+.echo-streaming-quality-probing {
+  padding: 12px 6px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 12px;
+  text-align: center;
+}
+
+.echo-streaming-quality-count {
+  padding: 0 4px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+}
+
+.echo-streaming-quality-options {
+  display: grid;
+  gap: 2px;
+}
+
+.echo-streaming-quality-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.echo-streaming-quality-option:hover,
+.echo-streaming-quality-option:focus-visible {
+  background: var(--theme-list-row-bg-hover, var(--theme-hover-bg, rgba(0, 0, 0, 0.06)));
+}
+
+.echo-streaming-quality-option > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.echo-streaming-quality-option strong {
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.echo-streaming-quality-option small {
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+}
+
+.echo-streaming-quality-option > svg {
+  flex: none;
+  opacity: 0;
+}
+
+.echo-streaming-quality-option[data-selected="true"] {
+  border-color: var(--theme-accent-solid-bg, var(--theme-accent, rgba(75, 85, 232, 0.6)));
+  background: var(--theme-accent-bg, rgba(75, 85, 232, 0.1));
+}
+
+.echo-streaming-quality-option[data-selected="true"] > svg {
+  opacity: 1;
+}
+
+.echo-streaming-quality-panel-footer {
+  display: grid;
+  gap: 8px;
+  padding: 2px 4px 0;
+  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  padding-top: 8px;
+}
+
+.echo-streaming-quality-panel-hint {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-quality-panel-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.echo-streaming-quality-cancel,
+.echo-streaming-quality-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.12));
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.echo-streaming-quality-download {
+  border-color: transparent;
+  background: var(--theme-accent-solid-bg, var(--theme-accent, #4b55e8));
+  color: var(--theme-accent-solid-text, #fff);
+}
+
+.echo-streaming-quality-download:disabled,
+.echo-streaming-quality-cancel:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 歌单 download dialog (body-mounted modal). */
+.echo-streaming-download-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(8, 10, 14, 0.55);
+}
+
+.echo-streaming-download-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(640px, calc(100vw - 48px));
+  max-height: min(78vh, 760px);
+  padding: 16px;
+  border: 1px solid var(--theme-panel-border-strong, var(--theme-panel-border, rgba(0, 0, 0, 0.12)));
+  border-radius: 16px;
+  background: var(--theme-panel-bg-strong, var(--theme-panel-bg, #fff));
+  box-shadow: 0 24px 64px rgba(10, 14, 22, 0.32);
+}
+
+.echo-streaming-download-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.echo-streaming-download-dialog-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.echo-streaming-download-dialog-header strong {
+  font-size: 15px;
+  font-weight: 680;
+}
+
+.echo-streaming-download-dialog-header small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-dialog-close {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.1));
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.echo-streaming-dialog-close:hover {
+  background: var(--theme-list-row-bg-hover, var(--theme-hover-bg, rgba(0, 0, 0, 0.06)));
+}
+
+.echo-streaming-download-dialog-loading {
+  padding: 42px 12px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 13px;
+  text-align: center;
+}
+
+.echo-streaming-download-dialog-global {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--theme-accent-bg, rgba(75, 85, 232, 0.06));
+}
+
+.echo-streaming-download-dialog-global > div {
+  display: grid;
+  gap: 2px;
+}
+
+.echo-streaming-download-dialog-global strong {
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.echo-streaming-download-dialog-global small,
+.echo-streaming-download-dialog-hint {
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+}
+
+.echo-streaming-download-dialog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.echo-streaming-quality-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.14));
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.echo-streaming-quality-chip:hover:not(:disabled) {
+  background: var(--theme-list-row-bg-hover, var(--theme-hover-bg, rgba(0, 0, 0, 0.06)));
+}
+
+.echo-streaming-quality-chip[data-active="true"] {
+  border-color: transparent;
+  background: var(--theme-accent-solid-bg, var(--theme-accent, #4b55e8));
+  color: var(--theme-accent-solid-text, #fff);
+}
+
+.echo-streaming-quality-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.echo-streaming-download-dialog-status {
+  display: grid;
+  gap: 6px;
+}
+
+.echo-streaming-download-dialog-status small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-download-dialog-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--theme-field-border, rgba(0, 0, 0, 0.1));
+}
+
+.echo-streaming-download-dialog-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--theme-accent-solid-bg, var(--theme-accent, #4b55e8));
+  transition: width 0.3s ease;
+}
+
+.echo-streaming-download-dialog-list {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-height: 60px;
+  align-content: start;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.echo-streaming-download-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.echo-streaming-download-dialog-row:hover {
+  background: var(--theme-list-row-bg-hover, var(--theme-hover-bg, rgba(0, 0, 0, 0.04)));
+}
+
+.echo-streaming-download-dialog-row[data-result="ok"] .echo-streaming-download-dialog-index {
+  color: var(--theme-success-text, #1a7f4b);
+}
+
+.echo-streaming-download-dialog-row[data-result="failed"] .echo-streaming-download-dialog-index {
+  color: var(--theme-danger-text, #c23a3a);
+}
+
+.echo-streaming-download-dialog-index {
+  flex: none;
+  min-width: 26px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.echo-streaming-download-dialog-main {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.echo-streaming-download-dialog-main strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-download-dialog-main small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-streaming-download-dialog-row .echo-streaming-download-dialog-chips {
+  flex: none;
+  justify-content: flex-end;
+}
+
+.echo-streaming-download-dialog-probing {
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+}
+
+.echo-streaming-download-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+}
+
+.echo-streaming-download-dialog-footer > small {
+  overflow: hidden;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -4,6 +4,7 @@ const defaults = {
   locale: 'zh-CN',
   defaultProvider: 'netease',
   defaultQuality: 'lossless',
+  defaultDownloadQuality: 'auto',
   pageSize: 30,
   hideUnavailable: false,
   showDisabledProviders: true,
@@ -29,6 +30,13 @@ const qualities = [
   { value: 'high', label: t('高音质（优先 320kbps）', 'High (prefer 320kbps)') },
   { value: 'standard', label: t('标准（优先兼容性）', 'Standard (prefer compatibility)') },
   { value: 'hires', label: t('Hi-Res（平台支持时）', 'Hi-Res (when supported)') },
+];
+const downloadQualities = [
+  { value: 'auto', label: t('跟随播放音质', 'Follow playback quality') },
+  { value: 'hires', label: t('Hi-Res（平台支持时）', 'Hi-Res (when supported)') },
+  { value: 'lossless', label: t('无损（优先 FLAC）', 'Lossless (prefer FLAC)') },
+  { value: 'high', label: t('高音质（优先 320kbps）', 'High (prefer 320kbps)') },
+  { value: 'standard', label: t('标准（优先兼容性）', 'Standard (prefer compatibility)') },
 ];
 
 root.innerHTML = `
@@ -176,6 +184,8 @@ const textInput = (key, placeholder) => {
 };
 
 const download = root.querySelector('[data-sec="download"]');
+download.append(field('defaultDownloadQuality', select('defaultDownloadQuality', downloadQualities),
+  t('下载弹窗中预选的音质。“跟随播放音质”使用页面右上角的播放音质；每首歌只会显示它实际可用的音质，最近一次手动选择的音质会被记住。', 'Preselected quality in the download pickers. "Follow playback quality" mirrors the page quality selector; each song only lists the qualities it actually offers, and the last quality you pick is remembered.')));
 download.append(field('musicFolder', textInput('musicFolder', t('留空使用系统音乐文件夹', 'Empty = system Music folder')),
   t('右键下载的保存位置。歌曲保存到 <文件夹>/Stream，歌单保存到 <文件夹>/Stream/<歌单名>。留空使用系统音乐文件夹。', 'Where right-click downloads are saved. Tracks go to <folder>/Stream and playlists to <folder>/Stream/<playlist>. Empty uses the system Music folder.')));
 
@@ -184,6 +194,7 @@ echoConfigUi.onSave(() => ({
   locale: String(draft.locale) === 'en-US' ? 'en-US' : 'zh-CN',
   defaultProvider: providers.some((item) => item.value === draft.defaultProvider) ? String(draft.defaultProvider) : 'netease',
   defaultQuality: qualities.some((item) => item.value === draft.defaultQuality) ? String(draft.defaultQuality) : 'lossless',
+  defaultDownloadQuality: downloadQualities.some((item) => item.value === draft.defaultDownloadQuality) ? String(draft.defaultDownloadQuality) : 'auto',
   pageSize: Math.max(10, Math.min(50, Math.round(Number(draft.pageSize) || 30))),
   hideUnavailable: draft.hideUnavailable === true,
   showDisabledProviders: draft.showDisabledProviders === true,
