@@ -392,13 +392,16 @@ const writeArchive = (archive, replacements) => {
 };
 
 // The Steam edition's playlists page hides everything imported from streaming
-// providers: it renders only `sourceProvider === "local"` rows even though the
-// imports land in the shared library database. Drop that filter so streaming
-// playlists show up next to local ones. Removing the pattern keeps the patch
-// idempotent (a patched bundle simply no longer matches).
+// providers. Current builds filter with
+//   .filter(x=>x.sourceProvider==="local"&&x.kind!=="system")
+// older ones used `.filter(x=>x.sourceProvider==="local")`. Keep system
+// playlists hidden, but show netease/qq/etc. imports next to local ones.
+// After rewrite the sourceProvider==="local" filter no longer matches, so
+// the patch stays idempotent.
+const playlistProviderFilterRe = /\.filter\(([A-Za-z_$][\w$]*)=>\1\.sourceProvider==="local"(?:&&\1\.kind!=="system")?\)/gu;
 const patchSteamPlaylistsPage = (text) => text.replace(
-  /\.filter\(([A-Za-z_$][\w$]*)=>\1\.sourceProvider==="local"\)/gu,
-  '',
+  playlistProviderFilterRe,
+  '.filter($1=>$1.kind!=="system")',
 );
 
 const patch = (root) => {
@@ -411,17 +414,20 @@ const patch = (root) => {
   const preload = filesIn(current.value).find((entry) => entry.relativePath === 'out/preload/index.mjs');
   if (!preload) throw new Error('asar_preload_entry_missing');
   const currentPreloadText = current.bytes.subarray(current.dataStart + Number(preload.info.offset), current.dataStart + Number(preload.info.offset) + Number(preload.info.size)).toString('utf8');
-  const playlistsPage = filesIn(current.value).find((entry) => /^out\/renderer\/assets\/SteamPlaylistsPage-[\w-]+\.js$/u.test(entry.relativePath));
-  const currentPlaylistsText = playlistsPage
-    ? current.bytes.subarray(current.dataStart + Number(playlistsPage.info.offset), current.dataStart + Number(playlistsPage.info.offset) + Number(playlistsPage.info.size)).toString('utf8')
-    : null;
+  const playlistPages = filesIn(current.value).filter((entry) => /^out\/renderer\/assets\/.+\.js$/u.test(entry.relativePath));
+  const playlistPatches = [];
+  for (const entry of playlistPages) {
+    const currentPlaylistsText = current.bytes.subarray(current.dataStart + Number(entry.info.offset), current.dataStart + Number(entry.info.offset) + Number(entry.info.size)).toString('utf8');
+    if (!currentPlaylistsText.includes('sourceProvider==="local"')) continue;
+    const playlistsText = patchSteamPlaylistsPage(currentPlaylistsText);
+    if (playlistsText !== currentPlaylistsText) playlistPatches.push({ entry, playlistsText });
+  }
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
   const mainText = applyAuxiliaryWindowCrashFix(patchPlayback(mainWithNative));
   const preloadText = patchPreload(currentPreloadText);
-  const playlistsText = currentPlaylistsText === null ? null : patchSteamPlaylistsPage(currentPlaylistsText);
-  const missingIntegrity = [main, preload, playlistsPage].filter(Boolean).some((entry) => !entry.info.integrity);
-  if (mainText === currentText && preloadText === currentPreloadText && playlistsText === currentPlaylistsText && !missingIntegrity) {
+  const missingIntegrity = [main, preload, ...playlistPatches.map((item) => item.entry)].filter(Boolean).some((entry) => !entry.info.integrity);
+  if (mainText === currentText && preloadText === currentPreloadText && !playlistPatches.length && !missingIntegrity) {
     return { status: 'already-patched', integrity: syncIntegrity(root, archive) };
   }
   const backup = backupFor(root);
@@ -434,9 +440,7 @@ const patch = (root) => {
     ['out/main/index.js', mainText],
     ['out/preload/index.mjs', preloadText],
   ]);
-  if (playlistsPage && playlistsText !== null && (playlistsText !== currentPlaylistsText || !playlistsPage.info.integrity)) {
-    replacements.set(playlistsPage.relativePath, playlistsText);
-  }
+  for (const item of playlistPatches) replacements.set(item.entry.relativePath, item.playlistsText);
   writeArchive(archive, replacements);
   writeFileSync(stateFor(root), `${JSON.stringify({ originalSha256: sha256(readFileSync(backup)), patchedSha256: sha256(readFileSync(archive)), patchedAt: new Date().toISOString() }, null, 2)}\n`);
   return { status: 'patched', integrity: syncIntegrity(root, archive) };

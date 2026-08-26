@@ -18,6 +18,7 @@
    the page grows with its content and the surface owns the scrollbar.
    (Forcing overflow: hidden + height: 100% here froze the artist page.) */
 .echo-external-mod-page:has(.album-detail-page),
+.echo-external-mod-page:has(.streaming-playlist-page),
 .echo-external-mod-page:has(.streaming-artist-page) {
   display: block;
   height: 100%;
@@ -34,6 +35,7 @@
 }
 
 .echo-external-mod-page > .album-detail-page,
+.echo-external-mod-page > .streaming-playlist-page,
 .echo-external-mod-page > .streaming-artist-page {
   height: auto;
   min-height: 100%;
@@ -412,6 +414,23 @@
 
 .streaming-hub--spatial .streaming-state-stack {
   padding-top: 8px;
+}
+
+.streaming-hub--spatial .streaming-results-shell:has(.streaming-playlist-panel),
+.streaming-hub--spatial .streaming-results-shell:has(.streaming-discovery-list) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.streaming-hub--spatial .streaming-discovery-list,
+.streaming-hub--spatial .streaming-playlist-panel {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.streaming-hub--spatial .streaming-playlist-card {
+  cursor: pointer;
 }
 
 .streaming-hub--spatial .streaming-results-shell {
