@@ -10,6 +10,26 @@ const CHANNELS = {
   prepare: 'playback:prepare-media-item',
 };
 const SKIP = new Set(['m3u8', 'spotify']);
+const BILI_HEADERS = {
+  Referer: 'https://www.bilibili.com/',
+  Origin: 'https://www.bilibili.com',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+};
+const hasHeader = (headers, name) => Object.keys(headers || {}).some((key) => key.toLowerCase() === name.toLowerCase());
+const withProviderHeaders = (source, item) => {
+  const headers = source?.headers && typeof source.headers === 'object' ? { ...source.headers } : {};
+  if (String(item?.provider) === 'bilibili') {
+    if (!hasHeader(headers, 'Referer')) headers.Referer = BILI_HEADERS.Referer;
+    if (!hasHeader(headers, 'Origin')) headers.Origin = BILI_HEADERS.Origin;
+    if (!hasHeader(headers, 'User-Agent')) headers['User-Agent'] = BILI_HEADERS['User-Agent'];
+  }
+  return { ...source, headers };
+};
+const qualityChain = (item) => {
+  const requested = item.quality || item.streamingQuality || 'lossless';
+  if (String(item.provider) !== 'bilibili') return [requested];
+  return [requested, 'high', 'standard', 'lossless'].filter((item, index, all) => item && all.indexOf(item) === index);
+};
 
 const invokeMap = (ipcMain) => {
   if (ipcMain?._invokeHandlers instanceof Map) return ipcMain._invokeHandlers;
@@ -28,26 +48,51 @@ const streamingItem = (raw) => {
   return item;
 };
 
-const resolvePlayback = async (item, forceRefresh) => {
+const resolvePlayback = async (item, forceRefresh, quality) => {
   const resolve = globalThis.__shinawaseResolveStreamingPlayback;
   if (typeof resolve !== 'function') throw new Error('streaming_bridge_not_ready');
   const source = await resolve({
     provider: item.provider,
     providerTrackId: item.providerTrackId,
-    quality: item.quality || item.streamingQuality,
+    quality: quality || item.quality || item.streamingQuality,
     forceRefresh: forceRefresh === true,
   });
   if (!source?.url) throw new Error('streaming_source_unavailable');
-  return source;
+  return withProviderHeaders(source, item);
+};
+
+const resolveBilibiliFallback = async (item) => {
+  const fallback = process.__echoStreamingResolveBilibili || globalThis.__echoStreamingResolveBilibili;
+  if (typeof fallback !== 'function') return null;
+  const source = await fallback(item);
+  return source?.url ? withProviderHeaders(source, item) : null;
 };
 
 const resolvePlaybackRetry = async (item, forceRefresh) => {
-  try {
-    return await resolvePlayback(item, forceRefresh);
-  } catch (error) {
-    if (forceRefresh === true) throw error;
-    return resolvePlayback(item, true);
+  let lastError = null;
+  for (const quality of qualityChain(item)) {
+    try {
+      return await resolvePlayback(item, forceRefresh, quality);
+    } catch (error) {
+      lastError = error;
+    }
   }
+  if (forceRefresh !== true) {
+    for (const quality of qualityChain(item)) {
+      try {
+        return await resolvePlayback(item, true, quality);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+  try {
+    const fallback = await resolveBilibiliFallback(item);
+    if (fallback) return fallback;
+  } catch (error) {
+    lastError = error;
+  }
+  throw lastError || new Error('streaming_source_unavailable');
 };
 
 const staleStatus = (code) => code === 404 || code === 403 || code === 410;

@@ -78,6 +78,7 @@ const applyProviderHeaders = (headers, sourceUrl, webpageUrl) => {
     : url.includes('y.qq.com') || url.includes('qqmusic.qq.com') || url.includes('gtimg.cn') ? 'https://y.qq.com/'
     : url.includes('kugou.com') || url.includes('kugoucdn.com') || url.includes('kgimg.com') ? 'https://www.kugou.com/'
     : url.includes('soundcloud.com') || url.includes('sndcdn.com') || url.includes('soundcloud.cloud') ? 'https://soundcloud.com/'
+    : url.includes('bilibili.com') || url.includes('bilivideo.') || url.includes('hdslb.com') ? 'https://www.bilibili.com/'
     : null;
   if (!referer) return headers;
   if (!hasHeader(headers, 'Referer')) headers.Referer = referer;
@@ -847,10 +848,54 @@ const fetchCoverImage = async (coverUrl) => {
   }
 };
 
+const biliAudioHeaders = (cookie) => ({
+  Accept: 'application/json,text/plain,*/*',
+  'User-Agent': defaultUserAgent,
+  Referer: 'https://www.bilibili.com/',
+  Origin: 'https://www.bilibili.com',
+  ...(cookie ? { Cookie: cookie } : {}),
+});
+
+const readBilibiliCookie = async () => {
+  const session = streamingAccountSession('bilibili');
+  if (session?.cookie) return session.cookie;
+  try {
+    const accountSession = getElectron()?.session?.fromPartition?.('persist:echo-account-bilibili');
+    const cookies = await accountSession?.cookies?.get?.({ domain: '.bilibili.com' }) || [];
+    if (!cookies.length) return '';
+    return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+  } catch {
+    return '';
+  }
+};
+
+const resolveBilibiliAudio = async (item) => {
+  const raw = String(item?.providerTrackId || '').trim();
+  const bvid = (raw.match(/BV[0-9A-Za-z]+/iu) || [])[0] || raw;
+  if (!bvid) throw new Error('bilibili_id_unavailable');
+  const headers = biliAudioHeaders(await readBilibiliCookie());
+  const view = await probeFetchJson(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, { headers });
+  const cid = view?.data?.cid;
+  if (!cid) throw new Error('bilibili_cid_unavailable');
+  const playurl = await probeFetchJson(`https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(bvid)}&cid=${cid}&fnval=16&fnver=0&fourk=1`, { headers });
+  const audio = [...(playurl?.data?.dash?.audio || [])].sort((left, right) => (Number(right.bandwidth) || 0) - (Number(left.bandwidth) || 0));
+  const pick = audio[0];
+  const url = pick?.baseUrl || pick?.base_url;
+  if (!url) throw new Error('bilibili_audio_unavailable');
+  return {
+    url,
+    mimeType: pick.mimeType || pick.mime_type || 'audio/mp4',
+    codec: pick.codecs || 'm4a',
+    headers,
+  };
+};
+
 const activate = (host) => {
   const app = host.electron?.app || host.app;
   if (host.electron) electronRuntime = host.electron;
   logHost = host;
+  process.__echoStreamingResolveBilibili = resolveBilibiliAudio;
+  globalThis.__echoStreamingResolveBilibili = resolveBilibiliAudio;
 
   const musicRoot = () => {
     const override = String(host.config?.musicFolder || '').trim();

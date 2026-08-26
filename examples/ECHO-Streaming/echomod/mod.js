@@ -116,14 +116,31 @@ const toPlayableTrack = (track, quality = state.quality) => {
 
 const playerApi = () => external.player || window.__echoExternalPlayer;
 const findPlaybackQueue = () => playerApi()?.queue?.() || null;
+const playbackQualitiesFor = (track, quality) => {
+  const requested = quality || state.quality;
+  if (String(track?.provider) !== 'bilibili') return [requested];
+  return [requested, 'high', 'standard', 'lossless'].filter((item, index, all) => item && all.indexOf(item) === index);
+};
 const playViaQueue = async (track, options = {}) => {
-  const quality = options.quality || state.quality;
-  const item = asLibraryTrack(track, quality);
-  const player = playerApi();
-  if (player?.playTrack) return player.playTrack(item, options);
-  const playback = playbackApi();
-  if (!playback?.playMediaItem) throw new Error(copy.noBridge);
-  return playback.playMediaItem({ item: toPlayableTrack(item, quality), startSeconds: options.startSeconds, forceRefresh: options.forceRefresh === true });
+  const qualities = playbackQualitiesFor(track, options.quality || state.quality);
+  let lastError = null;
+  for (const [index, quality] of qualities.entries()) {
+    try {
+      const item = asLibraryTrack(track, quality);
+      const player = playerApi();
+      if (player?.playTrack) return await player.playTrack(item, { ...options, quality, forceRefresh: options.forceRefresh === true || index > 0 });
+      const playback = playbackApi();
+      if (!playback?.playMediaItem) throw new Error(copy.noBridge);
+      return await playback.playMediaItem({
+        item: toPlayableTrack(item, quality),
+        startSeconds: options.startSeconds,
+        forceRefresh: options.forceRefresh === true || index > 0,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(copy.unavailable);
 };
 const appendViaQueue = (track, source) => {
   const player = playerApi();
@@ -154,7 +171,7 @@ const rememberSearch = (query) => { const value = String(query || '').trim(); if
 const providerRailState = (provider) => accountAwareProviders.has(provider?.name) && provider.accountConnected !== true ? 'signedOut' : !provider?.enabled ? 'disabled' : accountAwareProviders.has(provider?.name) ? 'signedIn' : 'available';
 const providerRailStatus = (provider) => { const rail = providerRailState(provider); return rail === 'disabled' ? copy.disabled : rail === 'signedOut' ? copy.notLoggedIn : rail === 'signedIn' ? copy.loggedIn(provider.accountDisplayName || provider.displayName) : copy.available; };
 let packageDisposed = false;
-void (async () => { if (document.getElementById('echo-community-streaming-spatial')) return; try { const css = await external.loadAsset('spatial.css'); if (!css || packageDisposed) return; const style = document.createElement('style'); style.id = 'echo-community-streaming-spatial'; style.textContent = String(css) + (config.hideUnavailable === true ? '\n.streaming-row[data-unavailable="true"] { display: none; }' : ''); document.head.append(style); } catch {} })();
+void (async () => { try { const url = typeof external.assetUrl === 'function' ? `${external.assetUrl('spatial.css')}?v=${encodeURIComponent(manifest.version || '0')}&t=${Date.now()}` : null; const css = url ? await (await fetch(url, { cache: 'no-store' })).text() : await external.loadAsset('spatial.css'); if (!css || packageDisposed) return; const style = document.getElementById('echo-community-streaming-spatial') || document.createElement('style'); style.id = 'echo-community-streaming-spatial'; style.textContent = String(css) + (config.hideUnavailable === true ? '\n.streaming-row[data-unavailable="true"] { display: none; }' : ''); if (!style.isConnected) document.head.append(style); } catch {} })();
 const showChromeNotice = (message) => window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: message }));
 const reportError = (error) => { if (disposed) return; state.actionError = error instanceof Error ? error.message : String(error); state.actionMessage = null; render(); };
 const setMessage = (message) => { state.actionError = null; state.actionMessage = message; render(); };
@@ -295,61 +312,221 @@ const appendAccountPlaylistRow = (parent, playlist) => { const row = make('div',
 const renderNoticeModal = () => { if (!state.noticeOpen) return null; const backdrop = make('div', 'settings-modal-backdrop settings-streaming-notice-backdrop'); backdrop.dataset.state = 'open'; backdrop.addEventListener('mousedown', () => cancelNotice()); const dialog = make('section', 'settings-font-modal settings-streaming-notice-modal'); dialog.dataset.state = 'open'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'settings-streaming-notice-title'); dialog.addEventListener('mousedown', (event) => event.stopPropagation()); const header = make('header', 'settings-font-modal-header'); const heading = make('div', 'settings-streaming-notice-heading'); heading.append(makeIcon('shield', 18), make('h3', '', copy.noticeTitle)); header.append(heading, actionButton(copy.close, 'close', cancelNotice, { iconOnly: true, className: 'settings-icon-button', title: copy.noticeClose })); dialog.append(header); const body = make('div', 'settings-streaming-notice-body'); body.append(make('p', '', copy.noticeBody)); const list = make('ul'); copy.noticeItems.forEach((item) => list.append(make('li', '', item))); body.append(list, make('p', '', copy.noticeAcceptance)); dialog.append(body); const label = make('label', 'settings-danger-confirm-field settings-streaming-notice-confirm'); label.append(make('span', '', copy.consentInput(copy.consentPhrase))); const input = document.createElement('input'); input.value = state.noticeConsent; input.autofocus = true; input.addEventListener('input', () => { state.noticeConsent = input.value; confirm.disabled = input.value.trim() !== copy.consentPhrase; }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && input.value.trim() === copy.consentPhrase) confirmNotice(); }); label.append(input); dialog.append(label); const actions = make('div', 'settings-streaming-notice-actions'); actions.append(actionButton(copy.noticeCancel, null, cancelNotice, { className: 'settings-action-button' })); const confirm = actionButton(copy.noticeConfirm, null, confirmNotice, { className: 'settings-danger-button', disabled: state.noticeConsent.trim() !== copy.consentPhrase }); actions.append(confirm); dialog.append(actions); backdrop.append(dialog); return backdrop; };
 const renderGate = () => { const page = make('div', 'streaming-page streaming-hub'); const empty = make('div', 'streaming-results-empty'); const gate = make('div', 'streaming-entry-notice-gate'); gate.append(make('strong', '', copy.noticeTitle), make('span', '', copy.noticeAcceptance)); gate.append(actionButton(copy.noticeTitle, null, () => { state.noticeOpen = true; render(); }, { className: 'streaming-load-more' })); empty.append(gate); page.append(empty); if (state.noticeOpen) page.append(renderNoticeModal()); return page; };
 
-const renderAlbumDetail = () => { const album = state.selectedAlbumDetail || state.selectedAlbum; const page = make('div', 'album-detail-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedAlbum = null; state.selectedAlbumDetail = null; state.albumError = null; render(); }, { className: 'album-back-button', title: copy.back })); const hero = make('section', 'album-detail-hero'); const cover = make('div', 'album-detail-cover'); const coverSrc = album?.coverThumb || album?.coverUrl || defaultCover; cover.dataset.empty = String(coverSrc === defaultCover); const image = document.createElement('img'); image.src = coverSrc; image.alt = ''; image.width = 320; image.height = 320; image.decoding = 'async'; cover.append(image); hero.append(cover); const consoleBox = make('div', 'album-detail-console'); const details = make('div', 'album-detail-copy'); details.append(make('span', 'album-detail-kicker', copy.albumKicker), make('h1', '', album?.title || ''), make('p', '', album?.artist || '')); const meta = make('div', 'album-detail-meta'); [album?.releaseDate, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount), formatAlbumDuration(state.selectedAlbumDetail?.tracks || []), album?.provider].filter(Boolean).forEach((item) => meta.append(make('span', '', item))); details.append(meta); consoleBox.append(details); const actions = make('div', 'album-detail-actions'); actions.append(actionButton(state.albumLoading ? copy.readingAlbum : copy.playNow, state.albumLoading ? 'refresh' : 'play', handlePlayAlbum, { className: 'album-primary-action', disabled: state.albumLoading || !(state.selectedAlbumDetail?.tracks || []).length, title: copy.playNow })); const downloadable = (state.selectedAlbumDetail?.tracks || []).filter((track) => canDownloadTrackToMusic(track)).length; actions.append(actionButton(state.musicPlaylistDownload ? copy.downloading : copy.downloadAlbum, state.musicPlaylistDownload ? 'refresh' : 'download', handleDownloadAlbum, { className: 'album-secondary-action', disabled: state.albumLoading || !downloadable || Boolean(state.musicPlaylistDownload), title: copy.downloadAlbum })); consoleBox.append(actions); if (state.albumError) consoleBox.append(make('p', 'album-detail-error', state.albumError)); hero.append(consoleBox); const facts = make('aside', 'album-detail-facts'); [[copy.source, album?.provider || ''], [copy.tracks, formatTrackCount(state.selectedAlbumDetail?.tracks?.length ?? album?.trackCount)], [copy.released, album?.releaseDate || copy.unknown], [copy.quality, state.selectedAlbumDetail?.tracks?.length ? trackQualitySummary(state.selectedAlbumDetail.tracks[0]) : (chinese ? '读取中' : 'Reading signal')]].forEach(([label, value]) => { const fact = make('div', 'album-fact'); fact.append(make('span', '', label), make('strong', '', value)); facts.append(fact); }); hero.append(facts); page.append(hero); const section = make('section', 'album-detail-track-console'); section.append(make('header', 'album-detail-tabs')); const tracks = state.selectedAlbumDetail?.tracks || []; if (state.albumLoading && !tracks.length) section.append(make('div', 'streaming-state', chinese ? '正在读取专辑...' : 'Reading album...')); else if (!state.albumLoading && !tracks.length && !state.albumError) section.append(make('div', 'streaming-state', chinese ? '这张专辑没有可显示的歌曲。' : 'This album has no tracks to display.')); const list = make('div', 'streaming-album-track-list'); tracks.slice(0, state.albumTrackLimit).forEach((track) => appendTrackRow(list, track)); if (tracks.length > state.albumTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.albumTrackLimit += albumTrackRenderStep; render(); }, { className: 'streaming-load-more' })); section.append(list); page.append(section); return page; };
+const albumTitleClass = (title) => {
+  const length = String(title || '').length;
+  if (length > 32) return 'album-detail-title album-detail-title--very-long';
+  if (length > 18) return 'album-detail-title album-detail-title--long';
+  return 'album-detail-title';
+};
+const appendNativeCover = (parent, source, key, size = 320) => {
+  const src = source || defaultCover;
+  parent.dataset.empty = String(src === defaultCover);
+  const image = document.createElement('img');
+  image.src = state.failedCoverUrls[key] === src ? defaultCover : src;
+  image.alt = '';
+  image.decoding = 'async';
+  image.draggable = false;
+  image.width = size;
+  image.height = size;
+  image.addEventListener('error', () => {
+    if (src === defaultCover) return;
+    state.failedCoverUrls[key] = src;
+    persistMemory();
+    image.src = defaultCover;
+    parent.dataset.empty = 'true';
+  });
+  parent.append(image);
+  return image;
+};
+const bindDetailTrack = (node, track) => {
+  const key = trackKey(track);
+  node.addEventListener('click', () => void handlePlay(track));
+  node.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    if (state.musicDownloadKeys[key] === true) {
+      openStreamMenu(event, [{ label: copy.downloadToMusic, hint: copy.downloading, icon: 'download', disabled: true }]);
+      return;
+    }
+    openTrackDownloadPanel(event, track);
+  });
+};
+const appendAlbumTrackRow = (parent, track, index) => {
+  const key = trackKey(track);
+  const current = state.currentStableKey === key || playCurrentStableKey() === key;
+  const row = make('button', 'album-track-row');
+  row.type = 'button';
+  row.setAttribute('role', 'listitem');
+  row.dataset.playing = String(current);
+  row.dataset.unavailable = String(track.playable === false);
+  bindDetailTrack(row, track);
+  const number = make('span', 'album-track-number');
+  number.append(make('span', '', String(index + 1)));
+  const playIcon = makeIcon('play', 13);
+  playIcon.classList.add('album-track-row-play');
+  number.append(playIcon);
+  const copyBox = make('span', 'album-track-copy');
+  copyBox.append(make('strong', '', track.title || 'Untitled'), make('small', '', track.artist || ''));
+  const tags = make('span', 'album-track-tags');
+  tags.append(make('em', '', track.album || track.provider || ''));
+  row.append(number, copyBox, tags, make('span', 'album-track-duration', formatDuration(track.duration)), make('span', 'album-track-actions'));
+  parent.append(row);
+};
+const appendPlaylistTrackRow = (parent, track) => {
+  const key = trackKey(track);
+  const current = state.currentStableKey === key || playCurrentStableKey() === key;
+  const row = make('div', 'track-row');
+  row.dataset.playing = String(current);
+  row.dataset.clickable = 'true';
+  row.dataset.unavailable = String(track.playable === false);
+  row.setAttribute('role', 'listitem');
+  row.tabIndex = 0;
+  row.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void handlePlay(track);
+    }
+  });
+  bindDetailTrack(row, track);
+  const cover = make('div', 'track-cover');
+  appendNativeCover(cover, track.coverThumb || track.coverUrl || defaultCover, key, 96);
+  const main = make('div', 'track-main');
+  const titleRow = make('div', 'track-title-row');
+  if (current) titleRow.append(make('span', 'playing-dot'));
+  titleRow.append(make('strong', 'track-title', track.title || 'Untitled'));
+  if (track.playable === false) titleRow.append(make('span', 'playing-pill unavailable-pill', track.unavailableReason || copy.unavailable));
+  const subtitle = make('div', 'track-subtitle');
+  subtitle.append(make('span', '', track.artist || ''));
+  if (track.album) subtitle.append(make('span', 'track-subtitle-separator', ' - '), make('span', '', track.album));
+  main.append(titleRow, subtitle);
+  const actions = make('div', 'track-actions');
+  actions.addEventListener('click', (event) => event.stopPropagation());
+  actions.append(actionButton(copy.play, 'play', () => handlePlay(track), { iconOnly: true, className: 'row-action', title: copy.play, disabled: track.playable === false }));
+  actions.append(actionButton(copy.queue, 'list', () => handleAddToQueue(track), { iconOnly: true, className: 'row-action', title: copy.queue, disabled: track.playable === false }));
+  row.append(cover, main, make('span', 'track-duration', formatDuration(track.duration)), actions);
+  parent.append(row);
+};
+
+const renderAlbumDetail = () => {
+  const album = state.selectedAlbumDetail || state.selectedAlbum;
+  const tracks = state.selectedAlbumDetail?.tracks || [];
+  const page = make('div', 'album-detail-page');
+  page.append(actionButton(copy.back, 'arrow', () => {
+    state.selectedAlbum = null;
+    state.selectedAlbumDetail = null;
+    state.albumError = null;
+    render();
+  }, { className: 'album-back-button', title: copy.back }));
+  const hero = make('section', 'album-detail-hero album-detail-switch-surface');
+  const cover = make('div', 'album-detail-cover');
+  appendNativeCover(cover, album?.coverThumb || album?.coverUrl || defaultCover, album?.id || album?.providerAlbumId, 320);
+  hero.append(cover);
+  const consoleBox = make('div', 'album-detail-console');
+  const details = make('div', 'album-detail-copy');
+  const title = make('h1', albumTitleClass(album?.title || ''), album?.title || '');
+  details.append(make('span', 'album-detail-kicker', copy.albumKicker), title);
+  if (album?.artist) details.append(make('span', 'album-detail-artist-link', album.artist));
+  const meta = make('div', 'album-detail-meta');
+  [album?.releaseDate, formatTrackCount(tracks.length || album?.trackCount), formatAlbumDuration(tracks), album?.provider].filter(Boolean).forEach((item) => meta.append(make('span', '', item)));
+  details.append(meta);
+  consoleBox.append(details);
+  const actions = make('div', 'album-detail-actions');
+  actions.append(actionButton(state.albumLoading ? copy.readingAlbum : copy.playNow, state.albumLoading ? 'refresh' : 'play', handlePlayAlbum, { className: 'album-primary-action', disabled: state.albumLoading || !tracks.length, title: copy.playNow }));
+  const downloadable = tracks.filter((track) => canDownloadTrackToMusic(track)).length;
+  actions.append(actionButton(state.musicPlaylistDownload ? copy.downloading : copy.downloadAlbum, state.musicPlaylistDownload ? 'refresh' : 'download', handleDownloadAlbum, { className: 'album-secondary-action', disabled: state.albumLoading || !downloadable || Boolean(state.musicPlaylistDownload), title: copy.downloadAlbum }));
+  consoleBox.append(actions);
+  if (state.albumError) consoleBox.append(make('p', 'album-detail-error', state.albumError));
+  hero.append(consoleBox);
+  const facts = make('aside', 'album-detail-facts');
+  [[copy.source, album?.provider || ''], [copy.tracks, formatTrackCount(tracks.length || album?.trackCount)], [copy.released, album?.releaseDate || copy.unknown], [copy.quality, tracks.length ? trackQualitySummary(tracks[0]) : (chinese ? '读取中' : 'Reading signal')]].forEach(([label, value]) => {
+    const fact = make('div', 'album-fact');
+    fact.append(make('span', '', label), make('strong', '', value));
+    facts.append(fact);
+  });
+  hero.append(facts);
+  page.append(hero);
+  const section = make('section', 'album-detail-track-console');
+  const tabs = make('header', 'album-detail-tabs');
+  const tab = make('button', 'album-detail-tab', copy.tracks);
+  tab.type = 'button';
+  tab.setAttribute('aria-current', 'page');
+  tabs.append(tab);
+  section.append(tabs);
+  if (state.albumLoading && !tracks.length) section.append(make('p', 'album-detail-empty', chinese ? '正在读取专辑...' : 'Reading album...'));
+  else if (!state.albumLoading && !tracks.length && !state.albumError) section.append(make('p', 'album-detail-empty', chinese ? '这张专辑没有可显示的歌曲。' : 'This album has no tracks to display.'));
+  const list = make('div', 'album-track-list');
+  list.setAttribute('role', 'list');
+  const header = make('div', 'album-track-header');
+  header.setAttribute('aria-hidden', 'true');
+  header.append(make('span', '', '#'), make('span', '', copy.trackHeaderTitle), make('span', '', copy.album), make('span', '', copy.trackHeaderDuration));
+  list.append(header);
+  tracks.slice(0, state.albumTrackLimit).forEach((track, index) => appendAlbumTrackRow(list, track, index));
+  if (tracks.length > state.albumTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.albumTrackLimit += albumTrackRenderStep; render(); }, { className: 'album-load-more' }));
+  section.append(make('div', 'album-track-section', list));
+  page.append(section);
+  return page;
+};
 const renderArtistDetail = () => { const artist = state.selectedArtistDetail || state.selectedArtist; const name = artistName(artist); const page = make('div', 'streaming-artist-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedArtist = null; state.selectedArtistDetail = null; state.artistError = null; render(); }, { className: 'streaming-artist-back', title: copy.back })); const hero = make('section', 'streaming-artist-hero'); const avatar = make('div', 'streaming-artist-avatar'); const src = artist?.coverUrl || artist?.avatarUrl; avatar.dataset.cover = String(Boolean(src)); if (src) { const image = document.createElement('img'); image.src = src; image.alt = ''; image.width = 512; image.height = 512; avatar.append(image); } else avatar.append(make('span', '', name.slice(0, 1).toUpperCase())); hero.append(avatar); const body = make('div', 'streaming-artist-copy'); body.append(make('span', 'streaming-artist-kicker', copy.artistKicker), make('h1', '', name)); const meta = make('div', 'streaming-artist-meta'); meta.append(make('span', '', artist?.provider || state.provider), make('span', '', formatTrackCount(state.selectedArtistDetail?.topTracks?.length || 0)), make('span', '', `${state.selectedArtistDetail?.albums?.length || 0} ${copy.albums.toLowerCase()}`)); body.append(meta, make('p', '', `${copy.streaming} catalog from ${artist?.provider || state.provider}.`)); const actions = make('div', 'streaming-artist-actions'); const top = state.selectedArtistDetail?.topTracks || []; actions.append(actionButton(state.artistLoading ? copy.readingArtist : copy.playArtist, state.artistLoading ? 'refresh' : 'play', handlePlayArtist, { className: 'streaming-artist-primary-action', disabled: state.artistLoading || !top.some((track) => track.playable), title: copy.playArtist }), actionButton(copy.addToQueue, 'list', handleQueueArtist, { className: 'streaming-artist-secondary-action', disabled: !top.some((track) => track.playable), title: copy.addToQueue }), actionButton(state.musicPlaylistDownload ? copy.downloading : copy.downloadTopTracks, state.musicPlaylistDownload ? 'refresh' : 'download', handleDownloadArtist, { className: 'streaming-artist-secondary-action', disabled: state.artistLoading || !top.some((track) => canDownloadTrackToMusic(track)) || Boolean(state.musicPlaylistDownload), title: copy.downloadTopTracks })); body.append(actions); if (state.artistError) body.append(make('p', 'streaming-artist-error', state.artistError)); hero.append(body); const stats = make('div', 'streaming-artist-stats'); [[copy.source, artist?.provider || state.provider], [copy.tracks, top.length], [copy.albums, state.selectedArtistDetail?.albums?.length || 0]].forEach(([label, value]) => { const item = make('div'); item.append(make('span', '', label), make('strong', '', value)); stats.append(item); }); hero.append(stats); page.append(hero); const trackSection = make('section', 'streaming-artist-section'); const heading = make('div', 'streaming-artist-section-heading'); const headingCopy = make('div'); headingCopy.append(make('span', '', copy.topTracks), make('h2', '', copy.songs)); heading.append(headingCopy); trackSection.append(heading); if (state.artistLoading && !top.length) trackSection.append(make('div', 'streaming-state', chinese ? '正在读取艺人...' : 'Reading artist...')); else if (!state.artistLoading && !top.length && !state.artistError) trackSection.append(make('div', 'streaming-state', chinese ? '这个艺人没有可显示的歌曲。' : 'This artist has no tracks to display.')); const list = make('div', 'streaming-artist-track-list'); top.forEach((track) => appendTrackRow(list, track)); trackSection.append(list); page.append(trackSection); const albums = state.selectedArtistDetail?.albums || []; if (albums.length) { const albumSection = make('section', 'streaming-artist-section'); const albumHeading = make('div', 'streaming-artist-section-heading'); const albumHeadingCopy = make('div'); albumHeadingCopy.append(make('span', '', copy.albums), make('h2', '', copy.discography)); albumHeading.append(albumHeadingCopy); albumSection.append(albumHeading); const albumList = make('div', 'streaming-artist-album-list'); albums.forEach((item) => appendAlbumCard(albumList, item)); albumSection.append(albumList); page.append(albumSection); } return page; };
 const renderPlaylistDetail = () => {
   const playlist = state.selectedPlaylistDetail || state.selectedPlaylist;
   const tracks = state.selectedPlaylistDetail?.tracks || [];
-  const page = make('div', 'album-detail-page streaming-playlist-page');
-  page.append(actionButton(copy.back, 'arrow', () => {
+  const coverSrc = playlist?.coverThumb || playlist?.coverUrl || defaultCover;
+  const playable = tracks.filter((track) => track.playable !== false);
+  const page = make('div', 'playlists-page streaming-playlist-page');
+  const panel = make('div', 'playlist-detail-panel');
+  const header = make('header', 'playlist-detail-header');
+  header.style.cssText = 'display:grid;grid-template-columns:132px minmax(0,1fr);align-content:center;gap:14px 20px;';
+  header.dataset.hasArt = String(Boolean(playlist?.coverThumb || playlist?.coverUrl));
+  if (playlist?.coverThumb || playlist?.coverUrl) {
+    const art = make('div', 'playlist-detail-hero-art');
+    art.setAttribute('aria-hidden', 'true');
+    appendNativeCover(art, coverSrc, playlist?.id || playlist?.providerPlaylistId, 640);
+    header.append(art);
+  }
+  const cover = make('div', 'playlist-cover');
+  appendNativeCover(cover, coverSrc, playlist?.id || playlist?.providerPlaylistId, 144);
+  header.append(cover);
+  const details = make('div', 'playlist-detail-copy');
+  details.append(actionButton(copy.back, 'arrow', () => {
     state.selectedPlaylist = null;
     state.selectedPlaylistDetail = null;
     state.playlistError = null;
     render();
-  }, { className: 'album-back-button', title: copy.back }));
-  const hero = make('section', 'album-detail-hero');
-  const cover = make('div', 'album-detail-cover');
-  const coverSrc = playlist?.coverThumb || playlist?.coverUrl || defaultCover;
-  cover.dataset.empty = String(coverSrc === defaultCover);
-  const image = document.createElement('img');
-  image.src = coverSrc;
-  image.alt = '';
-  image.width = 320;
-  image.height = 320;
-  image.decoding = 'async';
-  cover.append(image);
-  hero.append(cover);
-  const consoleBox = make('div', 'album-detail-console');
-  const details = make('div', 'album-detail-copy');
-  details.append(make('span', 'album-detail-kicker', copy.playlistKicker), make('h1', '', playlist?.title || playlist?.name || ''), make('p', '', playlist?.creator || playlist?.provider || ''));
-  const meta = make('div', 'album-detail-meta');
-  [playlist?.provider, formatTrackCount(tracks.length || playlist?.trackCount), formatAlbumDuration(tracks)].filter(Boolean).forEach((item) => meta.append(make('span', '', item)));
-  details.append(meta);
-  consoleBox.append(details);
-  const actions = make('div', 'album-detail-actions');
-  const playable = tracks.filter((track) => track.playable !== false);
-  actions.append(actionButton(state.playlistLoading ? copy.readingPlaylist : copy.playPlaylist, state.playlistLoading ? 'refresh' : 'play', handlePlayPlaylist, { className: 'album-primary-action', disabled: state.playlistLoading || !playable.length, title: copy.playPlaylist }));
-  actions.append(actionButton(copy.addToQueue, 'list', handleQueuePlaylist, { className: 'album-secondary-action', disabled: !playable.length, title: copy.addToQueue }));
+  }, { className: 'streaming-playlist-back', title: copy.back }));
+  details.append(make('span', '', copy.playlistKicker));
+  details.append(make('h2', '', playlist?.title || playlist?.name || ''));
+  details.append(make('p', '', playlist?.creator || playlist?.provider || ''));
+  details.append(make('small', '', [playlist?.provider, formatTrackCount(tracks.length || playlist?.trackCount), formatAlbumDuration(tracks)].filter(Boolean).join(' · ')));
+  header.append(details);
+  const actions = make('div', 'playlist-actions playlist-detail-primary-actions');
+  actions.style.cssText = 'display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;align-self:start;gap:8px;width:auto;min-width:0;';
+  const playlistAction = (label, iconName, handler, options = {}) => {
+    const button = actionButton(label, iconName, handler, options);
+    button.style.flex = '0 0 auto';
+    button.style.width = 'auto';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    return button;
+  };
+  actions.append(playlistAction(state.playlistLoading ? copy.readingPlaylist : copy.playPlaylist, state.playlistLoading ? 'refresh' : 'play', handlePlayPlaylist, { className: 'primary-action', disabled: state.playlistLoading || !playable.length, title: copy.playPlaylist }));
+  actions.append(playlistAction(copy.addToQueue, 'list', handleQueuePlaylist, { className: 'secondary-action', disabled: !playable.length, title: copy.addToQueue }));
   const downloadable = tracks.filter((track) => canDownloadTrackToMusic(track)).length;
-  actions.append(actionButton(state.musicPlaylistDownload ? copy.downloading : copy.downloadPlaylistToMusic, state.musicPlaylistDownload ? 'refresh' : 'download', () => openPlaylistDownloadDialog(state.selectedPlaylist || playlist), { className: 'album-secondary-action', disabled: state.playlistLoading || !downloadable || Boolean(state.musicPlaylistDownload), title: copy.downloadPlaylistToMusic }));
-  if (!state.importingPlaylistKey) actions.append(actionButton(copy.add, 'list', () => handleImportStreamingPlaylist(state.selectedPlaylist || playlist), { className: 'album-secondary-action', title: copy.add }));
-  consoleBox.append(actions);
-  if (state.playlistError) consoleBox.append(make('p', 'album-detail-error', state.playlistError));
-  hero.append(consoleBox);
-  page.append(hero);
-  const section = make('section', 'album-detail-track-console');
-  section.append(make('header', 'album-detail-tabs'));
-  if (state.playlistLoading && !tracks.length) section.append(make('div', 'streaming-state', chinese ? '正在读取歌单...' : 'Reading playlist...'));
-  else if (!state.playlistLoading && !tracks.length && !state.playlistError) section.append(make('div', 'streaming-state', copy.noPlaylistTracks));
-  const list = make('div', 'streaming-album-track-list');
-  tracks.slice(0, state.playlistTrackLimit).forEach((track) => appendTrackRow(list, track));
+  actions.append(playlistAction(state.musicPlaylistDownload ? copy.downloading : copy.downloadPlaylistToMusic, state.musicPlaylistDownload ? 'refresh' : 'download', () => openPlaylistDownloadDialog(state.selectedPlaylist || playlist), { className: 'secondary-action', disabled: state.playlistLoading || !downloadable || Boolean(state.musicPlaylistDownload), title: copy.downloadPlaylistToMusic }));
+  if (!state.importingPlaylistKey) actions.append(playlistAction(copy.add, 'list', () => handleImportStreamingPlaylist(state.selectedPlaylist || playlist), { className: 'secondary-action', title: copy.add }));
+  header.append(actions);
+  panel.append(header);
+  if (state.playlistError) panel.append(make('p', 'playlist-detail-error', state.playlistError));
+  if (state.playlistLoading && !tracks.length) panel.append(make('div', 'list-footer', chinese ? '正在读取歌单...' : 'Reading playlist...'));
+  else if (!state.playlistLoading && !tracks.length && !state.playlistError) panel.append(make('div', 'list-footer', copy.noPlaylistTracks));
+  const list = make('div', 'playlist-track-list');
+  list.setAttribute('role', 'list');
+  tracks.slice(0, state.playlistTrackLimit).forEach((track) => appendPlaylistTrackRow(list, track));
   if (tracks.length > state.playlistTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.playlistTrackLimit += albumTrackRenderStep; render(); }, { className: 'streaming-load-more' }));
-  section.append(list);
-  page.append(section);
+  panel.append(list);
+  page.append(panel);
   return page;
 };
 
-const renderPlaylistPanel = (playlists) => { const panel = make('div', 'streaming-playlist-panel'); const form = make('form', 'streaming-playlist-import'); const copyBox = make('div', 'streaming-playlist-import-copy'); const copyTitle = make('span', '', copy.addPlaylist); copyTitle.prepend(makeIcon('link', 18)); copyBox.append(copyTitle, make('p', '', copy.playlistHint)); form.append(copyBox); const label = make('label'); label.append(makeIcon('link', 18)); const input = document.createElement('input'); input.value = state.playlistUrl; input.placeholder = copy.playlistPlaceholder; input.disabled = Boolean(state.importingPlaylistKey); input.addEventListener('input', () => { state.playlistUrl = input.value; }); label.append(input); form.append(label); form.append(actionButton(state.importingPlaylistKey ? copy.adding : copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), { disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add })); form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); }); const sync = make('section', 'streaming-account-playlist-sync'); const syncCopy = make('div', 'streaming-playlist-import-copy'); const syncTitle = make('span', '', copy.syncPlaylists); syncTitle.prepend(makeIcon('refresh', 18)); syncCopy.append(syncTitle, make('p', '', copy.syncHint)); sync.append(syncCopy); const toolbar = make('div', 'streaming-account-playlist-toolbar'); if (state.accountPanelOpen) { const tabs = make('div', 'streaming-account-provider-tabs'); ['netease', 'qqmusic'].forEach((name) => { const descriptor = state.providers.find((item) => item.name === name); const tab = actionButton(descriptor?.displayName || (name === 'netease' ? '网易云音乐' : 'QQ 音乐'), null, () => { state.accountPlaylistProvider = name; state.accountPlaylists = []; state.selectedAccountPlaylistIds = {}; void loadAccountPlaylists(name); }, { className: name === state.accountPlaylistProvider ? 'active' : '', disabled: state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 }); if (descriptor?.accountConnected) tab.append(make('small', '', ` ${copy.signedIn}`)); tabs.append(tab); }); toolbar.append(tabs); } else toolbar.append(make('span', 'streaming-account-playlist-hint', state.providers.some((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected) ? copy.preferLoggedIn : copy.needLogin)); const stale = typeof streamApi()?.listAccountPlaylists !== 'function'; toolbar.append(actionButton(stale ? copy.restart : state.loadingAccountPlaylists ? copy.reading : state.accountPanelOpen ? copy.refresh : copy.syncMine, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), { className: 'streaming-playlist-add', disabled: stale || state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); sync.append(toolbar); if (state.accountPanelOpen) { const box = make('div', 'streaming-account-playlist-panel'); if (state.accountPlaylists.length) { const selection = make('div', 'streaming-account-playlist-selection'); const all = state.accountPlaylists.every((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true); selection.append(actionButton(all ? copy.deselectAll : copy.selectAll, all ? 'check' : 'list', () => { state.selectedAccountPlaylistIds = all ? {} : Object.fromEntries(state.accountPlaylists.map((item) => [item.providerPlaylistId, true])); render(); }, { className: 'streaming-inline-action' }), make('span', '', copy.selected(Object.values(state.selectedAccountPlaylistIds).filter(Boolean).length, state.accountPlaylists.length))); box.append(selection); const list = make('div', 'streaming-account-playlist-list'); state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item)); box.append(list); const actions = make('div', 'streaming-account-playlist-actions'); actions.append(make('span', '', state.accountPlaylistProvider), actionButton(copy.syncSelected, 'list', () => requestAccountPlaylistSync(state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId])), { className: 'streaming-playlist-add', disabled: !state.accountPlaylists.some((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId]) || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); box.append(actions); } else box.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists)); sync.append(box); } panel.append(sync); if (playlists.length) { const list = make('div', 'streaming-discovery-list'); playlists.forEach((item) => appendPlaylistCard(list, item)); panel.append(list); } panel.append(form); return panel; };
+const renderPlaylistPanel = (playlists) => { const panel = make('div', 'streaming-playlist-panel'); const form = make('form', 'streaming-playlist-import'); const copyBox = make('div', 'streaming-playlist-import-copy'); const copyTitle = make('span', '', copy.addPlaylist); copyTitle.prepend(makeIcon('link', 18)); copyBox.append(copyTitle, make('p', '', copy.playlistHint)); form.append(copyBox); const label = make('label'); label.append(makeIcon('link', 18)); const input = document.createElement('input'); input.value = state.playlistUrl; input.placeholder = copy.playlistPlaceholder; input.disabled = Boolean(state.importingPlaylistKey); input.addEventListener('input', () => { state.playlistUrl = input.value; }); label.append(input); form.append(label); form.append(actionButton(state.importingPlaylistKey ? copy.adding : copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), { disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add })); form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); }); const sync = make('section', 'streaming-account-playlist-sync'); const syncCopy = make('div', 'streaming-playlist-import-copy'); const syncTitle = make('span', '', copy.syncPlaylists); syncTitle.prepend(makeIcon('refresh', 18)); syncCopy.append(syncTitle, make('p', '', copy.syncHint)); sync.append(syncCopy); const toolbar = make('div', 'streaming-account-playlist-toolbar'); if (state.accountPanelOpen) { const tabs = make('div', 'streaming-account-provider-tabs'); ['netease', 'qqmusic'].forEach((name) => { const descriptor = state.providers.find((item) => item.name === name); const tab = actionButton(descriptor?.displayName || (name === 'netease' ? '网易云音乐' : 'QQ 音乐'), null, () => { state.accountPlaylistProvider = name; state.accountPlaylists = []; state.selectedAccountPlaylistIds = {}; void loadAccountPlaylists(name); }, { className: name === state.accountPlaylistProvider ? 'active' : '', disabled: state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 }); if (descriptor?.accountConnected) tab.append(make('small', '', ` ${copy.signedIn}`)); tabs.append(tab); }); toolbar.append(tabs); } else toolbar.append(make('span', 'streaming-account-playlist-hint', state.providers.some((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected) ? copy.preferLoggedIn : copy.needLogin)); const stale = typeof streamApi()?.listAccountPlaylists !== 'function'; toolbar.append(actionButton(stale ? copy.restart : state.loadingAccountPlaylists ? copy.reading : state.accountPanelOpen ? copy.refresh : copy.syncMine, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), { className: 'streaming-playlist-add', disabled: stale || state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); sync.append(toolbar); if (state.accountPanelOpen) { const box = make('div', 'streaming-account-playlist-panel'); if (state.accountPlaylists.length) { const selection = make('div', 'streaming-account-playlist-selection'); const all = state.accountPlaylists.every((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true); selection.append(actionButton(all ? copy.deselectAll : copy.selectAll, all ? 'check' : 'list', () => { state.selectedAccountPlaylistIds = all ? {} : Object.fromEntries(state.accountPlaylists.map((item) => [item.providerPlaylistId, true])); render(); }, { className: 'streaming-inline-action' }), make('span', '', copy.selected(Object.values(state.selectedAccountPlaylistIds).filter(Boolean).length, state.accountPlaylists.length))); box.append(selection); const list = make('div', 'streaming-account-playlist-list'); state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item)); box.append(list); const actions = make('div', 'streaming-account-playlist-actions'); actions.append(make('span', '', state.accountPlaylistProvider), actionButton(copy.syncSelected, 'list', () => requestAccountPlaylistSync(state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId])), { className: 'streaming-playlist-add', disabled: !state.accountPlaylists.some((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId]) || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); box.append(actions); } else box.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists)); sync.append(box); } panel.append(form); panel.append(sync); if (playlists.length) { const list = make('div', 'streaming-discovery-list'); playlists.forEach((item) => appendPlaylistCard(list, item)); panel.append(list); } return panel; };
 
 const submitSearch = (value = state.input) => {
   window.clearTimeout(searchTimer);
