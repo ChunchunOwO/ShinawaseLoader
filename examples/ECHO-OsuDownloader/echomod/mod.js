@@ -104,7 +104,7 @@ const bridge = () => window.__echoShinawaseStreaming || {};
 const downloadsApi = () => external.echo?.downloads || window.echo?.downloads || bridge().downloads;
 const accountsApi = () => external.echo?.accounts || window.echo?.accounts || bridge().accounts;
 // external.toast prefers the loader toast and falls back to the legacy
-// app:show-chrome-notice event; ECHO Next no longer guarantees the latter.
+// app:show-chrome-notice event; current ECHO Steam no longer guarantees the latter.
 const showChromeNotice = (message) => external.toast(String(message));
 const friendlyError = (error) => {
   const message = error instanceof Error ? error.message : String(error);

@@ -1,0 +1,9 @@
+{
+  "locale": "auto",
+  "confirmBeforeUpload": true,
+  "alsoSyncUserStats": false,
+  "allowCustomScores": true,
+  "defaultBoard": "listening-time",
+  "defaultScore": 0,
+  "defaultScope": "global"
+}

@@ -145,12 +145,12 @@ type EchoExternalExtend = {
   /**
    * Hide a native sidebar route.
    *
-   * Legacy ECHO builds are hidden via CSS (`[data-workshop-icon="nav-<id>"]`).
-   * ECHO Next removed that hook, so the loader additionally patches the
-   * `sidebarHiddenRouteIds` app setting through `window.echo.app.setSettings`.
+   * Older ECHO builds are hidden via CSS (`[data-workshop-icon="nav-<id>"]`).
+   * echo-steam 26.8.28 removed that hook, so the loader additionally patches
+   * the `sidebarHiddenRouteIds` app setting through `window.echo.app.setSettings`.
    * The settings patch persists until `showNav` (or the returned cleanup) runs;
    * routes the user hid themselves are never restored by `showNav`.
-   * ECHO Next route ids include `home`, `songs`, `downloads`, `osu-downloader`,
+   * Current route ids include `home`, `songs`, `downloads`, `osu-downloader`,
    * `albums`, `artists`, `folders`, `audio-cd`, `remote`, `connect`, `dsp`,
    * `streaming`, `queue`, `history`, `playlists`, `inbox`, `plugins`, `liked`
    * and `settings`.
@@ -212,13 +212,16 @@ type EchoExternalMod = {
   manifest: Record<string, unknown>;
   config: Record<string, unknown>;
   /**
-   * The renderer `window.echo` preload API. On ECHO Next this exposes typed
-   * namespaces such as `app`, `playback`, `library`, `libraryLab`, `streaming`,
-   * `lyrics`, `mv`, `plugins`, `accounts`, `downloads`, `audio`, `eq`,
-   * `diagnostics`, `connect`, `remoteSources`, `desktopLyrics`, `miniPlayer`,
-   * `taskbarMiniPlayer`, `hqPlayer`, `spotify`, `smtc`, `audioCd`,
-   * `sleepTimer`, `lastfm`, `discordPresence` and `stageBridge`.
-   * Prefer `sdk.list()` / `sdk.get()` to discover the exact surface at runtime.
+   * The renderer `window.echo` preload API. On echo-steam 26.8.28 the observed
+   * namespaces include `steam`, `workshop`, `app`, `desktopLyrics`, `miniPlayer`,
+   * `pet`, `library`, `playback`, `streaming`, `lyrics`, `mv`, and `accounts`.
+   * Other keys may exist; method signatures are not frozen here.
+   * Custom URL schemes on this build: `echo-cover`, `echo-audio`, `echo-video`,
+   * `echo-mv`, `echo-wallpaper`, `echo-image`, `echo-artist-image`,
+   * `echo-album-extra`, `echo-workshop`, `echo-osu-sb`.
+   * Host audio-backend contract: `audioBackendContractVersion = 2`.
+   * userData is `%APPDATA%\ECHO Steam` unless `ECHO_USER_DATA_PATH_OVERRIDE` is set.
+   * Prefer `sdk.list()` / `sdk.get()` / `GET /api/sdk` at runtime.
    */
   echo: Record<string, unknown>;
   player: EchoExternalPlayer | null;

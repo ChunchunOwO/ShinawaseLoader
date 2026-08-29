@@ -1,0 +1,141 @@
+<Window
+    x:Class="Echo.AudioBand.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="ECHO AudioBand">
+    <Grid x:Name="Root" Background="#E0101010">
+        <Grid.Resources>
+            <SolidColorBrush x:Key="BandAccent" Color="#4DA3FF"/>
+        </Grid.Resources>
+        <Border x:Name="Bar"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                CornerRadius="0"
+                Padding="4,2,6,2"
+                Background="#E0101010">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="ArtButton"
+                        Width="32" Height="32"
+                        Margin="0,0,8,0"
+                        CornerRadius="4"
+                        Background="Transparent"
+                        PointerPressed="OnArtPressed"
+                        PointerEntered="OnArtEntered"
+                        PointerExited="OnArtExited">
+                    <Grid x:Name="ArtSlot" Width="32" Height="32">
+                        <FontIcon x:Name="ArtNote" Glyph="&#xE8D6;" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="CoverHost" Width="32" Height="32" CornerRadius="4" Visibility="Collapsed">
+                            <Border.Background>
+                                <ImageBrush x:Name="CoverBrush" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                </Border>
+                <Grid x:Name="Meta"
+                      Grid.Column="1"
+                      MinHeight="32"
+                      VerticalAlignment="Center"
+                      Tapped="OnMetaTapped"
+                      DoubleTapped="OnMetaDoubleTapped"
+                      PointerEntered="OnMetaEntered"
+                      PointerExited="OnMetaExited"
+                      RightTapped="OnMetaRightTapped">
+                    <Grid x:Name="SongPane" Opacity="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Border x:Name="TitleClip" Height="16">
+                            <StackPanel x:Name="TitleRow" Orientation="Horizontal">
+                                <TextBlock x:Name="TitleText" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Grid Grid.Row="1" Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="ArtistClip" Height="15">
+                                <StackPanel x:Name="ArtistRow" Orientation="Horizontal">
+                                    <TextBlock x:Name="ArtistText" FontSize="11" Opacity="0.68" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock x:Name="TimeText" Grid.Column="1" FontSize="10" Opacity="0.68" Margin="8,0,0,0" Visibility="Collapsed"/>
+                        </Grid>
+                    </Grid>
+                    <Grid x:Name="LyricsPane" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Border x:Name="LyricViewport" Height="32" VerticalAlignment="Center">
+                            <StackPanel x:Name="LyricStack">
+                                <StackPanel.RenderTransform>
+                                    <TranslateTransform x:Name="LyricSlide"/>
+                                </StackPanel.RenderTransform>
+                                <TextBlock x:Name="Lyric1Text" Height="16" FontSize="12" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Lyric2Text" Height="16" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Lyric3Text" Height="16" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <Rectangle x:Name="LyricSweep"
+                               Width="72"
+                               Height="32"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False"
+                               Opacity="0">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#00FFFFFF" Offset="0"/>
+                                <GradientStop Color="#C8FFFFFF" Offset="0.5"/>
+                                <GradientStop Color="#00FFFFFF" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                        <Rectangle.RenderTransform>
+                            <TranslateTransform x:Name="SweepX"/>
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                </Grid>
+                <StackPanel x:Name="Controls" Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,0,0">
+                    <StackPanel.Resources>
+                        <SolidColorBrush x:Key="ButtonBackground" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#22FFFFFF"/>
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#33FFFFFF"/>
+                        <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent"/>
+                    </StackPanel.Resources>
+                    <Button x:Name="PrevButton" Width="22" Height="22" Padding="0" BorderThickness="0" Background="Transparent" Click="OnPrev">
+                        <FontIcon x:Name="PrevIcon" Glyph="&#xE892;" FontSize="12"/>
+                    </Button>
+                    <Button x:Name="ToggleButton" Width="22" Height="22" Padding="0" BorderThickness="0" Background="Transparent" Click="OnToggle">
+                        <FontIcon x:Name="ToggleIcon" Glyph="&#xE768;" FontSize="12"/>
+                    </Button>
+                    <Button x:Name="NextButton" Width="22" Height="22" Padding="0" BorderThickness="0" Background="Transparent" Click="OnNext">
+                        <FontIcon x:Name="NextIcon" Glyph="&#xE893;" FontSize="12"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Border x:Name="SeekHit"
+                Height="10"
+                VerticalAlignment="Bottom"
+                Background="Transparent"
+                PointerPressed="OnSeek"
+                Visibility="Visible">
+            <Grid x:Name="SeekTrack" Height="3" VerticalAlignment="Bottom">
+                <Border Background="#59808080"/>
+                <Border x:Name="SeekFill" HorizontalAlignment="Stretch" Background="{StaticResource BandAccent}" RenderTransformOrigin="0,0.5">
+                    <Border.RenderTransform>
+                        <ScaleTransform x:Name="SeekScale" ScaleX="0"/>
+                    </Border.RenderTransform>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

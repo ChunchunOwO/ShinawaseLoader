@@ -1,3 +1,4 @@
+/* Example host DLL for echo-steam 26.8.28 / Electron 43.3.0. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

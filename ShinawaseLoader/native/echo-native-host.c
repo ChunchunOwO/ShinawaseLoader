@@ -1,3 +1,4 @@
+/* N-API host addon for echo-steam 26.8.28 / Electron 43.3.0 (Chromium 150). */
 #define NAPI_VERSION 8
 #include <node_api.h>
 #include <stdio.h>

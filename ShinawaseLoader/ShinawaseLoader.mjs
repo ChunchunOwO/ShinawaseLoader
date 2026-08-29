@@ -77,7 +77,13 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.6.4';
+const loaderVersion = '1.6.5';
+// Aligned Echo Steam build. Do not treat FileVersion 26.8.28 as an Electron ABI.
+const alignedEchoProduct = 'echo-steam';
+const alignedEchoVersion = '26.8.28';
+const alignedElectronVersion = '43.3.0';
+const echoSteamAppId = '5105150';
+const echoUserDataFolderName = 'ECHO Steam';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
 const workspaceRoot = resolve(process.env.ECHO_WORKSPACE_ROOT || join(root, '..'));
 const gameRoot = resolve(process.env.ECHO_GAME_ROOT || join(root, '..'));
@@ -234,6 +240,12 @@ const nativeStatusPath = join(root, 'native-host.json');
 const echoExe = option('--echo', null);
 const userDataRoot = join(process.env.LOCALAPPDATA || process.env.APPDATA || homedir(), 'ShinawaseLoader');
 const selectionPath = join(userDataRoot, 'selection.json');
+const echoUserDataPath = () => {
+  const override = String(process.env.ECHO_USER_DATA_PATH_OVERRIDE || '').trim();
+  if (override) return resolve(override);
+  const appData = process.env.APPDATA || (process.env.USERPROFILE ? join(process.env.USERPROFILE, 'AppData', 'Roaming') : join(homedir(), 'AppData', 'Roaming'));
+  return join(appData, echoUserDataFolderName);
+};
 const persistLocale = (value) => {
   const localeValue = normalizeLocale(value) || 'zh';
   const selection = readJson(selectionPath, {});
@@ -674,11 +686,27 @@ const cdpEvaluate = async (webSocketUrl, expression) => {
   const session = await openCdpSession(webSocketUrl);
   try { return await session.evaluate(expression); } finally { session.close(); }
 };
+const classifyEchoWindow = (url = '', title = '') => {
+  const href = String(url || '');
+  const name = String(title || '');
+  if (/[?&]desktopLyrics=1/i.test(href) || /ECHO Desktop Lyrics/i.test(name)) return 'DesktopLyrics';
+  if (/[?&]taskbarMiniPlayer=1/i.test(href) || /Taskbar Mini Player/i.test(name)) return 'TaskbarMiniPlayer';
+  if (/[?&]miniPlayer=1/i.test(href) || /ECHO Mini Player/i.test(name)) return 'MiniPlayer';
+  if (/[?&]pet=1/i.test(href) || /^ECHO Pet$/i.test(name)) return 'Pet';
+  if (/[?&]cli=1/i.test(href) || /ECHO CLI/i.test(name)) return 'Cli';
+  if (/ECHO (?:Debug |Developer )?Console/i.test(name) || /调试控制台/i.test(name) || /^DevConsole$/i.test(name)) return 'DevConsole';
+  if (/auxiliary\.html/i.test(href)) return 'Auxiliary';
+  return 'Main';
+};
 const cdpTargets = async () => {
   const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
   if (!response.ok) throw new Error(`cdp_http_${response.status}`);
   const targets = await response.json();
-  return targets.filter((target) => target.type === 'page' && target.webSocketDebuggerUrl && !/^devtools:/i.test(target.url || '') && !/chrome-error/i.test(target.url || ''));
+  return (Array.isArray(targets) ? targets : []).filter((target) => target.type === 'page' && target.webSocketDebuggerUrl && !/^devtools:/i.test(target.url || '') && !/chrome-error/i.test(target.url || ''));
+};
+const cdpMainTargets = async () => {
+  const targets = await cdpTargets();
+  return targets.filter((target) => classifyEchoWindow(target.url, target.title) === 'Main');
 };
 const externalContext = (id, manifest) => ({
   id,
@@ -1020,11 +1048,12 @@ const extendRuntimeExpression = `(() => {
         if (!surface.dataset.echoExternalHidden) surface.style.removeProperty('display');
       });
     };
-    // ECHO Next removed the per-route [data-workshop-icon] nav hooks the CSS
-    // hiding relied on, but exposes native sidebar route hiding through the
+    // echo-steam 26.8.28 dropped per-route [data-workshop-icon] nav hooks the
+    // CSS hiding relied on, but exposes native sidebar route hiding through the
     // sidebarHiddenRouteIds app setting. Apply both: the CSS path still covers
-    // legacy ECHO builds, the settings patch covers ECHO Next. Only routes this
-    // runtime hid itself are ever restored, so user-hidden routes stay hidden.
+    // older ECHO builds, the settings patch covers the Steam renderer. Only
+    // routes this runtime hid itself are ever restored, so user-hidden routes
+    // stay hidden.
     const nativeNavOwned = new Set();
     const readNativeHiddenRoutes = async (app) => {
       const settings = await app.getSettings();
@@ -1389,12 +1418,13 @@ const injectionPlan = (id, stateEntry) => {
     tokens.push([config, fileToken(config)]);
   } catch {}
   let source;
-  // Official ECHO Next sandboxed plugins (echo.plugin.json with apiVersion +
-  // permissions) target ECHO's own plugin VM (`echo.commands`, `echo.net`, ...),
-  // not the echoExternalMod SDK. Running their entry in the renderer would just
-  // throw, so surface a clear notice instead and point at the native importer.
+  // Official ECHO sandboxed plugins (echo.plugin.json with apiVersion +
+  // permissions, packaged as echo-next-plugin-package) target ECHO's own plugin
+  // VM (`echo.commands`, `echo.net`, ...), not the echoExternalMod SDK. Running
+  // their entry in the renderer would just throw, so surface a clear notice
+  // instead and point at the native importer.
   if (record.kind === 'plugin' && Number(manifest.apiVersion) >= 1 && Array.isArray(manifest.permissions)) {
-    const message = `"${manifest.name || id}" is an official ECHO Next sandboxed plugin (apiVersion ${Number(manifest.apiVersion)}); ShinawaseLoader does not execute it. Import the .echo package from ECHO's native Plugins page instead.`;
+    const message = `"${manifest.name || id}" is an official ECHO sandboxed plugin (apiVersion ${Number(manifest.apiVersion)}); ShinawaseLoader does not execute it. Import the .echo package from ECHO's native Plugins page instead.`;
     source = `echoExternalMod.log(${JSON.stringify(message)}); echoExternalMod.toast(${JSON.stringify(message)});`;
   } else {
     const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
@@ -1421,10 +1451,21 @@ const injectionPlan = (id, stateEntry) => {
 // per cycle (ready check, echo patch, state snapshot) with one.
 const targetProbeExpression = `(() => {
   const href = String(location.href || '');
-  if (/auxiliary\\.html/i.test(href) || /[?&](desktopLyrics|pet|miniPlayer)=1/i.test(href)) return { ready: false };
+  const title = String(document.title || '');
+  const windowType = (() => {
+    if (/[?&]desktopLyrics=1/i.test(href) || /ECHO Desktop Lyrics/i.test(title)) return 'DesktopLyrics';
+    if (/[?&]taskbarMiniPlayer=1/i.test(href) || /Taskbar Mini Player/i.test(title)) return 'TaskbarMiniPlayer';
+    if (/[?&]miniPlayer=1/i.test(href) || /ECHO Mini Player/i.test(title)) return 'MiniPlayer';
+    if (/[?&]pet=1/i.test(href) || /^ECHO Pet$/i.test(title)) return 'Pet';
+    if (/[?&]cli=1/i.test(href) || /ECHO CLI/i.test(title)) return 'Cli';
+    if (/ECHO (?:Debug |Developer )?Console/i.test(title) || /调试控制台/i.test(title) || /^DevConsole$/i.test(title)) return 'DevConsole';
+    if (/auxiliary\\.html/i.test(href)) return 'Auxiliary';
+    return 'Main';
+  })();
+  if (windowType !== 'Main') return { ready: false, windowType };
   const splash = document.querySelector('.echo-startup-shell');
-  if (splash && document.documentElement.dataset.echoStartup !== 'ready') return { ready: false };
-  if (!document.querySelector('.app-shell')) return { ready: false };
+  if (splash && document.documentElement.dataset.echoStartup !== 'ready') return { ready: false, windowType };
+  if (!document.querySelector('.app-shell')) return { ready: false, windowType };
   const extra = window.__echoShinawaseStreaming;
   if (extra && !window.__echoShinawaseEchoPatched) {
     const base = window.echo || {};
@@ -1441,6 +1482,7 @@ const targetProbeExpression = `(() => {
   }
   return {
     ready: true,
+    windowType,
     uiVersion: Number(window.__echoExternalLoaderUi?.version || 0),
     playerVersion: Number(window.__echoExternalPlayer?.version || 0),
     extendVersion: Number(window.__echoExternalExtend?.version || 0),
@@ -1452,14 +1494,14 @@ const injectEnabled = async () => {
   if (safeMode || loadMode === 'disabled') return 0;
   lastCycleTargetCount = 0;
   lastCycleReadyCount = 0;
-  const targets = await cdpTargets();
+  const targets = await cdpMainTargets();
   lastCycleTargetCount = targets.length;
   const state = readState();
   const active = Object.entries(state.mods).filter(([, value]) => value?.enabled === true);
   const plans = active.map(([id, value]) => injectionPlan(id, value)).filter(Boolean);
   if (targets.length !== lastInjectedTargetCount) {
     lastInjectedTargetCount = targets.length;
-    log('INFO', `ECHO targets=${targets.length}, enabledPackages=${plans.length}`);
+    log('INFO', `ECHO main targets=${targets.length}, enabledPackages=${plans.length}`);
   }
   for (const target of targets) {
     let session;
@@ -1506,7 +1548,7 @@ const requestInjection = (reason = 'manual') => {
 
 let togetherUploadProgress = { active: false, loaded: 0, total: 0, stage: 'idle', quality: 'opus' };
 const rendererValue = async (expression) => {
-  const targets = await cdpTargets();
+  const targets = await cdpMainTargets();
   const target = targets.find((candidate) => !String(candidate.url || '').startsWith('devtools://')) || targets[0];
   if (!target) throw new Error('echo_renderer_not_ready');
   const result = await cdpEvaluate(target.webSocketDebuggerUrl, expression);
@@ -1671,13 +1713,29 @@ const startWatch = () => {
   log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
 const echoFileName = (name) => /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
+const echoExeNames = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+const isPlaytestInstall = (exePath) => {
+  const normalized = String(exePath || '').replaceAll('/', '\\');
+  const name = basename(normalized);
+  const parent = basename(dirname(normalized));
+  return /^ECHO Playtest\.exe$/iu.test(name) || /ECHO Playtest/i.test(parent) || /\\ECHO Playtest\\/i.test(normalized);
+};
+const addSteamCommonRoots = (roots, libraryRoot) => {
+  if (!libraryRoot) return;
+  const common = join(libraryRoot, 'steamapps', 'common');
+  roots.add(libraryRoot);
+  roots.add(common);
+  roots.add(join(common, 'ECHO'));
+};
 const echoCandidateRoots = () => {
   const roots = new Set([
     process.cwd(), workspaceRoot, dirname(root),
     process.env.ECHO_ROOT, process.env.ECHO_INSTALL_ROOT,
     process.env.ProgramFiles ? join(process.env.ProgramFiles, 'ECHO') : null,
     process.env.ProgramFiles ? join(process.env.ProgramFiles, 'Steam', 'steamapps', 'common') : null,
+    process.env.ProgramFiles ? join(process.env.ProgramFiles, 'Steam', 'steamapps', 'common', 'ECHO') : null,
     process.env['ProgramFiles(x86)'] ? join(process.env['ProgramFiles(x86)'], 'Steam', 'steamapps', 'common') : null,
+    process.env['ProgramFiles(x86)'] ? join(process.env['ProgramFiles(x86)'], 'Steam', 'steamapps', 'common', 'ECHO') : null,
     process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Programs') : null,
   ]);
   const vdfRoots = [
@@ -1689,17 +1747,90 @@ const echoCandidateRoots = () => {
     if (!vdf || !existsSync(vdf)) continue;
     try {
       const text = readFileSync(vdf, 'utf8');
-      for (const match of text.matchAll(/"path"\s+"([^"]+)"/giu)) roots.add(match[1].replaceAll('\\\\', '\\'));
+      for (const match of text.matchAll(/"path"\s+"([^"]+)"/giu)) addSteamCommonRoots(roots, match[1].replaceAll('\\\\', '\\'));
     } catch {}
   }
   if (process.platform === 'win32') {
     for (const drive of ['C:', 'D:', 'E:', 'F:']) {
-      roots.add(join(drive, 'SteamLibrary'));
+      addSteamCommonRoots(roots, join(drive, 'SteamLibrary'));
       roots.add(join(drive, 'steamapps', 'common'));
+      roots.add(join(drive, 'steamapps', 'common', 'ECHO'));
     }
   }
   return [...roots].filter(Boolean).map((value) => resolve(String(value)));
 };
+// localeCompare puts "...\ECHO Playtest\ECHO.exe" ahead of "...\ECHO\ECHO.exe"
+// because a space sorts before '\'. Prefer the stable Steam install.
+const rankEchoInstall = (exePath) => {
+  const normalized = String(exePath || '').replaceAll('/', '\\');
+  const name = basename(normalized);
+  const parent = basename(dirname(normalized));
+  if (isPlaytestInstall(normalized)) return 80;
+  if (/\bNEXT\b/i.test(name) || /^ECHO NEXT$/i.test(parent)) return 70;
+  if (/\\common\\ECHO\\ECHO\.exe$/i.test(normalized)) return 0;
+  if (/^ECHO Steam\.exe$/iu.test(name)) return 10;
+  if (/^ECHO\.exe$/iu.test(name)) return 20;
+  return 40;
+};
+const readAsarJson = (archive, relativePath) => {
+  let fd;
+  try {
+    const stat = statSync(archive);
+    fd = openSync(archive, 'r');
+    const prefix = Buffer.alloc(16);
+    if (readSync(fd, prefix, 0, 16, 0) < 16) return null;
+    const headerSize = prefix.readUInt32LE(4);
+    if (headerSize <= 8 || headerSize > stat.size) return null;
+    const header = Buffer.alloc(headerSize);
+    if (readSync(fd, header, 0, headerSize, 8) < headerSize) return null;
+    const jsonSize = header.readInt32LE(4);
+    const tree = JSON.parse(header.subarray(8, 8 + jsonSize).toString('utf8'));
+    let node = tree;
+    for (const part of String(relativePath || '').replaceAll('\\', '/').split('/').filter(Boolean)) {
+      node = node?.files?.[part];
+      if (!node) return null;
+    }
+    if (node.files || node.unpacked || node.link) return null;
+    const size = Number(node.size);
+    const text = Buffer.alloc(size);
+    if (readSync(fd, text, 0, size, 8 + headerSize + Number(node.offset)) < size) return null;
+    return JSON.parse(text.toString('utf8').replace(/^\uFEFF/u, ''));
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { closeSync(fd); } catch {}
+  }
+};
+let echoProductCache = { key: '', value: null };
+const readEchoProduct = (exePath) => {
+  const dir = dirname(exePath);
+  const asar = join(dir, 'resources', 'app.asar');
+  const versionFile = join(dir, 'version');
+  let cacheKey = exePath;
+  try { cacheKey += `|${statSync(asar).mtimeMs}|${statSync(asar).size}`; } catch {}
+  try { cacheKey += `|${statSync(versionFile).mtimeMs}`; } catch {}
+  if (echoProductCache.key === cacheKey) return echoProductCache.value;
+  const asarPackage = readAsarJson(asar, 'package.json');
+  let electronVersion = null;
+  try {
+    const text = readFileSync(versionFile, 'utf8').trim();
+    if (/^\d+\.\d+\.\d+/.test(text)) electronVersion = text.split(/\s/u)[0];
+  } catch {}
+  const playtest = isPlaytestInstall(exePath);
+  const nextName = /^ECHO NEXT\.exe$/iu.test(basename(exePath)) || /^ECHO NEXT$/i.test(basename(dir));
+  const value = {
+    path: exePath,
+    product: asarPackage?.name || null,
+    version: asarPackage?.version || null,
+    edition: playtest ? 'playtest' : nextName ? 'next' : (asarPackage?.name || alignedEchoProduct),
+    electronVersion,
+    alignedEchoVersion,
+    source: asarPackage ? 'asar-package.json' : (electronVersion ? 'version-file' : 'path'),
+  };
+  echoProductCache = { key: cacheKey, value };
+  return value;
+};
+const describeEchoInstall = (exePath) => readEchoProduct(exePath);
 // Discovery walks Steam library folders up to 5 levels deep, which is far too
 // expensive to repeat on every 4s status poll from the loader UI. Cache hits
 // for 60s; keep misses short so a fresh install is picked up quickly.
@@ -1723,22 +1854,59 @@ const discoverEchoes = (hint = null) => {
     for (const entry of entries) {
       const path = join(directory, entry.name);
       if (entry.isFile() && echoFileName(entry.name)) add(path);
-      else if (entry.isDirectory() && !['node_modules', 'app.asar.unpacked', '.git', 'Mods', 'installed'].includes(entry.name)) walk(path, depth + 1);
+      else if (entry.isDirectory() && !['node_modules', 'app.asar.unpacked', '.git', 'Mods', 'installed', 'ShinawaseLoader', 'modded-runtime'].includes(entry.name)) walk(path, depth + 1);
     }
   };
-  const direct = hint || echoExe || process.env.ECHO_EXE || loaderConfig.echoExe || loaderConfig.echoRoot;
+  const direct = hint || echoExe || process.env.ECHO_EXE || process.env.ECHO_ROOT || loaderConfig.echoExe || loaderConfig.echoRoot || readJson(selectionPath, {}).echoExe;
   if (direct) {
     const path = resolve(String(direct));
     try { if (existsSync(path) && statSync(path).isFile()) add(path); else walk(path); } catch {}
   }
-  for (const candidate of echoCandidateRoots()) walk(candidate);
-  const list = [...found].sort((left, right) => left.localeCompare(right));
+  for (const candidate of echoCandidateRoots()) {
+    for (const name of echoExeNames) add(join(candidate, name));
+    walk(candidate);
+  }
+  const list = [...found].sort((left, right) => {
+    const delta = rankEchoInstall(left) - rankEchoInstall(right);
+    return delta || left.localeCompare(right);
+  });
   echoDiscoveryCache = { at: Date.now(), hint: cacheHint, list };
   return list;
 };
+const resolveEchoHint = (hint) => {
+  if (!hint) return null;
+  const path = resolve(String(hint).trim());
+  try {
+    if (!existsSync(path)) return null;
+    if (statSync(path).isFile()) return echoFileName(basename(path)) ? path : null;
+    if (!statSync(path).isDirectory()) return null;
+    const direct = echoExeNames.map((name) => join(path, name)).filter((file) => {
+      try { return existsSync(file) && statSync(file).isFile(); } catch { return false; }
+    });
+    if (!direct.length) return null;
+    return direct.sort((left, right) => rankEchoInstall(left) - rankEchoInstall(right) || left.localeCompare(right))[0];
+  } catch {
+    return null;
+  }
+};
+const explicitEchoHint = () => echoExe
+  || process.env.ECHO_EXE
+  || process.env.ECHO_ROOT
+  || process.env.ECHO_INSTALL_ROOT
+  || loaderConfig.echoExe
+  || loaderConfig.echoRoot
+  || null;
+const persistedEchoHint = () => {
+  const selection = readJson(selectionPath, {});
+  return selection.echoExe || selection.echoRoot || null;
+};
 const findEcho = () => {
-  const found = discoverEchoes();
-  if (!found.length) throw new Error('ECHO executable not found; pass --echo <directory-or-exe>');
+  const explicit = resolveEchoHint(explicitEchoHint());
+  if (explicit) return explicit;
+  const persisted = resolveEchoHint(persistedEchoHint());
+  if (persisted && !isPlaytestInstall(persisted)) return persisted;
+  const found = discoverEchoes().filter((path) => !isPlaytestInstall(path));
+  if (!found.length) throw new Error('ECHO executable not found; pass --echo <directory-or-exe> (Playtest is never auto-selected)');
   return found[0];
 };
 
@@ -1782,6 +1950,7 @@ const launchEcho = () => {
       ECHO_MODS_HOME: modsRoot,
       ECHO_PLUGINS_HOME: pluginsRoot,
       ECHO_LOGS_HOME: logsRoot,
+      ...(process.env.ECHO_USER_DATA_PATH_OVERRIDE ? { ECHO_USER_DATA_PATH_OVERRIDE: process.env.ECHO_USER_DATA_PATH_OVERRIDE } : {}),
     },
     detached: false,
     stdio: 'ignore',
@@ -1842,8 +2011,11 @@ const runConsoleCommand = async (line) => {
     ].join('\n');
   }
   if (cmd === 'status') {
+    let echo = null;
+    try { echo = describeEchoInstall(findEcho()); } catch {}
     return JSON.stringify({
       loaderVersion, port, debugPort, inspectPort, debugMode, locale: locale || 'zh',
+      echo: echo && { product: echo.product, version: echo.version, electron: echo.electronVersion, path: echo.path, edition: echo.edition },
       packages: modSummaries().map((item) => (item.enabled ? '* ' : '  ') + (item.name || item.id)),
     }, null, 2);
   }
@@ -1873,15 +2045,32 @@ const server = createServer(async (request, response) => {
       const togetherRelay = isTogetherEnabled() && togetherRelayServer
         ? { port: togetherRelayPort, url: `http://127.0.0.1:${togetherRelayPort}` }
         : null;
+      let selectedEchoInstall = null;
+      try { selectedEchoInstall = describeEchoInstall(findEcho()); } catch {}
       return jsonResponse(response, 200, {
         ok: true, loaderVersion, root, gameRoot, port, debugPort,
         loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
         nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort, locale: locale || 'zh',
         debugMode, stats: loaderStats,
         dropRoot, pluginDropRoot: pluginsRoot,
-        folders: { logs: logsRoot, mods: modsRoot, plugins: pluginsRoot },
+        folders: { logs: logsRoot, mods: modsRoot, plugins: pluginsRoot, echoUserData: echoUserDataPath() },
+        echoTarget: {
+          product: selectedEchoInstall?.product || null,
+          version: selectedEchoInstall?.version || null,
+          electron: selectedEchoInstall?.electronVersion || null,
+          alignedProduct: alignedEchoProduct,
+          alignedVersion: alignedEchoVersion,
+          alignedElectron: alignedElectronVersion,
+          steamAppId: echoSteamAppId,
+          userData: echoUserDataPath(),
+          userDataOverride: Boolean(String(process.env.ECHO_USER_DATA_PATH_OVERRIDE || '').trim()),
+          selected: selectedEchoInstall?.path || null,
+          edition: selectedEchoInstall?.edition || null,
+          source: selectedEchoInstall?.source || null,
+        },
         ...(togetherRelay ? { togetherRelay } : {}),
         echo: discoverEchoes(echoExe || null),
+        echoInstalls: discoverEchoes(echoExe || null).map(describeEchoInstall),
       });
     }
     if (request.method === 'GET' && url.pathname === '/api/echoes') return jsonResponse(response, 200, { echoes: discoverEchoes() });

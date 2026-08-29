@@ -1,4 +1,6 @@
-if (window.__echoExternalLoaderUi?.version >= 21) return 'already';
+// Loader UI generation 22. Keep this guard in sync with
+// window.__echoExternalLoaderUi.version and ShinawaseLoader.mjs (uiVersion < 22).
+if (window.__echoExternalLoaderUi?.version >= 22) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -564,7 +566,7 @@ css.textContent = `
   /* ---- Sidebar nav ---- */
   [data-echo-external-loader-group] .nav-icon-shell { display: grid; place-items: center; }
   [data-echo-external-loader-group] .nav-icon-shell svg { width: 21px; height: 21px; display: block; }
-  /* Flat sidebar (ECHO Next removed .sidebar-groups): style our injected group ourselves. */
+  /* Flat sidebar (echo-steam dropped .sidebar-groups): style our injected group ourselves. */
   .sidebar > [data-echo-external-loader-group] { display: flex; flex: none; flex-direction: column; min-height: 0; margin-top: 14px; }
   .sidebar > [data-echo-external-loader-group] .sidebar-group-label {
     margin: 0 0 6px; padding: 0 12px; font-size: 10.5px; font-weight: 680;
@@ -876,7 +878,7 @@ const dismissToast = (el) => {
   window.setTimeout(() => el.remove(), 240);
 };
 
-// ECHO Next dropped several legacy theme variables that older mods (and this
+// echo-steam dropped several legacy theme variables that older mods (and this
 // UI) still reference. When they are missing but the new token set is present,
 // bridge them once so var() fallbacks and color-mix() usages keep resolving.
 let legacyThemeBridge = null;
@@ -1040,7 +1042,7 @@ const makeNavButton = (nav, key, label, icon, onClick) => {
 };
 
 const ensureLoaderGroup = () => {
-  // Legacy ECHO renders a grouped sidebar (.sidebar-groups). ECHO Next flattened
+  // Older ECHO renders a grouped sidebar (.sidebar-groups). echo-steam flattened
   // the sidebar to <aside class="sidebar"> with plain .nav-list children, so fall
   // back to the flat sidebar and slot our group above the spacer / utility nav.
   const groups = document.querySelector('.sidebar-groups');
@@ -1101,8 +1103,11 @@ const renderStatus = async () => {
   try {
     const status = await api('/api/status');
     const grid = loaderPanel.querySelector('[data-status-grid]');
+    const echo = status.echoTarget || {};
+    const echoLabel = [echo.product, echo.version].filter(Boolean).join(' ') || (T.echoHost || 'ECHO');
     const rows = [
       [T.loader, 'v' + (status.loaderVersion || LOADER_VERSION), 'ok'],
+      [T.echoProduct || T.echoHost || 'ECHO', echoLabel, echo.selected && echo.version ? 'ok' : 'muted'],
       [T.listen, '127.0.0.1:' + status.port, 'ok'],
       [T.cdp, String(status.debugPort), 'ok'],
       [T.inspect, String(status.inspectPort), 'ok'],

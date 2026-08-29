@@ -2,6 +2,13 @@
   "name": "shinawase-loader-runtime",
   "private": true,
   "description": "Runtime dependencies for the ShinawaseLoader streaming bridge. Installed next to streaming-bridge.cjs so the bundled providers can hot-load them.",
+  "engines": {
+    "node": ">=22.23.2 <23"
+  },
+  "scripts": {
+    "build:native-host": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-native-host.ps1",
+    "build:streaming-bridge": "node ../scripts/build-streaming-bridge.mjs"
+  },
   "dependencies": {
     "@neteasecloudmusicapienhanced/api": "^4.40.1"
   }

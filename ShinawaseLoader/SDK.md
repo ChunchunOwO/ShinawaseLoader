@@ -20,9 +20,19 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `fetchJson(url, options)`, `uploadFile(input)`: Loader-mediated HTTP helpers.
 - `toast(message)`, `console.debug/info/warn/error`, `log(...)`: user feedback and Logs output.
 
-`GET /api/sdk` reports the `window.echo` namespaces available in the current ECHO build. `GET /api/status` reports active launch mode, performance settings, and folder locations.
+`GET /api/sdk` reports the `window.echo` namespaces available in the current ECHO build. `GET /api/status` reports active launch mode, performance settings, folder locations, and the aligned Echo target (`echoTarget`).
 
 Use `echo-external-mod.d.ts` for editor hints in JavaScript or TypeScript projects. The external SDK tracks the public bridge present in the installed build; it intentionally does not depend on ECHO's built-in plugin runtime.
+
+## echo-steam 26.8.28 alignment
+
+Current verified host: **echo-steam 26.8.28** at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.3.0**, Chromium 150.0.7871.212, Steam AppId **5105150**, Workshop SDK **1.12.0**.
+
+- **userData**: `%APPDATA%\ECHO Steam`. Honor `ECHO_USER_DATA_PATH_OVERRIDE` when set. Do not treat leftover `%APPDATA%\ECHO NEXT` as the Steam edition store.
+- **Window kinds** (Electron names `MainWindow` / `DesktopLyrics` / `MiniPlayer` / `TaskbarMiniPlayer` / `Pet` / `Cli` / `DevConsole`). The loader classifies the main renderer as `Main` and injects only that surface.
+- **`window.echo` namespaces** observed on this build: `steam`, `workshop`, `app`, `desktopLyrics`, `miniPlayer`, `pet`, `library`, `playback`, `streaming`, `lyrics`, `mv`, `accounts`. Method names are **not** frozen here — call `sdk.list(path)` / `sdk.get(path)` / `GET /api/sdk` at runtime. The loader itself uses `echo.app.getSettings` / `echo.app.setSettings` and `echo.playback.getStatus` when present.
+- **Custom protocols** (asset / media URL schemes, not `window.echo` methods): `echo-cover`, `echo-audio`, `echo-video`, `echo-mv`, `echo-wallpaper`, `echo-image`, `echo-artist-image`, `echo-album-extra`, `echo-workshop`, `echo-osu-sb`.
+- **Audio backend contract**: `audioBackendContractVersion = 2` on this host. That is the host audio-backend contract, not an Electron ABI.
 
 ## Renderer extension
 
@@ -70,15 +80,15 @@ HTTP surface:
 
 Mods read the same settings through `echoExternalMod.loaderSettings` and can subscribe via `loaderSettings.onChange(handler)` or the `shinawase:ui-settings` window event, for example to match a custom page to the user's accent color or density.
 
-## ECHO Next compatibility notes
+## echo-steam renderer notes
 
-Recent ECHO builds ("ECHO Next") reshaped the renderer. The loader adapts automatically, but mod authors should know:
+echo-steam 26.8.28 (the current Steam renderer; older docs called this "ECHO Next") reshaped the UI. The loader adapts automatically, but mod authors should know:
 
-- **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader now injects its group into either shape.
-- **`extend.hideNav(routeId)`**: ECHO Next removed the per-route `[data-workshop-icon]` markers, so CSS hiding no longer matches. The loader additionally patches the native `sidebarHiddenRouteIds` app setting (via `window.echo.app.setSettings`) and restores it on `showNav` / cleanup. Route ids follow ECHO Next's sidebar ids (`home`, `songs`, `streaming`, `queue`, `playlists`, `plugins`, `settings`, ...).
+- **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader injects its group into either shape.
+- **`extend.hideNav(routeId)`**: the Steam renderer removed the per-route `[data-workshop-icon]` markers, so CSS hiding no longer matches. The loader additionally patches the native `sidebarHiddenRouteIds` app setting (via `window.echo.app.setSettings`) and restores it on `showNav` / cleanup. Route ids follow the current sidebar ids (`home`, `songs`, `streaming`, `queue`, `playlists`, `plugins`, `settings`, ...).
 - **Route surfaces**: `.page-surface[data-route-id]`, `app:navigate:*` events, and `extend.replaceRoute` are unchanged.
-- **Theme variables**: ECHO Next removed `--theme-accent`, `--theme-code-bg`, `--theme-border`, `--theme-card-bg`, `--theme-card-border`, `--theme-hover-bg`, and `--theme-surface`. The loader bridges these to the new tokens (`--theme-accent-solid-bg`, `--theme-field-bg`, `--theme-panel-border(-strong)`, `--theme-panel-bg`, `--theme-list-row-bg-hover`, `--color-surface`) at runtime, but new CSS should target the new token names directly (see `src/renderer/styles/tokens.css` in the ECHO repo).
-- **Official plugins**: ECHO Next ships its own sandboxed plugin system (`userData/plugins/<id>/echo.plugin.json` + `plugin.js`, packaged as JSON `.echo` files with `"type": "echo-next-plugin-package"`). Those plugins use the sandboxed `echo` plugin API (`echo.commands`, `echo.net`, ...), not `echoExternalMod`, and are best imported through ECHO's own Plugins page (`window.echo.plugins.importPackage`). ShinawaseLoader packages keep using `echo.mod.json` / ShinawaseLoader `echo.plugin.json` manifests with the `echoExternalMod` SDK.
+- **Theme variables**: the Steam renderer removed `--theme-accent`, `--theme-code-bg`, `--theme-border`, `--theme-card-bg`, `--theme-card-border`, `--theme-hover-bg`, and `--theme-surface`. The loader bridges these to the new tokens (`--theme-accent-solid-bg`, `--theme-field-bg`, `--theme-panel-border(-strong)`, `--theme-panel-bg`, `--theme-list-row-bg-hover`, `--color-surface`) at runtime, but new CSS should target the new token names directly.
+- **Official plugins**: ECHO ships its own sandboxed plugin system (`%APPDATA%\ECHO Steam\plugins\<id>\echo.plugin.json` + `plugin.js`, packaged as JSON `.echo` files with `"type": "echo-next-plugin-package"`). Those plugins use the sandboxed `echo` plugin API (`echo.commands`, `echo.net`, ...), not `echoExternalMod`, and are best imported through ECHO's own Plugins page (`window.echo.plugins.importPackage` when that path exists — confirm with `sdk.list('plugins')`). ShinawaseLoader packages keep using `echo.mod.json` / ShinawaseLoader `echo.plugin.json` manifests with the `echoExternalMod` SDK.
 
 ## Package locations
 
@@ -89,9 +99,9 @@ Recent ECHO builds ("ECHO Next") reshaped the renderer. The loader adapts automa
 
 ## Native code
 
-ECHO NEXT's official plugin VM stays sandboxed and cannot touch Node, Electron, or the audio host. ShinawaseLoader's community native host is the authorized extension path for complete ECHO modification. It is loaded by the existing `app-asar-bridge` inside ECHO's Electron main process. That is in-process plugin loading, not remote `CreateRemoteThread` injection into an unrelated process.
+ECHO's official plugin VM stays sandboxed and cannot touch Node, Electron, or the audio host. ShinawaseLoader's community native host is the authorized extension path for complete ECHO modification. It is loaded by the existing `app-asar-bridge` inside ECHO's Electron main process. That is in-process plugin loading, not remote `CreateRemoteThread` injection into an unrelated process.
 
-The Loader prefers a non-asar path: when it launches ECHO it passes `--inspect` and evaluates `main-bootstrap.cjs` in the Electron main process. That registers the official streaming/account IPC, `session.setPreloads(streaming-preload.cjs)`, and the native host. Isolated `ECHO.modded.exe` and the optional asar-bridge remain available. Safe mode and `--no-native-host` turn native loading off.
+The Loader prefers a non-asar path: when it launches ECHO it passes `--inspect` and evaluates `main-bootstrap.cjs` in the Electron main process. That registers the official streaming/account IPC, `session.registerPreloadScript(streaming-preload.cjs)` (falls back to `setPreloads` on older Electron), and the native host. Isolated `ECHO.modded.exe` and the optional asar-bridge remain available. Safe mode and `--no-native-host` turn native loading off.
 
 A package may declare:
 

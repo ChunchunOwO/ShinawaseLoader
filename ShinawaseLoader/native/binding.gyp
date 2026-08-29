@@ -1,4 +1,8 @@
 {
+  "variables": {
+    "echo_target_electron%": "43.3.0",
+    "echo_aligned_app%": "26.8.28"
+  },
   "targets": [
     {
       "target_name": "echo-native-host",

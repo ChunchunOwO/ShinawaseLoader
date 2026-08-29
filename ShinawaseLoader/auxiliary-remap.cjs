@@ -4,11 +4,12 @@ const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 
-const AUX_KEYS = ['desktopLyrics', 'pet', 'miniPlayer'];
+const AUX_KEYS = ['desktopLyrics', 'pet', 'miniPlayer', 'taskbarMiniPlayer'];
 const TITLE_KIND = {
   'ECHO Desktop Lyrics': 'desktopLyrics',
   'ECHO Pet': 'pet',
   'ECHO Mini Player': 'miniPlayer',
+  'ECHO Taskbar Mini Player': 'taskbarMiniPlayer',
 };
 
 const filePathFromUrl = (value) => {
@@ -27,7 +28,7 @@ const kindFromHref = (href) => {
     const params = new URL(String(href || ''), 'file://dummy/').searchParams;
     return AUX_KEYS.find((key) => params.get(key) === '1') || (/auxiliary\.html/i.test(href) ? 'auxiliary' : null);
   } catch {
-    return /[?&](desktopLyrics|pet|miniPlayer)=1/i.test(String(href || '')) ? 'query' : null;
+    return /[?&](desktopLyrics|pet|miniPlayer|taskbarMiniPlayer)=1/i.test(String(href || '')) ? 'query' : null;
   }
 };
 
@@ -71,7 +72,7 @@ const remapHref = (href, window) => {
   const kind = kindFromHref(text) || kindFromWindow(window);
   if (!kind || kind === 'auxiliary') return '';
   let next = text;
-  if (!/[?&](desktopLyrics|pet|miniPlayer)=1/i.test(next) && AUX_KEYS.includes(kind)) {
+  if (!/[?&](desktopLyrics|pet|miniPlayer|taskbarMiniPlayer)=1/i.test(next) && AUX_KEYS.includes(kind)) {
     next += (next.includes('?') ? '&' : '?') + `${kind}=1`;
   }
   if (/index\.html/i.test(next)) {

@@ -2,20 +2,40 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const marker = '/* shinawase-loader-bridge-v1 */';
 const nativeHostMarker = '/* shinawase-loader-native-host-v1 */';
 const preloadMarker = '/* shinawase-loader-preload-bridge-v1 */';
 const playbackMarker = '/* shinawase-loader-streaming-playback-v1 */';
+const MAIN_ENTRY = 'out/main/index.js';
+const PRELOAD_ENTRY = 'out/preload/index.mjs';
+const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the Steam distribution.';
+const KNOWN_STOCK_ASAR_SHA256 = 'c59648731aea7f109317c26a9181bb6626b9c9e7f130998c2577a99e9ccae2c0';
+const KNOWN_STOCK_HEADER_SHA256 = 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd';
 const align4 = (value) => (value + 3) & ~3;
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const archiveFor = (root) => join(root, 'resources', 'app.asar');
 const loaderFor = (root) => join(root, 'ShinawaseLoader');
 const backupFor = (root) => join(loaderFor(root), 'backups', 'app.asar.original');
 const stateFor = (root) => join(loaderFor(root), 'backups', 'app.asar.json');
-const echoExeFor = (root) => ['ECHO.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
+const normalizeFsPath = (value) => String(value || '').replace(/\\/g, '/');
+const isIsolatedRuntimePath = (value) => /\/modded-runtime(?:\/|$)/iu.test(normalizeFsPath(value));
+// 26.8.28 Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
+// older folder layouts and are only resolved inside an isolated runtime copy.
+const echoExeFor = (root) => ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
   .map((name) => join(root, name))
   .find((file) => existsSync(file));
+const isSteamStockArchive = (archive) => {
+  const n = normalizeFsPath(archive);
+  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/resources\/app\.asar$/iu.test(n)
+    && !isIsolatedRuntimePath(n);
+};
+const isSteamStockExe = (exePath) => {
+  const n = normalizeFsPath(exePath);
+  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.exe$/iu.test(n)
+    && !isIsolatedRuntimePath(n);
+};
 const headerJsonBytes = (parsed) => {
   const headerSize = parsed.bytes.readUInt32LE(4);
   const header = parsed.bytes.subarray(8, 8 + headerSize);
@@ -27,6 +47,7 @@ const APP_ASAR_INTEGRITY_PREFIX = Buffer.from('"file":"resources\\\\app.asar","a
 
 const replaceAppAsarIntegrity = (exePath, nextHash) => {
   if (!exePath || !existsSync(exePath)) return { status: 'no-exe' };
+  if (isSteamStockExe(exePath)) return { status: 'refused-steam-original' };
   if (!/^[0-9a-f]{64}$/u.test(nextHash)) throw new Error('asar_integrity_hash_invalid');
   const bytes = Buffer.from(readFileSync(exePath));
   const index = bytes.indexOf(APP_ASAR_INTEGRITY_PREFIX);
@@ -154,6 +175,7 @@ const createShinawaseStreamingApi = (ipc, channels) => ({
   getAlbum: (request) => ipc.invoke(channels.StreamingGetAlbum, request),
   getArtist: (request) => ipc.invoke(channels.StreamingGetArtist, request),
   resolvePlayback: (request) => ipc.invoke(channels.StreamingResolvePlayback, request),
+  resolveLive: (request) => ipc.invoke(channels.StreamingResolveLive, request),
   analyzeBpm: (request) => ipc.invoke(channels.StreamingAnalyzeBpm, request),
   getLyrics: (request) => ipc.invoke(channels.StreamingGetLyrics, request),
   getMv: (request) => ipc.invoke(channels.StreamingGetMv, request),
@@ -217,6 +239,7 @@ const createShinawaseQobuzApi = (ipc, channels) => ({
     ipc.on(channels.QobuzAuthStatusChanged, listener);
     return () => ipc.off(channels.QobuzAuthStatusChanged, listener);
   },
+  downloadAlbum: (request) => ipc.invoke(channels.QobuzDownloadAlbum, request),
 });
 `;
 
@@ -249,45 +272,47 @@ const applyStreamingQualityPassthrough = (text) => {
   return next;
 };
 
-// Electron 37 on Windows crashes natively (0xC0000005) when always-on-top is
-// applied to a transparent+frameless window during its first moments of life:
-// both `alwaysOnTop: true` in the constructor options and a synchronous
-// setAlwaysOnTop() right after construction kill the whole process. ECHO's
-// pet, desktop-lyrics and mini-player windows all do exactly that, which turns
-// enabling those features into a crash loop (the enable flag persists before
-// the crash). Verified live: the same call is safe once the window is a few
-// hundred milliseconds old. The fix constructs without alwaysOnTop, stamps the
-// window's creation time, and makes the applyXxxAlwaysOnTop helpers defer the
-// raise until the window is at least 600ms old.
+// Electron 37 on Windows crashed natively (0xC0000005) when always-on-top was
+// applied to a transparent+frameless window in its first moments. 26.8.28
+// (Electron 43.3) still constructs the mini-player with alwaysOnTop: true and
+// the apply* helpers still raise immediately; pet / desktop-lyrics now omit
+// the ctor flag and branch darwin vs Win32. Keep the 600ms deferral.
 const applyAuxiliaryWindowCrashFix = (text) => {
   if (text.includes('__shinawaseBornAt')) return text;
-  const fatalCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: true,\n    webPreferences: {';
-  const safeCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: false,\n    webPreferences: {';
   let next = text;
-  while (next.includes(fatalCtor)) next = next.replace(fatalCtor, safeCtor);
+  const currentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
+  const currentSafe = currentCtor.replace('alwaysOnTop: true', 'alwaysOnTop: false');
+  if (next.includes(currentCtor)) next = next.replaceAll(currentCtor, currentSafe);
+  const legacyCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: true,\n    webPreferences: {';
+  const legacySafe = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: false,\n    webPreferences: {';
+  while (next.includes(legacyCtor)) next = next.replace(legacyCtor, legacySafe);
   for (const assignment of ['petWindow = window;', 'desktopLyricsWindow = window;', 'miniPlayerWindow = window;']) {
     const anchor = `  ${assignment}\n  window.setMenuBarVisibility(false);`;
     if (next.includes(anchor)) {
       next = next.replace(anchor, `  ${assignment}\n  window.__shinawaseBornAt = Date.now();\n  window.setMenuBarVisibility(false);`);
     }
   }
-  const raiseBody = (extra) => '{\n'
+  const deferRaise = (body) => '{\n'
     + '  const raise = () => {\n'
     + '    if (window.isDestroyed()) return;\n'
-    + '    window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n'
-    + '    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n'
-    + `${extra}`
+    + `${body}`
     + '  };\n'
     + '  const delay = Math.max(0, 600 - (Date.now() - (window.__shinawaseBornAt || 0)));\n'
     + '  if (delay === 0) raise(); else setTimeout(raise, delay);\n'
     + '};';
   const helpers = [
+    ['const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};',
+      `const applyPetAlwaysOnTop = (window, platform = process.platform) => ${deferRaise('    if (platform === "darwin") {\n      window.setAlwaysOnTop(true, "floating");\n      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n      return;\n    }\n    window.setAlwaysOnTop(true);\n')}`],
+    ['const applyMiniPlayerAlwaysOnTop = (window) => {\n  if (process.platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};',
+      `const applyMiniPlayerAlwaysOnTop = (window) => ${deferRaise('    if (process.platform === "darwin") {\n      window.setAlwaysOnTop(true, "floating");\n      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n      return;\n    }\n    window.setAlwaysOnTop(true);\n')}`],
+    ['const applyDesktopLyricsAlwaysOnTop = (window) => {\n  if (process.platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n  } else {\n    window.setAlwaysOnTop(true);\n  }\n  window.moveTop();\n};',
+      `const applyDesktopLyricsAlwaysOnTop = (window) => ${deferRaise('    if (process.platform === "darwin") {\n      window.setAlwaysOnTop(true, "floating");\n      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    } else {\n      window.setAlwaysOnTop(true);\n    }\n    window.moveTop();\n')}`],
     ['const applyPetAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n};',
-      `const applyPetAlwaysOnTop = (window) => ${raiseBody('')}`],
+      `const applyPetAlwaysOnTop = (window) => ${deferRaise('    window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n')}`],
     ['const applyMiniPlayerAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n};',
-      `const applyMiniPlayerAlwaysOnTop = (window) => ${raiseBody('')}`],
+      `const applyMiniPlayerAlwaysOnTop = (window) => ${deferRaise('    window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n')}`],
     ['const applyDesktopLyricsAlwaysOnTop = (window) => {\n  window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n  window.moveTop();\n};',
-      `const applyDesktopLyricsAlwaysOnTop = (window) => ${raiseBody('    window.moveTop();\n')}`],
+      `const applyDesktopLyricsAlwaysOnTop = (window) => ${deferRaise('    window.setAlwaysOnTop(true, process.platform === "darwin" ? "floating" : "screen-saver");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    window.moveTop();\n')}`],
   ];
   for (const [from, to] of helpers) {
     if (next.includes(from)) next = next.replace(from, to);
@@ -295,10 +320,11 @@ const applyAuxiliaryWindowCrashFix = (text) => {
   return next;
 };
 
+const steamStreamingValidation = (providerName) => `if (${providerName} !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("${STEAM_STREAMING_REJECT}");\n    }`;
 const patchPlayback = (text) => {
   if (text.includes(playbackMarker)) return applyStreamingQualityPassthrough(text);
-  const validation = 'if (provider2 !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Music streaming playback is not available in the Steam distribution.");\n    }';
-  const validationAlt = 'if (provider !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Music streaming playback is not available in the Steam distribution.");\n    }';
+  const validation = steamStreamingValidation('provider2');
+  const validationAlt = steamStreamingValidation('provider');
   let next = text;
   const usedMinifiedProvider = next.includes(validation);
   const oldValidation = usedMinifiedProvider ? validation : validationAlt;
@@ -377,7 +403,7 @@ const writeArchive = (archive, replacements) => {
     const content = replacement === undefined
       ? parsed.bytes.subarray(parsed.dataStart + Number(info.offset), parsed.dataStart + Number(info.offset) + Number(info.size))
       : Buffer.from(replacement, 'utf8');
-    if (entry.relativePath === 'out/main/index.js') found = true;
+    if (entry.relativePath === MAIN_ENTRY) found = true;
     info.offset = String(offset);
     info.size = content.length;
     if (replacement !== undefined) info.integrity = fileIntegrity(content);
@@ -391,27 +417,27 @@ const writeArchive = (archive, replacements) => {
   renameSync(temporary, archive);
 };
 
-// The Steam edition's playlists page hides everything imported from streaming
-// providers. Current builds filter with
-//   .filter(x=>x.sourceProvider==="local"&&x.kind!=="system")
-// older ones used `.filter(x=>x.sourceProvider==="local")`. Keep system
-// playlists hidden, but show netease/qq/etc. imports next to local ones.
-// After rewrite the sourceProvider==="local" filter no longer matches, so
-// the patch stays idempotent.
+// 26.8.28 Steam still hides imported streaming playlists. SteamPlaylistsPage
+// uses `.filter(i=>i.sourceProvider==="local")`; AlbumsPage / context menu /
+// appPrompt use `.filter(x=>x.sourceProvider==="local"&&x.kind!=="system")`.
+// Keep system playlists hidden, but show netease/qq/etc. imports. After
+// rewrite the sourceProvider==="local" filter no longer matches, so the
+// patch stays idempotent.
 const playlistProviderFilterRe = /\.filter\(([A-Za-z_$][\w$]*)=>\1\.sourceProvider==="local"(?:&&\1\.kind!=="system")?\)/gu;
-const patchSteamPlaylistsPage = (text) => text.replace(
-  playlistProviderFilterRe,
-  '.filter($1=>$1.kind!=="system")',
-);
+const patchSteamPlaylistsPage = (text) => {
+  playlistProviderFilterRe.lastIndex = 0;
+  return text.replace(playlistProviderFilterRe, '.filter($1=>$1.kind!=="system")');
+};
 
 const patch = (root) => {
   const archive = archiveFor(root);
   if (!existsSync(archive)) throw new Error(`app.asar_not_found:${archive}`);
+  if (isSteamStockArchive(archive)) throw new Error('refused_steam_original_asar');
   const current = readArchive(archive);
-  const main = filesIn(current.value).find((entry) => entry.relativePath === 'out/main/index.js');
+  const main = filesIn(current.value).find((entry) => entry.relativePath === MAIN_ENTRY);
   if (!main) throw new Error('asar_main_entry_missing');
   const currentText = current.bytes.subarray(current.dataStart + Number(main.info.offset), current.dataStart + Number(main.info.offset) + Number(main.info.size)).toString('utf8');
-  const preload = filesIn(current.value).find((entry) => entry.relativePath === 'out/preload/index.mjs');
+  const preload = filesIn(current.value).find((entry) => entry.relativePath === PRELOAD_ENTRY);
   if (!preload) throw new Error('asar_preload_entry_missing');
   const currentPreloadText = current.bytes.subarray(current.dataStart + Number(preload.info.offset), current.dataStart + Number(preload.info.offset) + Number(preload.info.size)).toString('utf8');
   const playlistPages = filesIn(current.value).filter((entry) => /^out\/renderer\/assets\/.+\.js$/u.test(entry.relativePath));
@@ -437,8 +463,8 @@ const patch = (root) => {
     copyFileSync(archive, backup);
   }
   const replacements = new Map([
-    ['out/main/index.js', mainText],
-    ['out/preload/index.mjs', preloadText],
+    [MAIN_ENTRY, mainText],
+    [PRELOAD_ENTRY, preloadText],
   ]);
   for (const item of playlistPatches) replacements.set(item.entry.relativePath, item.playlistsText);
   writeArchive(archive, replacements);
@@ -448,6 +474,7 @@ const patch = (root) => {
 
 const restore = (root, force = false) => {
   const archive = archiveFor(root);
+  if (isSteamStockArchive(archive)) throw new Error('refused_steam_original_asar');
   const backup = backupFor(root);
   if (!existsSync(backup)) return { status: 'no-backup' };
   const state = existsSync(stateFor(root)) ? JSON.parse(readFileSync(stateFor(root), 'utf8').replace(/^\uFEFF/u, '')) : {};
@@ -456,17 +483,114 @@ const restore = (root, force = false) => {
   return { status: 'restored', integrity: syncIntegrity(root, archive) };
 };
 
-const [action = 'status', root = join(dirname(new URL(import.meta.url).pathname), '..'), flag] = process.argv.slice(2);
+const entryBytes = (parsed, entry) => parsed.bytes.subarray(
+  parsed.dataStart + Number(entry.info.offset),
+  parsed.dataStart + Number(entry.info.offset) + Number(entry.info.size),
+);
+const openArchive = (root) => {
+  const archive = archiveFor(root);
+  if (!existsSync(archive)) throw new Error(`app.asar_not_found:${archive}`);
+  const parsed = readArchive(archive);
+  return { archive, parsed, files: filesIn(parsed.value) };
+};
+const listArchive = (root) => {
+  const { files } = openArchive(root);
+  return files.map((entry) => `${entry.relativePath}\t${entry.info.size}`).join('\n');
+};
+const readArchiveFile = (root, relativePath) => {
+  if (!relativePath) throw new Error('asar_read_path_missing');
+  const { parsed, files } = openArchive(root);
+  const entry = files.find((item) => item.relativePath === relativePath.replace(/\\/g, '/'));
+  if (!entry) throw new Error(`asar_entry_missing:${relativePath}`);
+  return entryBytes(parsed, entry).toString('utf8');
+};
+const verifyAnchors = (root) => {
+  const { archive, parsed, files } = openArchive(root);
+  const main = files.find((entry) => entry.relativePath === MAIN_ENTRY);
+  const preload = files.find((entry) => entry.relativePath === PRELOAD_ENTRY);
+  if (!main) throw new Error('asar_main_entry_missing');
+  if (!preload) throw new Error('asar_preload_entry_missing');
+  const mainText = entryBytes(parsed, main).toString('utf8');
+  const preloadText = entryBytes(parsed, preload).toString('utf8');
+  const playlistHits = [];
+  for (const entry of files.filter((item) => /^out\/renderer\/assets\/.+\.js$/u.test(item.relativePath))) {
+    const text = entryBytes(parsed, entry).toString('utf8');
+    if (!text.includes('sourceProvider==="local"')) continue;
+    playlistProviderFilterRe.lastIndex = 0;
+    playlistHits.push({
+      path: entry.relativePath,
+      filterMatches: [...text.matchAll(playlistProviderFilterRe)].map((match) => match[0]),
+    });
+  }
+  const aotCurrentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
+  const aotCurrentPet = 'const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};';
+  const asarSha = sha256(readFileSync(archive));
+  const headerSha = headerJsonHash(archive);
+  const exePath = echoExeFor(root);
+  let exeEmbeddedHash = null;
+  if (exePath && existsSync(exePath)) {
+    const exeBytes = readFileSync(exePath);
+    const index = exeBytes.indexOf(APP_ASAR_INTEGRITY_PREFIX);
+    if (index >= 0) exeEmbeddedHash = exeBytes.subarray(index + APP_ASAR_INTEGRITY_PREFIX.length, index + APP_ASAR_INTEGRITY_PREFIX.length + 64).toString('utf8');
+  }
+  const hits = {
+    mainEntry: Boolean(main),
+    preloadEntry: Boolean(preload),
+    steamStreamingReject: mainText.includes(STEAM_STREAMING_REJECT),
+    steamStreamingValidation: mainText.includes(steamStreamingValidation('provider2')) || mainText.includes(steamStreamingValidation('provider')),
+    streamingResolver: mainText.includes('  let filePath;\n  let probe = createProbeHintForMediaItem('),
+    streamingPath: mainText.includes('  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {'),
+    streamingReturn: mainText.includes('  return { filePath, mimeType: null, probe, durationSeconds };'),
+    qualityPassthrough: mainText.includes('quality: "standard",\n      stableKey:'),
+    preloadStreamingNull: preloadText.includes('streaming: null,'),
+    preloadDownloadsNull: preloadText.includes('downloads: null,'),
+    preloadAccountsNull: preloadText.includes('accounts: null,'),
+    playlistFilter: playlistHits.some((item) => item.filterMatches.length),
+    aotMiniPlayerCtor: mainText.includes(aotCurrentCtor),
+    aotPetHelper: mainText.includes(aotCurrentPet),
+    aotBirthStamp: ['petWindow = window;', 'desktopLyricsWindow = window;', 'miniPlayerWindow = window;']
+      .every((assignment) => mainText.includes(`  ${assignment}\n  window.setMenuBarVisibility(false);`)),
+    playbackChannels: ['playback:play-media-item', 'playback:resolve-media-item', 'playback:prepare-media-item']
+      .every((channel) => mainText.includes(channel)),
+    mainIntegrity: Boolean(main.info.integrity),
+    preloadIntegrity: Boolean(preload.info.integrity),
+  };
+  return {
+    archive,
+    stockAsarSha256: asarSha,
+    stockAsarSha256Match: asarSha === KNOWN_STOCK_ASAR_SHA256,
+    headerSha256: headerSha,
+    headerSha256Match: headerSha === KNOWN_STOCK_HEADER_SHA256,
+    exePath: exePath || null,
+    exeEmbeddedHash,
+    exeHeaderSync: Boolean(exeEmbeddedHash && exeEmbeddedHash === headerSha),
+    steamOriginalWriteBlocked: isSteamStockArchive(archive),
+    playlistHits,
+    hits,
+    ok: Object.values(hits).every(Boolean),
+  };
+};
+
+const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const [action = 'status', root = defaultRoot, flag] = process.argv.slice(2);
 try {
-  const result = action === 'patch'
-    ? patch(root)
-    : action === 'restore'
-      ? restore(root, flag === '--force')
-      : action === 'sync-integrity'
-        ? { status: 'synced', integrity: syncIntegrity(root) }
-        : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
-  const integrity = result.integrity?.status ? ` integrity=${result.integrity.status}` : '';
-  console.log(`ShinawaseLoader app.asar ${result.status}${integrity}`);
+  if (action === 'list') {
+    console.log(listArchive(root));
+  } else if (action === 'read') {
+    process.stdout.write(readArchiveFile(root, flag));
+  } else if (action === 'anchors') {
+    console.log(JSON.stringify(verifyAnchors(root), null, 2));
+  } else {
+    const result = action === 'patch'
+      ? patch(root)
+      : action === 'restore'
+        ? restore(root, flag === '--force')
+        : action === 'sync-integrity'
+          ? { status: 'synced', integrity: syncIntegrity(root) }
+          : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
+    const integrity = result.integrity?.status ? ` integrity=${result.integrity.status}` : '';
+    console.log(`ShinawaseLoader app.asar ${result.status}${integrity}`);
+  }
 } catch (error) {
   console.error(`ShinawaseLoader app.asar failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

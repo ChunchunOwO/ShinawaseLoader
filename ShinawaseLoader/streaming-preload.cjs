@@ -1,5 +1,11 @@
 'use strict';
 
+// Extra session preload (Electron 43 registerPreloadScript / setPreloads).
+// Official EchoSteam 26.8.28 exposes `echo` from out/preload/index.mjs with
+// streaming/accounts/downloads/spotify/mv left null. Extra session scripts
+// run in the isolated world before the official preload, so this file must
+// use a different contextBridge key. Do not re-expose `echo` or invent
+// steam/workshop/library APIs — those stay on window.echo.
 const { contextBridge, ipcRenderer } = require('electron');
 
 const channels = {
@@ -55,6 +61,7 @@ const channels = {
   QobuzAuthLogout: 'qobuz:auth:logout',
   QobuzAuthGetStatus: 'qobuz:auth:get-status',
   QobuzAuthStatusChanged: 'qobuz:auth:status-changed',
+  QobuzDownloadAlbum: 'qobuz:download-album',
 };
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
@@ -124,6 +131,7 @@ const api = {
     logout: () => invoke(channels.QobuzAuthLogout),
     getStatus: () => invoke(channels.QobuzAuthGetStatus),
     onStatusChanged: (handler) => listen(channels.QobuzAuthStatusChanged, handler),
+    downloadAlbum: (request) => invoke(channels.QobuzDownloadAlbum, request),
   },
 };
 

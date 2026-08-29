@@ -5,6 +5,10 @@ using System.Linq;
 
 internal static class EchoModdedHost
 {
+    // echo-steam 26.8.28 / Steam AppId 5105150. Launch the isolated copy at
+    // ShinawaseLoader\modded-runtime\ECHO.exe — never the Steam original, and
+    // never a hardlink of that exe (Electron 43.3 embeds the asar header hash).
+    // userData is %APPDATA%\ECHO Steam unless ECHO_USER_DATA_PATH_OVERRIDE is set.
     private const string SteamAppId = "5105150";
 
     private static string Quote(string value)

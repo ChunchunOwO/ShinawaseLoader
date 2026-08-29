@@ -113,6 +113,8 @@ export const copy = {
     sortName: '按名称',
     sortRecent: '最近安装',
     sortEnabled: '启用优先',
+    echoHost: 'ECHO',
+    echoProduct: '产品',
   },
   en: {
     language: 'Language',
@@ -226,6 +228,8 @@ export const copy = {
     sortName: 'By name',
     sortRecent: 'Recently installed',
     sortEnabled: 'Enabled first',
+    echoHost: 'ECHO',
+    echoProduct: 'product',
   },
 };
 

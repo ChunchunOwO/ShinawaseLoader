@@ -2,7 +2,7 @@
   "id": "echo.wallpaper-bridge",
   "name": "ECHO Wallpaper Bridge",
   "version": "1.0.0",
-  "minEchoVersion": "26.8.4",
+  "minEchoVersion": "26.8.15",
   "description": "Live spectrum visualizer and status page for ECHO's Wallpaper Engine bridge (localhost SSE). Optionally exports --echo-wallpaper-* CSS variables so themes and other mods can react to the music.",
   "icon": "icon.svg",
   "entry": "mod.js",

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ECHO Steam Listen Board",
+  "type": "object",
+  "properties": {
+    "locale": {
+      "type": "string",
+      "title": "界面语言 / UI language",
+      "description": "auto 跟随 ECHO 界面语言。/ auto follows the ECHO UI language.",
+      "enum": ["auto", "zh-CN", "en-US"],
+      "default": "auto"
+    },
+    "confirmBeforeUpload": {
+      "type": "boolean",
+      "title": "上传前确认 / Confirm before upload",
+      "description": "自定义上传前弹出确认。主进程仍会拒绝非官方榜单。/ Renderer confirms custom uploads. Main still refuses unknown boards.",
+      "default": true
+    },
+    "alsoSyncUserStats": {
+      "type": "boolean",
+      "title": "同时同步用户统计 / Also sync user stats",
+      "description": "官方同步排行榜后，再按只增策略写入 ECHO_STAT_* 用户统计。/ After official leaderboard sync, also store ECHO_STAT_* user stats (max of remote and local).",
+      "default": false
+    },
+    "allowCustomScores": {
+      "type": "boolean",
+      "title": "允许自定义分数 / Allow custom scores",
+      "description": "关闭后侧栏隐藏自定义上传，主进程也会拒绝。官方同步仍可用。/ When off, custom upload is blocked in UI and main. Official sync still works.",
+      "default": true
+    },
+    "defaultBoard": {
+      "type": "string",
+      "title": "默认排行榜 / Default board",
+      "description": "自定义上传与下载条目的默认榜单。/ Default board for custom upload and entry download.",
+      "enum": ["listening-time", "completed-tracks", "listening-streak", "deep-session", "rediscovered-tracks"],
+      "default": "listening-time"
+    },
+    "defaultScore": {
+      "type": "integer",
+      "title": "默认分数 / Default score",
+      "description": "自定义上传的默认分数（0 表示使用本地聆听统计对应字段）。范围 0–2147483647。/ Default custom-upload score (0 uses the matching local listening-stats field). Clamped 0–2147483647.",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "default": 0
+    },
+    "defaultScope": {
+      "type": "string",
+      "title": "默认下载范围 / Default download scope",
+      "description": "global 全球前 50；around-user 附近；friends 好友。/ global top 50, around-user, or friends.",
+      "enum": ["global", "around-user", "friends"],
+      "default": "global"
+    }
+  }
+}

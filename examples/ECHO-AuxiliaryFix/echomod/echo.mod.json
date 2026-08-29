@@ -2,6 +2,7 @@
   "id": "echo.auxiliary-fix",
   "name": "ECHO Auxiliary Fix",
   "version": "1.2.2",
+  "minEchoVersion": "26.8.15",
   "description": "Stops the native crash loop of desktop lyrics, pet, and mini-player windows by remapping them to auxiliary.html (loader >= 1.6.0).",
   "icon": "icon.svg",
   "entry": "mod.js",

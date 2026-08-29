@@ -4,6 +4,8 @@ param(
   [string]$Action = 'menu',
   [string]$EchoRoot,
   [switch]$Force,
+  # Accepted for older callers. Install always builds an isolated runtime and
+  # never patches the Steam resources\app.asar.
   [switch]$PatchApp
 )
 
@@ -447,11 +449,43 @@ function Get-SteamLibraryRoots {
   return $roots
 }
 
+# 26.8.28 Steam ships ECHO.exe. NEXT / Playtest / Steam suffixes are leftover
+# names from older builds; still accepted so a previous install folder resolves.
+$script:EchoGameExePattern = '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$'
+
+function Test-EchoPlaytest([string]$ExePath) {
+  $normalized = ([string]$ExePath).Replace('/', '\')
+  $name = [IO.Path]::GetFileName($normalized)
+  $parent = [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($normalized))
+  return [bool]($name -imatch '^ECHO Playtest\.exe$' -or $parent -imatch 'ECHO Playtest' -or $normalized -imatch '\\ECHO Playtest\\')
+}
+
+function Get-EchoInstallRank([string]$ExePath) {
+  $normalized = ([string]$ExePath).Replace('/', '\')
+  $name = [IO.Path]::GetFileName($normalized)
+  $parent = [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($normalized))
+  if (Test-EchoPlaytest $normalized) { return 80 }
+  if ($name -match '(?i)^ECHO NEXT\.exe$' -or $parent -match '(?i)^ECHO NEXT$') { return 70 }
+  if ($normalized -match '(?i)\\common\\ECHO\\ECHO\.exe$') { return 0 }
+  if ($name -ieq 'ECHO Steam.exe') { return 10 }
+  if ($name -ieq 'ECHO.exe') { return 20 }
+  return 40
+}
+
+function Write-CmdFile([string]$Path, [string[]]$Lines) {
+  $text = ($Lines -join "`r`n") + "`r`n"
+  $utf8Bom = New-Object System.Text.UTF8Encoding $true
+  [IO.File]::WriteAllText($Path, $text, $utf8Bom)
+}
+
 function Get-EchoCandidates([string]$Hint) {
   if ($Hint -and (Test-Path -LiteralPath $Hint -PathType Leaf)) { return @([IO.Path]::GetFullPath($Hint)) }
   if ($Hint -and (Test-Path -LiteralPath $Hint -PathType Container)) {
-    $direct = @(Get-ChildItem -LiteralPath $Hint -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$' })
+    $direct = @(Get-ChildItem -LiteralPath $Hint -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $script:EchoGameExePattern })
     if ($direct.Count -eq 1) { return @($direct[0].FullName) }
+    $preferred = @($direct | Where-Object { $_.Name -ieq 'ECHO.exe' -and -not (Test-EchoPlaytest $_.FullName) })
+    if (-not $preferred.Count) { $preferred = @($direct | Where-Object { $_.Name -ieq 'ECHO Steam.exe' }) }
+    if ($preferred.Count -eq 1) { return @($preferred[0].FullName) }
   }
   $found = [System.Collections.Generic.List[string]]::new()
   $roots = [System.Collections.Generic.List[string]]::new()
@@ -460,9 +494,6 @@ function Get-EchoCandidates([string]$Hint) {
     else { Add-UniquePath $roots $Hint }
   }
   $saved = Read-Json $SelectionFile $null
-  if (-not $Hint -and $saved -and $saved.echoExe -and (Test-Path -LiteralPath $saved.echoExe -PathType Leaf)) {
-    return @([IO.Path]::GetFullPath($saved.echoExe))
-  }
   if ($saved -and $saved.echoExe) { Add-UniquePath $found $saved.echoExe }
   foreach ($root in @(
     (Get-Location).Path,
@@ -482,11 +513,12 @@ function Get-EchoCandidates([string]$Hint) {
     try {
       $items = Get-ChildItem -LiteralPath $root -Filter 'ECHO*.exe' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue
       foreach ($item in $items) {
-        if ($item.Name -match '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$') { Add-UniquePath $found $item.FullName }
+        if ($item.Name -match $script:EchoGameExePattern) { Add-UniquePath $found $item.FullName }
       }
     } catch { }
   }
-  return @($found | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Sort-Object -Unique)
+  $files = @($found | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Sort-Object -Unique)
+  return @($files | Sort-Object { Get-EchoInstallRank $_ }, { $_ })
 }
 
 function Select-EchoExecutable([string]$Hint) {
@@ -497,7 +529,11 @@ function Select-EchoExecutable([string]$Hint) {
     Write-SetupLine $(if ($script:Locale -eq 'en') { '  looking for ECHO...' } else { '  正在查找 ECHO...' }) 'DarkGray'
   }
   $candidates = @(Get-EchoCandidates $Hint)
-  if ($candidates.Count -eq 1) { return $candidates[0] }
+  if (-not $Hint) {
+    $stable = @($candidates | Where-Object { -not (Test-EchoPlaytest $_) })
+    if ($stable.Count) { $candidates = $stable }
+  }
+  if ($candidates.Count -eq 1 -and ($Hint -or -not (Test-EchoPlaytest $candidates[0]))) { return $candidates[0] }
   if (-not $candidates.Count) {
     Clear-Host
     foreach ($line in Get-LogoLines) { Write-SetupLine $line 'White' }
@@ -527,6 +563,11 @@ function Select-EchoExecutable([string]$Hint) {
 }
 
 function Resolve-EchoExecutable {
+  if (-not $EchoRoot) {
+    if ($env:ECHO_EXE) { $EchoRoot = $env:ECHO_EXE }
+    elseif ($env:ECHO_ROOT) { $EchoRoot = $env:ECHO_ROOT }
+    elseif ($env:ECHO_INSTALL_ROOT) { $EchoRoot = $env:ECHO_INSTALL_ROOT }
+  }
   $path = Select-EchoExecutable $EchoRoot
   if (-not $path) { throw 'ECHO selection cancelled.' }
   $path = [IO.Path]::GetFullPath($path)
@@ -641,7 +682,7 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
   New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'resources') | Out-Null
 
   foreach ($item in Get-ChildItem -LiteralPath $echoRoot -File -Force) {
-    if ($item.Name -in @('ECHO.exe', 'ECHO.modded.exe')) { continue }
+    if ($item.Extension -ieq '.exe' -and $item.Name -match '^ECHO') { continue }
     New-HardLinkOrCopy $item.FullName (Join-Path $runtimeRoot $item.Name)
   }
   foreach ($item in Get-ChildItem -LiteralPath $echoRoot -Directory -Force) {
@@ -653,8 +694,9 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
   $originalAsar = Join-Path $echoRoot 'resources\app.asar'
   $backupAsar = Join-Path $loaderRoot 'backups\app.asar.original'
   if (Test-Path -LiteralPath $backupAsar) { $originalAsar = $backupAsar }
-  # ECHO 43.3+ embeds an Electron asar header hash in ECHO.exe. Copy the exe so
-  # echo-asar.mjs can rewrite that hash after patching without touching Steam.
+  # Electron 43.3 embeds the asar header SHA256 in the exe. Copy (never
+  # hardlink) ECHO.exe so echo-asar.mjs can rewrite that hash after patching
+  # the isolated app.asar without touching the Steam original.
   Copy-Item -LiteralPath $echoExe -Destination (Join-Path $runtimeRoot 'ECHO.exe') -Force
   foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -File -Force) {
     if ($item.Name -eq 'app.asar') { continue }
@@ -738,9 +780,9 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   foreach ($spec in $launcherSpecs) {
     $launcherPath = Join-Path $loaderRoot $spec.Name
     if ($spec.Command -eq 'host') {
-      @("@echo off", "cd /d `"$escapedRoot`"", "start `"`" `"$moddedHost`" %*") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+      Write-CmdFile $launcherPath @('@echo off', 'chcp 65001 >nul', "cd /d `"$escapedRoot`"", "start `"`" `"$moddedHost`" %*")
     } else {
-      @("@echo off", "cd /d `"$escapedRoot`"", "start `"`" `"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*") | Set-Content -LiteralPath $launcherPath -Encoding ASCII
+      Write-CmdFile $launcherPath @('@echo off', 'chcp 65001 >nul', "cd /d `"$escapedRoot`"", "start `"`" `"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*")
     }
   }
   Write-SetupProgress 100 (T 'progressDone')
@@ -902,13 +944,8 @@ function Show-Status($selectedExe) {
 function Invoke-Uninstall($selectedExe) {
   $root = Split-Path -Parent $selectedExe
   $loaderRoot = Join-Path $root 'ShinawaseLoader'
-  $node = Join-Path $loaderRoot 'node.exe'
-  $asar = Join-Path $loaderRoot 'echo-asar.mjs'
-  if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $asar)) {
-    $restoreArgs = @($asar, 'restore', $root)
-    if ($Force) { $restoreArgs += '--force' }
-    & $node @restoreArgs | Out-Host
-  }
+  # Isolated runtime lives under ShinawaseLoader\modded-runtime. Never write
+  # Steam's resources\app.asar; deleting the loader folder removes the copy.
   Stop-Loader $loaderRoot
   Remove-Item -LiteralPath $loaderRoot -Recurse -Force -ErrorAction Stop
   Write-Host "Loader removed. Mods and Plugins kept at $(Join-Path $root 'Mods') and $(Join-Path $root 'Plugins')." -ForegroundColor Green

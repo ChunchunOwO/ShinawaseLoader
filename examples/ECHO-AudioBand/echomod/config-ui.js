@@ -3,8 +3,9 @@ const props = schema?.properties && typeof schema.properties === 'object' ? sche
 const defaults = {
   locale: 'auto',
   widgetWidth: 360,
+  uiScale: 100,
   alignment: 'right',
-  offsetX: 180,
+  offsetX: 12,
   offsetY: 0,
   monitor: 'primary',
   customHeight: 48,
@@ -21,6 +22,9 @@ const defaults = {
   autoAvoidTray: true,
   seamlessMode: false,
   hoverPreview: true,
+  backdrop: 'mica',
+  hideWhenFullscreen: true,
+  hideWhenPresentation: true,
 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const specOf = (key) => props[key] && typeof props[key] === 'object' ? props[key] : {};
@@ -66,6 +70,7 @@ root.innerHTML = `
       <div>
         <strong data-name></strong>
         <span data-id></span>
+        <span data-note></span>
       </div>
     </div>
     <section class="ab-cfg-sec" data-sec="layout"></section>
@@ -78,6 +83,9 @@ const label = (zh, en) => chinese ? `${zh} / ${en}` : `${en} / ${zh}`;
 root.querySelector('[data-icon]').src = echoConfigUi.assetUrl('icon.svg');
 root.querySelector('[data-name]').textContent = manifest.name || 'ECHO AudioBand';
 root.querySelector('[data-id]').textContent = manifest.id || echoConfigUi.modId;
+root.querySelector('[data-note]').textContent = chinese
+  ? '加载器里开启本模组即显示任务栏条。不隐藏、不拦截 ECHO 原版迷你播放器。'
+  : 'Enable this mod in the loader to show the bar. It does not hide or intercept ECHO’s official mini player.';
 
 const el = (html) => {
   const wrap = document.createElement('div');
@@ -153,6 +161,21 @@ const layout = root.querySelector('[data-sec="layout"]');
 layout.append(el(`<h3></h3>`));
 layout.querySelector('h3').textContent = label('布局', 'Layout');
 layout.append(field('widgetWidth', number('widgetWidth', 200, 800, 1)));
+const scaleWrap = el(`<div class="ab-cfg-range"></div>`);
+const scale = document.createElement('input');
+scale.type = 'range';
+scale.min = '50';
+scale.max = '200';
+scale.step = '5';
+scale.value = String(draft.uiScale ?? 100);
+const scaleOut = document.createElement('output');
+scaleOut.textContent = `${scale.value}%`;
+scale.addEventListener('input', () => {
+  draft.uiScale = Number(scale.value);
+  scaleOut.textContent = `${scale.value}%`;
+});
+scaleWrap.append(scale, scaleOut);
+layout.append(field('uiScale', scaleWrap));
 layout.append(field('alignment', select('alignment', [
   { value: 'left', label: label('靠左', 'Left') },
   { value: 'center', label: label('居中', 'Center') },
@@ -209,6 +232,12 @@ range.addEventListener('input', () => {
 });
 rangeWrap.append(range, rangeOut);
 look.append(field('backgroundOpacity', rangeWrap));
+look.append(field('backdrop', select('backdrop', [
+  { value: 'mica', label: 'Mica' },
+  { value: 'acrylic', label: 'Acrylic' },
+  { value: 'tabbed', label: 'Mica Alt' },
+  { value: 'none', label: label('纯色', 'None') },
+])));
 ['showAlbumArt', 'showControls', 'showProgress', 'showTime', 'scrollingText', 'seamlessMode'].forEach((key) => look.append(toggle(key)));
 
 const behavior = root.querySelector('[data-sec="behavior"]');
@@ -221,6 +250,8 @@ behavior.append(field('locale', select('locale', [
 ])));
 behavior.append(toggle('autoAvoidTray'));
 behavior.append(toggle('hoverPreview'));
+behavior.append(toggle('hideWhenFullscreen'));
+behavior.append(toggle('hideWhenPresentation'));
 behavior.append(toggle('autoHideWhenStopped'));
 behavior.append(field('pollIntervalMs', number('pollIntervalMs', 250, 5000, 50)));
 
@@ -233,6 +264,7 @@ const numOf = (key, min, max) => {
 const readDraft = () => ({
   locale: String(draft.locale || 'auto'),
   widgetWidth: numOf('widgetWidth', 200, 800),
+  uiScale: numOf('uiScale', 50, 200),
   alignment: String(draft.alignment || 'right'),
   offsetX: numOf('offsetX', 0, 600),
   offsetY: numOf('offsetY', -80, 80),
@@ -251,6 +283,9 @@ const readDraft = () => ({
   autoAvoidTray: draft.autoAvoidTray === true,
   seamlessMode: draft.seamlessMode === true,
   hoverPreview: draft.hoverPreview === true,
+  backdrop: ['mica', 'acrylic', 'tabbed', 'none'].includes(String(draft.backdrop)) ? String(draft.backdrop) : 'mica',
+  hideWhenFullscreen: draft.hideWhenFullscreen !== false,
+  hideWhenPresentation: draft.hideWhenPresentation !== false,
 });
 
 echoConfigUi.onSave(() => readDraft());

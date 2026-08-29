@@ -1,0 +1,15 @@
+{
+  "id": "echo.steam-listen-board",
+  "name": "ECHO Steam Listen Board",
+  "version": "1.0.2",
+  "minEchoVersion": "26.8.28",
+  "description": "Official loader test: inspect the in-process ECHO Steam runtime and upload listening leaderboard / stats data. / 官方加载器测试：检查进程内 ECHO Steam 运行时并上传聆听排行榜 / 统计数据。",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "main": "main.cjs",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js",
+  "native": { "memory": true },
+  "sidebarOrder": 85
+}

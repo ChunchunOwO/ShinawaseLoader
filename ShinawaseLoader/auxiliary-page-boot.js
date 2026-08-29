@@ -1,7 +1,7 @@
 (() => {
   try {
     const search = String(location.search || '');
-    if (!/[?&](desktopLyrics|pet|miniPlayer)=1/i.test(search)) return;
+    if (!/[?&](desktopLyrics|pet|miniPlayer|taskbarMiniPlayer)=1/i.test(search)) return;
     const root = document.documentElement;
     const hide = () => {
       root.dataset.echoStartup = 'disabled';

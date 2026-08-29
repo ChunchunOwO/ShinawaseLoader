@@ -1,5 +1,10 @@
 'use strict';
 
+// In-process native host for echo-steam 26.8.28 (Electron 43.3.0 / Chromium 150,
+// Node >=22.23.2 <23). Build echo-native-host.node with
+// scripts/build-native-host.ps1 so the addon matches that Electron ABI.
+// ECHO.exe FileVersion 26.8.28 is the app stamp, not an Electron target.
+
 const { createServer } = require('node:http');
 const { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, lstatSync } = require('node:fs');
 const { dirname, extname, join, normalize, relative, resolve } = require('node:path');

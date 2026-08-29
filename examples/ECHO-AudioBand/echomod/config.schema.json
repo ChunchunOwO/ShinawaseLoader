@@ -11,25 +11,33 @@
     "widgetWidth": {
       "type": "integer",
       "title": "组件宽度 / Widget width",
-      "description": "任务栏条宽度（像素）。",
+      "description": "任务栏条在 100% 缩放下的宽度（像素）。",
       "minimum": 200,
       "maximum": 800,
       "default": 360
     },
+    "uiScale": {
+      "type": "integer",
+      "title": "界面缩放 / UI scale",
+      "description": "50–200，默认 100。按比例缩放条宽、字号、封面、按钮和悬停预览；高度仍贴任务栏再按比例变化。",
+      "minimum": 50,
+      "maximum": 200,
+      "default": 100
+    },
     "alignment": {
       "type": "string",
       "title": "水平对齐 / Alignment",
-      "description": "相对任务栏条：靠左、居中或靠右（靠右默认避开托盘时钟）。",
+      "description": "相对任务栏空档：靠左、居中或靠右。会读取系统任务栏左/中对齐，并避开托盘图标。 / Sits in the free taskbar gap. Follows Windows left/center taskbar alignment and stays off the tray.",
       "enum": ["left", "center", "right"],
       "default": "right"
     },
     "offsetX": {
       "type": "integer",
       "title": "水平偏移 / Horizontal offset",
-      "description": "靠左时始终生效；靠右时仅在关闭自动避开托盘、助手不可用或对齐不是靠右时使用。 / Horizontal inset for left alignment; for right alignment only when auto-avoid is off, unavailable, or alignment is not right.",
+      "description": "靠左时从空档左缘再内缩；靠右且关闭自动避开托盘时作为右边距。 / Extra inset from the left free edge; right margin only when auto-avoid tray is off.",
       "minimum": 0,
       "maximum": 600,
-      "default": 180
+      "default": 12
     },
     "offsetY": {
       "type": "integer",
@@ -117,8 +125,8 @@
     },
     "autoAvoidTray": {
       "type": "boolean",
-      "title": "自动避开托盘 / Auto-avoid tray",
-      "description": "靠右叠放时根据系统托盘位置自动让位；关闭后改用水平偏移。 / When right-aligned, sit left of the system tray; otherwise offsetX is used.",
+      "title": "自动对齐托盘 / Auto-align to tray",
+      "description": "所有对齐方式都不会压到系统托盘图标；靠右时贴在托盘左侧。 / Keep every alignment clear of tray icons; right alignment sits just left of the tray.",
       "default": true
     },
     "seamlessMode": {
@@ -131,6 +139,25 @@
       "type": "boolean",
       "title": "悬停封面预览 / Hover album-art preview",
       "description": "鼠标悬停封面时弹出大图与曲目信息。 / Show a large cover popup when hovering album art.",
+      "default": true
+    },
+    "backdrop": {
+      "type": "string",
+      "title": "窗口材质 / Backdrop",
+      "description": "WinUI 3 系统材质。Win11 默认 Mica；Win10 使用纯色，避免玻璃材质把整条打成全透明。none 为纯色。 / WinUI 3 system backdrop. Mica on Windows 11; solid fill on Windows 10.",
+      "enum": ["mica", "acrylic", "tabbed", "none"],
+      "default": "mica"
+    },
+    "hideWhenFullscreen": {
+      "type": "boolean",
+      "title": "全屏时隐藏 / Hide when fullscreen",
+      "description": "游戏独占全屏、无边框铺满监视器、或 D3D 全屏时隐藏组件。 / Hide during exclusive / D3D / borderless-monitor fullscreen.",
+      "default": true
+    },
+    "hideWhenPresentation": {
+      "type": "boolean",
+      "title": "演示模式隐藏 / Hide during presentation",
+      "description": "Windows 演示 / 投影模式时隐藏。 / Hide when Windows reports presentation mode.",
       "default": true
     }
   }

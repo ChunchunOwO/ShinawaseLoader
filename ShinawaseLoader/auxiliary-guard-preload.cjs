@@ -1,5 +1,9 @@
 'use strict';
 
+// Fallback preload that injects auxiliary-page-boot.js into aux windows
+// (DesktopLyrics / MiniPlayer / Pet / TaskbarMiniPlayer). Not used for Main,
+// Cli, or DevConsole.
+
 try {
   const { webFrame } = require('electron');
   const { readFileSync } = require('node:fs');

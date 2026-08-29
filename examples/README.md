@@ -11,6 +11,8 @@ Official sample packages. Source folders are not copied by `setup-modloader.bat`
 | ECHO MV | [ECHO-MV](ECHO-MV) | `examples/packages/ECHO-MV.echomod` |
 | ECHO Wallpaper Bridge | [ECHO-WallpaperBridge](ECHO-WallpaperBridge) | `examples/packages/ECHO-WallpaperBridge.echomod` |
 
+ECHO Steam Listen Board ([ECHO-SteamListenBoard](ECHO-SteamListenBoard)) is a standalone official loader test for Steam listening leaderboards (App ID 5105150). It is **not** in the installer optional packages and is **not** copied by `setup-modloader`. Pack it yourself from that folder's README.
+
 Every installer example ships a `config.schema.json` fallback form; most also include a custom `configUi` page (loader >= 1.6.0). ECHO AudioBand and ECHO Wallpaper Bridge show the full section/switch/range/color patterns.
 
 ECHO Wallpaper Bridge doubles as the reference client for ECHO's Wallpaper Engine bridge (`http://127.0.0.1:47668`, endpoints `/health`, `/snapshot`, `/events`, `/echo-wallpaper-engine.js`), following `examples/wallpaper-engine/echo-bridge-example.js` in the ECHO repository.
@@ -26,4 +28,4 @@ Rebuild from the repository root:
 .\pack-mod.bat .\examples\ECHO-WallpaperBridge\echomod .\examples\packages\ECHO-WallpaperBridge.echomod --zip
 ```
 
-Drop a built `.echomod` into the game `Mods` folder, or import it from the in-app Mods page.
+Drop a built `.echomod` into the Steam stable game `Mods` folder (`D:\SteamLibrary\steamapps\common\ECHO\Mods`), or import it from the in-app Mods page. Runtime userData is `%APPDATA%\ECHO Steam`, not leftover `ECHO NEXT` / `ECHO`.

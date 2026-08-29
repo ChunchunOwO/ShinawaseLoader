@@ -1,8 +1,9 @@
 {
   "locale": "auto",
   "widgetWidth": 360,
+  "uiScale": 100,
   "alignment": "right",
-  "offsetX": 180,
+  "offsetX": 12,
   "offsetY": 0,
   "monitor": "primary",
   "customHeight": 48,
@@ -18,5 +19,8 @@
   "pollIntervalMs": 1000,
   "autoAvoidTray": true,
   "seamlessMode": false,
-  "hoverPreview": true
+  "hoverPreview": true,
+  "backdrop": "mica",
+  "hideWhenFullscreen": true,
+  "hideWhenPresentation": true
 }

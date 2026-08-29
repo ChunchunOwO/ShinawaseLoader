@@ -1,5 +1,6 @@
 #ifndef ECHO_NATIVE_H
 #define ECHO_NATIVE_H
+/* EchoNative ABI for echo-steam 26.8.28. Build the loader addon against Electron 43.3.0. */
 
 #include <stddef.h>
 #include <stdint.h>

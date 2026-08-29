@@ -23,7 +23,9 @@ PLUGIN_SOURCE = ROOT / PLUGIN_ID
 APP_DATA = Path(os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming")))
 CONFIG_FILE = APP_DATA / "ECHO Together" / "launcher.json"
 ECHO_EXE: Path | None = None
-USER_DATA = APP_DATA / "ECHO NEXT"
+DEFAULT_ECHO_ROOT = Path(os.environ.get("ECHO_ROOT", r"D:\SteamLibrary\steamapps\common\ECHO"))
+ECHO_EXE_NAMES = ("ECHO.exe", "ECHO Steam.exe", "ECHO.modded.exe", "ECHO NEXT.exe")
+USER_DATA = APP_DATA / "ECHO Steam"
 MOD_CONFIG_FILE = USER_DATA / "echo-together.json"
 PLUGIN_DIR = USER_DATA / "plugins"
 INSTALLED_PLUGIN = PLUGIN_DIR / PLUGIN_ID
@@ -53,12 +55,35 @@ def write_json(path: Path, value):
     os.replace(temp, path)
 
 
+def _exe_from_dir(directory: Path) -> Path | None:
+    for name in ECHO_EXE_NAMES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _is_echo_exe(path: Path) -> bool:
+    return path.is_file() and path.name.lower() in {name.lower() for name in ECHO_EXE_NAMES}
+
+
 def discover_echo_exe() -> Path | None:
+    env_exe = os.environ.get("ECHO_EXE")
+    if env_exe:
+        path = Path(env_exe).expanduser()
+        if path.is_file():
+            return path.resolve()
+        if path.is_dir():
+            found = _exe_from_dir(path)
+            if found:
+                return found.resolve()
     configured = read_json(CONFIG_FILE, {})
     configured_path = configured.get("echoExe") if isinstance(configured, dict) else None
     candidates = [Path(configured_path)] if configured_path else []
+    candidates.append(DEFAULT_ECHO_ROOT / "ECHO.exe")
+    candidates.append(DEFAULT_ECHO_ROOT)
     candidates.extend(
-        Path(root) / "ECHO NEXT" / "ECHO NEXT.exe"
+        Path(root) / "ECHO" / "ECHO.exe"
         for root in (
             os.environ.get("PROGRAMFILES", r"C:\Program Files"),
             Path(os.environ.get("LOCALAPPDATA", str(APP_DATA.parent))) / "Programs",
@@ -67,14 +92,17 @@ def discover_echo_exe() -> Path | None:
     )
     seen = set()
     for candidate in candidates:
-        candidate = candidate.expanduser()
+        candidate = Path(candidate).expanduser()
         key = str(candidate).lower()
         if key in seen:
             continue
         seen.add(key)
         if candidate.is_dir():
-            candidate = next((candidate / name for name in ("ECHO.exe", "ECHO NEXT.exe") if (candidate / name).is_file()), candidate / "ECHO NEXT.exe")
-        if candidate.is_file() and candidate.name.lower() in {"echo.exe", "echo next.exe"}:
+            found = _exe_from_dir(candidate)
+            if found:
+                return found.resolve()
+            continue
+        if _is_echo_exe(candidate):
             return candidate.resolve()
     return None
 
@@ -90,11 +118,13 @@ def selected_echo_exe() -> Path | None:
 def set_echo_directory(directory: Path):
     directory = Path(directory).expanduser()
     if directory.is_dir():
-        candidate = next((directory / name for name in ("ECHO.exe", "ECHO NEXT.exe") if (directory / name).is_file()), directory / "ECHO NEXT.exe")
+        candidate = _exe_from_dir(directory)
+        if not candidate:
+            candidate = directory / "ECHO.exe"
     else:
         candidate = directory
-    if not candidate.is_file() or candidate.name.lower() not in {"echo.exe", "echo next.exe"}:
-        raise FileNotFoundError(f"ECHO.exe/ECHO NEXT.exe not found in: {directory}")
+    if not _is_echo_exe(candidate):
+        raise FileNotFoundError(f"ECHO.exe not found in: {directory}")
     candidate = candidate.resolve()
     write_json(CONFIG_FILE, {"echoExe": str(candidate)})
     global ECHO_EXE
@@ -105,7 +135,7 @@ def set_echo_directory(directory: Path):
 def require_echo_exe() -> Path:
     path = selected_echo_exe()
     if not path:
-        raise FileNotFoundError("ECHO NEXT was not found. Select its install folder first.")
+        raise FileNotFoundError("ECHO was not found. Select its install folder first, or set ECHO_ROOT / ECHO_EXE.")
     return path
 
 
@@ -1295,7 +1325,7 @@ def backup_path(label: str) -> Path:
 
 
 def stop_echo():
-    for name in ["ECHO NEXT.exe", "ECHO.exe", "echo-audio-host.exe", "echo-smtc-host.exe"]:
+    for name in ["ECHO.exe", "ECHO Steam.exe", "ECHO.modded.exe", "ECHO NEXT.exe", "echo-audio-host.exe", "echo-smtc-host.exe"]:
         subprocess.run(
             ["taskkill", "/IM", name, "/T", "/F"],
             stdout=subprocess.DEVNULL,
@@ -1425,7 +1455,7 @@ def run_gui():
 
     subtitle = tk.Label(
         header,
-        text="ECHO NEXT 客户端模组注入与扩展管理平台",
+        text="ECHO Steam 客户端模组注入与扩展管理平台",
         font=("Segoe UI", 9),
         fg=TEXT_MUTED,
         bg=BG,
@@ -1497,7 +1527,7 @@ def run_gui():
     )
     status_pill.pack(side="right")
 
-    path_var = tk.StringVar(value=str(selected_echo_exe() or "未检测到 ECHO NEXT 安装路径"))
+    path_var = tk.StringVar(value=str(selected_echo_exe() or "未检测到 ECHO 安装路径"))
 
     path_box = tk.Frame(card, bg="#0d1117", highlightbackground="#21262d", highlightthickness=1)
     path_box.pack(fill="x", padx=14, pady=(0, 8))
@@ -1533,7 +1563,7 @@ def run_gui():
             path_var.set(str(exe))
             path_label.config(fg="#7ee787")
         else:
-            path_var.set("未找到 ECHO NEXT 安装路径，请点击右侧手动选择")
+            path_var.set("未找到 ECHO 安装路径，请点击右侧手动选择")
             path_label.config(fg="#ffa657")
 
         if st == "client mod active":
@@ -1549,7 +1579,7 @@ def run_gui():
     def choose_echo():
         initial = selected_echo_exe()
         selected = filedialog.askdirectory(
-            title="选择 ECHO NEXT 安装目录",
+            title="选择 ECHO 安装目录",
             initialdir=str(initial.parent if initial else Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))),
         )
         if not selected:

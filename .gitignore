@@ -16,3 +16,6 @@ Packages/template-self-test.echomod
 /dev-preview/
 /.tmp-asar/
 /ShinawaseLoader/node_modules/
+/examples/ECHO-AudioBand/echomod/host/
+/examples/ECHO-AudioBand/winui/bin/
+/examples/ECHO-AudioBand/winui/obj/

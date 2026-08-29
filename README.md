@@ -2,11 +2,11 @@
 
 # ShinawaseLoader
 
-**ECHOSteam 的社区外部 ModLoader**
+**ECHO Steam 的社区外部 ModLoader**
 
-*Community external ModLoader for ECHOSteam — local CDP injection, no built-in plugin VM.*
+*Community external ModLoader for ECHO Steam — local CDP injection, no built-in plugin VM.*
 
-![version](https://img.shields.io/badge/version-1.6.0-3b82f6?style=flat-square)
+![version](https://img.shields.io/badge/version-1.6.5-3b82f6?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square)
 ![node](https://img.shields.io/badge/node-22.23.2-339933?style=flat-square)
 ![mode](https://img.shields.io/badge/mode-external--CDP-8b5cf6?style=flat-square)
@@ -15,9 +15,9 @@
 
 </div>
 
-ShinawaseLoader 是 ECHOSteam（Electron 音乐应用）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 `ECHO.exe`。
+ShinawaseLoader 是 ECHO Steam（echo-steam 26.8.28，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 `ECHO.exe`。userData 为 `%APPDATA%\ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
-> **v1.6.0** 全新注入 UI（更精致的 Mods 管理页、配置弹窗、Loader 状态页），以及 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
+> **v1.6.5**（当前）对齐 echo-steam 26.8.28。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
 ## 目录
 
@@ -48,7 +48,7 @@ ShinawaseLoader 是 ECHOSteam（Electron 音乐应用）的社区外部 ModLoade
 
 ## 🚀 快速开始
 
-仅支持 Windows。安装程序会扫描 Steam 库定位 `ECHO.exe`，把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。
+仅支持 Windows。安装程序会扫描 Steam 库定位 `ECHO.exe` / `ECHO Steam.exe`（优先 `D:\SteamLibrary\steamapps\common\ECHO\ECHO.exe`，不会因路径排序默默选中 Playtest），把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。可用 `ECHO_ROOT`、`--echo` 或 `%LOCALAPPDATA%\ShinawaseLoader\selection.json` 覆盖目标。
 
 ```powershell
 git clone https://github.com/ChunchunOwO/ShinawaseLoader.git
@@ -76,7 +76,7 @@ cd ShinawaseLoader
 ### 命令行旗标
 
 ```text
---safe-mode --debug --load-mode --inject-interval --startup-delay
+--echo --safe-mode --debug --load-mode --inject-interval --startup-delay
 --native-port --inspect-port --no-native-host --locale
 ```
 

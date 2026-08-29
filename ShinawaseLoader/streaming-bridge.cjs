@@ -140217,6 +140217,26 @@ var require_playback_shim = __commonJS({
       prepare: "playback:prepare-media-item"
     };
     var SKIP = /* @__PURE__ */ new Set(["m3u8", "spotify"]);
+    var BILI_HEADERS = {
+      Referer: "https://www.bilibili.com/",
+      Origin: "https://www.bilibili.com",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    };
+    var hasHeader2 = (headers, name) => Object.keys(headers || {}).some((key) => key.toLowerCase() === name.toLowerCase());
+    var withProviderHeaders = (source, item) => {
+      const headers = source?.headers && typeof source.headers === "object" ? { ...source.headers } : {};
+      if (String(item?.provider) === "bilibili") {
+        if (!hasHeader2(headers, "Referer")) headers.Referer = BILI_HEADERS.Referer;
+        if (!hasHeader2(headers, "Origin")) headers.Origin = BILI_HEADERS.Origin;
+        if (!hasHeader2(headers, "User-Agent")) headers["User-Agent"] = BILI_HEADERS["User-Agent"];
+      }
+      return { ...source, headers };
+    };
+    var qualityChain = (item) => {
+      const requested = item.quality || item.streamingQuality || "lossless";
+      if (String(item.provider) !== "bilibili") return [requested];
+      return [requested, "high", "standard", "lossless"].filter((item2, index, all) => item2 && all.indexOf(item2) === index);
+    };
     var invokeMap = (ipcMain6) => {
       if (ipcMain6?._invokeHandlers instanceof Map) return ipcMain6._invokeHandlers;
       for (const key of Object.getOwnPropertyNames(ipcMain6 || {})) {
@@ -140233,25 +140253,49 @@ var require_playback_shim = __commonJS({
       if (!item || item.mediaType !== "streaming" || !item.provider || SKIP.has(String(item.provider))) return null;
       return item;
     };
-    var resolvePlayback = async (item, forceRefresh) => {
+    var resolvePlayback = async (item, forceRefresh, quality) => {
       const resolve30 = globalThis.__shinawaseResolveStreamingPlayback;
       if (typeof resolve30 !== "function") throw new Error("streaming_bridge_not_ready");
       const source = await resolve30({
         provider: item.provider,
         providerTrackId: item.providerTrackId,
-        quality: item.quality || item.streamingQuality,
+        quality: quality || item.quality || item.streamingQuality,
         forceRefresh: forceRefresh === true
       });
       if (!source?.url) throw new Error("streaming_source_unavailable");
-      return source;
+      return withProviderHeaders(source, item);
+    };
+    var resolveBilibiliFallback = async (item) => {
+      const fallback = process.__echoStreamingResolveBilibili || globalThis.__echoStreamingResolveBilibili;
+      if (typeof fallback !== "function") return null;
+      const source = await fallback(item);
+      return source?.url ? withProviderHeaders(source, item) : null;
     };
     var resolvePlaybackRetry = async (item, forceRefresh) => {
-      try {
-        return await resolvePlayback(item, forceRefresh);
-      } catch (error) {
-        if (forceRefresh === true) throw error;
-        return resolvePlayback(item, true);
+      let lastError = null;
+      for (const quality of qualityChain(item)) {
+        try {
+          return await resolvePlayback(item, forceRefresh, quality);
+        } catch (error) {
+          lastError = error;
+        }
       }
+      if (forceRefresh !== true) {
+        for (const quality of qualityChain(item)) {
+          try {
+            return await resolvePlayback(item, true, quality);
+          } catch (error) {
+            lastError = error;
+          }
+        }
+      }
+      try {
+        const fallback = await resolveBilibiliFallback(item);
+        if (fallback) return fallback;
+      } catch (error) {
+        lastError = error;
+      }
+      throw lastError || new Error("streaming_source_unavailable");
     };
     var staleStatus = (code) => code === 404 || code === 403 || code === 410;
     var installProxy = () => {
@@ -140372,9 +140416,28 @@ var require_playback_shim = __commonJS({
       const current = map2?.get(channel);
       if (typeof current !== "function") return false;
       ipcMain6.removeHandler(channel);
-      ipcMain6.handle(channel, (event, ...args) => wrapper(current, event, ...args));
       wrappedChannels.add(channel);
+      ipcMain6.handle(channel, (event, ...args) => wrapper(current, event, ...args));
       return true;
+    };
+    var installHandleHook = (ipcMain6, wrappers) => {
+      if (!ipcMain6 || ipcMain6.__shinawaseHandleHook) return Boolean(ipcMain6?.__shinawaseHandleHook);
+      const original = typeof ipcMain6.handle === "function" ? ipcMain6.handle.bind(ipcMain6) : null;
+      if (!original) return false;
+      try {
+        ipcMain6.handle = (channel, listener) => {
+          const wrap = wrappers.get(channel);
+          if (wrap && typeof listener === "function" && !wrappedChannels.has(channel)) {
+            wrappedChannels.add(channel);
+            return original(channel, (event, ...args) => wrap(listener, event, ...args));
+          }
+          return original(channel, listener);
+        };
+        ipcMain6.__shinawaseHandleHook = true;
+        return true;
+      } catch {
+        return false;
+      }
     };
     var installStreamingPlaybackShim = (host = {}) => {
       if (globalThis.__shinawasePlaybackShim?.ok) return globalThis.__shinawasePlaybackShim;
@@ -140386,34 +140449,40 @@ var require_playback_shim = __commonJS({
         }
       })();
       const ipcMain6 = host.ipcMain || electron11?.ipcMain;
-      const result = { ok: false, play: false, resolve: false, prepare: false };
+      const result = { ok: false, play: false, resolve: false, prepare: false, handleHook: false };
       if (!ipcMain6) {
         globalThis.__shinawasePlaybackShim = result;
         return result;
       }
-      result.play = wrapChannel(ipcMain6, CHANNELS.play, async (original, event, raw) => {
-        const item = streamingItem(raw);
-        if (!item) return original(event, raw);
-        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-        return original(event, asLocalRequest(raw, item, source));
-      });
-      result.resolve = wrapChannel(ipcMain6, CHANNELS.resolve, async (original, event, raw) => {
-        const item = streamingItem(raw);
-        if (!item) return original(event, raw);
-        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-        return asResolvedSource(item, source);
-      });
-      result.prepare = wrapChannel(ipcMain6, CHANNELS.prepare, async (original, event, raw) => {
-        const item = streamingItem(raw);
-        if (!item) return original(event, raw);
-        try {
+      const wrappers = /* @__PURE__ */ new Map([
+        [CHANNELS.play, async (original, event, raw) => {
+          const item = streamingItem(raw);
+          if (!item) return original(event, raw);
           const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
           return original(event, asLocalRequest(raw, item, source));
-        } catch {
-          return void 0;
-        }
-      });
-      result.ok = result.play && result.resolve;
+        }],
+        [CHANNELS.resolve, async (original, event, raw) => {
+          const item = streamingItem(raw);
+          if (!item) return original(event, raw);
+          const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+          return asResolvedSource(item, source);
+        }],
+        [CHANNELS.prepare, async (original, event, raw) => {
+          const item = streamingItem(raw);
+          if (!item) return original(event, raw);
+          try {
+            const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+            return original(event, asLocalRequest(raw, item, source));
+          } catch {
+            return void 0;
+          }
+        }]
+      ]);
+      result.handleHook = installHandleHook(ipcMain6, wrappers);
+      result.play = wrapChannel(ipcMain6, CHANNELS.play, wrappers.get(CHANNELS.play));
+      result.resolve = wrapChannel(ipcMain6, CHANNELS.resolve, wrappers.get(CHANNELS.resolve));
+      result.prepare = wrapChannel(ipcMain6, CHANNELS.prepare, wrappers.get(CHANNELS.prepare));
+      result.ok = result.play && result.resolve || result.handleHook && wrappedChannels.has(CHANNELS.play) && wrappedChannels.has(CHANNELS.resolve);
       host.log?.(`playback shim play=${result.play} resolve=${result.resolve} prepare=${result.prepare}`);
       globalThis.__shinawasePlaybackShim = result;
       if (!result.ok && !globalThis.__shinawasePlaybackShimRetry) {
@@ -140439,18 +140508,14 @@ var require_playback_shim = __commonJS({
   }
 });
 
-// ShinawaseLoader/.streaming-bridge-31932.ts
-var streaming_bridge_31932_exports = {};
-__export(streaming_bridge_31932_exports, {
+// ShinawaseLoader/.streaming-bridge-31740.ts
+var streaming_bridge_31740_exports = {};
+__export(streaming_bridge_31740_exports, {
   registerShinawaseStreamingBridge: () => registerShinawaseStreamingBridge
 });
-module.exports = __toCommonJS(streaming_bridge_31932_exports);
+module.exports = __toCommonJS(streaming_bridge_31740_exports);
 var import_electron44 = require("electron");
 var import_node_module6 = require("node:module");
-init_ipcChannels();
-
-// ../ECHOSteam-main/src/main/ipc/accountIpc.ts
-var import_electron10 = require("electron");
 init_ipcChannels();
 
 // ../ECHOSteam-main/src/main/accounts/AccountService.ts
@@ -141736,6 +141801,10 @@ var getAccountService = () => {
   accountService ??= new AccountService();
   return accountService;
 };
+
+// ../ECHOSteam-main/src/main/ipc/accountIpc.ts
+var import_electron10 = require("electron");
+init_ipcChannels();
 
 // ../ECHOSteam-main/src/main/accounts/AccountLoginWindow.ts
 var import_electron7 = require("electron");
@@ -164682,10 +164751,13 @@ var registerStreamingIpc = () => {
   });
 };
 
-// ShinawaseLoader/.streaming-bridge-31932.ts
+// ShinawaseLoader/.streaming-bridge-31740.ts
 var registered = false;
+var BRIDGE_CHANNEL_PREFIX = /^(streaming:|account:|downloads:|qobuz:|spotify:)/u;
+var OFFICIAL_PASSTHROUGH_PREFIX = /^(steam:|workshop:|library:)/u;
 var removeHandlers = (channels) => {
   for (const channel of channels) {
+    if (OFFICIAL_PASSTHROUGH_PREFIX.test(channel) || !BRIDGE_CHANNEL_PREFIX.test(channel)) continue;
     try {
       import_electron44.ipcMain.removeHandler(channel);
     } catch {
@@ -164713,15 +164785,15 @@ var registerShinawaseStreamingBridge = () => {
     }
     return service.resolvePlayback(payload);
   };
-  globalThis.__shinawaseStreamingAccountCookie = (providerName) => {
+  globalThis.__shinawaseStreamingAccountCookie = (providerName14) => {
     try {
-      const cookie = getAccountService().getCredentials(String(providerName ?? "").trim()).cookie;
+      const cookie = getAccountService().getCredentials(String(providerName14 ?? "").trim()).cookie;
       return typeof cookie === "string" && cookie.trim() ? cookie.trim() : null;
     } catch {
       return null;
     }
   };
-  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
+  removeHandlers(Object.values(IpcChannels));
   safeRegister("registerStreamingIpc", registerStreamingIpc);
   safeRegister("registerAccountIpc", registerAccountIpc);
   safeRegister("registerDownloadsIpc", registerDownloadsIpc);

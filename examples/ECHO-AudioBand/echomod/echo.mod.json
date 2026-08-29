@@ -1,9 +1,9 @@
 {
   "id": "echo.audioband",
   "name": "ECHO AudioBand",
-  "version": "1.2.2",
+  "version": "1.4.17",
   "minEchoVersion": "26.8.15",
-  "description": "AudioBand-style taskbar now-playing bar: album art, scrolling title, seekable progress, and playback controls rendered over the Windows taskbar.",
+  "description": "Standalone WinUI 3 taskbar now-playing bar: lyrics mode, tray-aware alignment, cover flyout, and hide-when-fullscreen.",
   "icon": "icon.svg",
   "entry": "mod.js",
   "main": "main.cjs",

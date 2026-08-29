@@ -10,8 +10,18 @@ import { getStreamingService } from 'ECHOSTEAM_ROOT/src/main/streaming/Streaming
 
 let registered = false;
 
+// EchoSteam 26.8.28 ships these channel names in out/preload/ipcChannels-CKJHta3q.mjs
+// (709 total) but the official main process does not register streaming/account/
+// downloads/qobuz/spotify handlers, and the official preload leaves those APIs
+// null. Re-register only this prefix set. Never remove steam:* / workshop:* /
+// library:* — those are live official channels (leaderboards, listen-together,
+// workshop, local library including library:add-streaming-track-to-playlist).
+const BRIDGE_CHANNEL_PREFIX = /^(streaming:|account:|downloads:|qobuz:|spotify:)/u;
+const OFFICIAL_PASSTHROUGH_PREFIX = /^(steam:|workshop:|library:)/u;
+
 const removeHandlers = (channels: string[]): void => {
   for (const channel of channels) {
+    if (OFFICIAL_PASSTHROUGH_PREFIX.test(channel) || !BRIDGE_CHANNEL_PREFIX.test(channel)) continue;
     try { ipcMain.removeHandler(channel); } catch {}
   }
 };
@@ -59,7 +69,7 @@ export const registerShinawaseStreamingBridge = (): void => {
       return null;
     }
   };
-  removeHandlers(Object.values(IpcChannels).filter((channel) => /^(streaming:|account:|downloads:|qobuz:|spotify:)/u.test(channel)));
+  removeHandlers(Object.values(IpcChannels));
   safeRegister('registerStreamingIpc', registerStreamingIpc);
   safeRegister('registerAccountIpc', registerAccountIpc);
   safeRegister('registerDownloadsIpc', registerDownloadsIpc);

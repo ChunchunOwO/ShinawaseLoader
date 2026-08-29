@@ -4,6 +4,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { randomBytes } = require('node:crypto');
 
+// 26.8.28 stock asar still registers these exact IpcChannels strings.
 const CHANNELS = {
   play: 'playback:play-media-item',
   resolve: 'playback:resolve-media-item',
@@ -218,44 +219,74 @@ const wrapChannel = (ipcMain, channel, wrapper) => {
   const current = map?.get(channel);
   if (typeof current !== 'function') return false;
   ipcMain.removeHandler(channel);
-  ipcMain.handle(channel, (event, ...args) => wrapper(current, event, ...args));
   wrappedChannels.add(channel);
+  ipcMain.handle(channel, (event, ...args) => wrapper(current, event, ...args));
   return true;
+};
+
+// Electron 43 may hide ipcMain._invokeHandlers. Hook handle() so a later
+// official registerPlaybackIpc still gets wrapped, and so inspector bootstrap
+// that races whenReady still catches the Steam m3u8-only reject.
+const installHandleHook = (ipcMain, wrappers) => {
+  if (!ipcMain || ipcMain.__shinawaseHandleHook) return Boolean(ipcMain?.__shinawaseHandleHook);
+  const original = typeof ipcMain.handle === 'function' ? ipcMain.handle.bind(ipcMain) : null;
+  if (!original) return false;
+  try {
+    ipcMain.handle = (channel, listener) => {
+      const wrap = wrappers.get(channel);
+      if (wrap && typeof listener === 'function' && !wrappedChannels.has(channel)) {
+        wrappedChannels.add(channel);
+        return original(channel, (event, ...args) => wrap(listener, event, ...args));
+      }
+      return original(channel, listener);
+    };
+    ipcMain.__shinawaseHandleHook = true;
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const installStreamingPlaybackShim = (host = {}) => {
   if (globalThis.__shinawasePlaybackShim?.ok) return globalThis.__shinawasePlaybackShim;
   const electron = host.electron || (() => { try { return require('electron'); } catch { return null; } })();
   const ipcMain = host.ipcMain || electron?.ipcMain;
-  const result = { ok: false, play: false, resolve: false, prepare: false };
+  const result = { ok: false, play: false, resolve: false, prepare: false, handleHook: false };
   if (!ipcMain) {
     globalThis.__shinawasePlaybackShim = result;
     return result;
   }
 
-  result.play = wrapChannel(ipcMain, CHANNELS.play, async (original, event, raw) => {
-    const item = streamingItem(raw);
-    if (!item) return original(event, raw);
-    const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-    return original(event, asLocalRequest(raw, item, source));
-  });
-  result.resolve = wrapChannel(ipcMain, CHANNELS.resolve, async (original, event, raw) => {
-    const item = streamingItem(raw);
-    if (!item) return original(event, raw);
-    const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-    return asResolvedSource(item, source);
-  });
-  result.prepare = wrapChannel(ipcMain, CHANNELS.prepare, async (original, event, raw) => {
-    const item = streamingItem(raw);
-    if (!item) return original(event, raw);
-    try {
+  const wrappers = new Map([
+    [CHANNELS.play, async (original, event, raw) => {
+      const item = streamingItem(raw);
+      if (!item) return original(event, raw);
       const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
       return original(event, asLocalRequest(raw, item, source));
-    } catch {
-      return undefined;
-    }
-  });
-  result.ok = result.play && result.resolve;
+    }],
+    [CHANNELS.resolve, async (original, event, raw) => {
+      const item = streamingItem(raw);
+      if (!item) return original(event, raw);
+      const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+      return asResolvedSource(item, source);
+    }],
+    [CHANNELS.prepare, async (original, event, raw) => {
+      const item = streamingItem(raw);
+      if (!item) return original(event, raw);
+      try {
+        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+        return original(event, asLocalRequest(raw, item, source));
+      } catch {
+        return undefined;
+      }
+    }],
+  ]);
+  result.handleHook = installHandleHook(ipcMain, wrappers);
+
+  result.play = wrapChannel(ipcMain, CHANNELS.play, wrappers.get(CHANNELS.play));
+  result.resolve = wrapChannel(ipcMain, CHANNELS.resolve, wrappers.get(CHANNELS.resolve));
+  result.prepare = wrapChannel(ipcMain, CHANNELS.prepare, wrappers.get(CHANNELS.prepare));
+  result.ok = (result.play && result.resolve) || result.handleHook;
   host.log?.(`playback shim play=${result.play} resolve=${result.resolve} prepare=${result.prepare}`);
   globalThis.__shinawasePlaybackShim = result;
 

@@ -22,7 +22,7 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 - 自动匹配：阈值 0.7、领先 0.08 / 高置信 0.86，先解析可播再提交（`selectionOrigin=auto`）
 - 临时流：不写盘，TTL ≤ 15 分钟，`echo-mv://ephemeral/{token}`
 
-设置保存在 ECHO `userData\echo-mv-mod\store.json`，**不会**改写 `echo-settings.json`。
+设置保存在 Steam 稳定版 `%APPDATA%\ECHO Steam\echo-mv-mod\store.json`，**不会**改写 `echo-settings.json`。
 
 ## 配置
 
