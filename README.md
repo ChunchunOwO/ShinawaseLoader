@@ -242,7 +242,7 @@ flowchart TB
 
 | 名称 | 说明 | 清单 |
 | --- | --- | --- |
-| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质，网易云与 QQ 歌单走登录扫描。 | `echo.community-streaming` · 1.6.3 |
+| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质。 | `echo.community-streaming` · 1.6.3 |
 | [ECHO Classic Pet](examples/ECHO-Pet) | 把官方桌宠小窗换成经典像素桌宠，带 VPet 式商店 / 打工 / 状态面板与侧栏控制。 | `echo.classic-pet` · 3.2.0 |
 | [ECHO osu!downloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.1 |
 | [ECHO AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.1 |
