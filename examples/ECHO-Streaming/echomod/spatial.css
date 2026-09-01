@@ -708,6 +708,18 @@
   padding: 0 8px 10px;
 }
 
+.streaming-daily-modules {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.streaming-daily-module-list {
+  max-height: 176px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .streaming-hub--spatial .streaming-playlist-import {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;

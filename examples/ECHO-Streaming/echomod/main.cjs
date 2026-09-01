@@ -796,17 +796,14 @@ const listNeteaseDailyPlaylists = async (options = {}) => {
     playlists.push(item);
   };
 
-  const [dailySongs, radarLists, homepage, resources, dates, newsongs, personalized] = await Promise.all([
+  const [dailySongs, radarLists, resources, dates] = await Promise.all([
     fetchNeteaseDailySongs(cookie, refresh).catch((error) => {
       logMod('WARN', `daily songs: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }),
     fetchNeteaseRadarPlaylists(cookie).catch(() => []),
-    fetchNeteaseHomepagePlaylists(cookie, refresh).catch(() => []),
     fetchNeteaseRecommendResources(cookie).catch(() => []),
     fetchNeteaseHistoryDates(cookie).catch(() => []),
-    fetchNeteaseNewSongs(cookie).catch(() => []),
-    fetchNeteasePersonalizedPlaylists(cookie).catch(() => []),
   ]);
   const dailyMapped = dailySongs.map(mapNeteasePlaylistSong).filter(Boolean);
   push(mapDailyPlaylistCard({
@@ -824,20 +821,15 @@ const listNeteaseDailyPlaylists = async (options = {}) => {
     coverUrl: dailyMapped[0]?.coverUrl,
   }));
 
-  for (const item of radarLists) push(mapDailyPlaylistCard(item, 'radar'));
+  for (const item of radarLists.slice(0, 4)) push(mapDailyPlaylistCard(item, 'radar'));
 
-  for (const item of homepage) {
-    const title = String(item.name || '');
-    push(mapDailyPlaylistCard(item, /雷达/u.test(title) ? 'radar' : 'resource'));
-  }
-
-  for (const item of resources) {
+  for (const item of resources.slice(0, 8)) {
     const id = neteaseIdText(item?.id);
     if (!id) continue;
     push(mapDailyPlaylistCard(item, 'resource'));
   }
 
-  for (const date of dates) {
+  for (const date of dates.slice(0, 4)) {
     push(mapDailyPlaylistCard({
       name: `历史日推 ${date}`,
       copywriter: '网易云历史每日推荐歌曲',
@@ -850,30 +842,6 @@ const listNeteaseDailyPlaylists = async (options = {}) => {
       syncMode: 'tracks',
       dailyId: date,
     }));
-  }
-
-  const newsongMapped = newsongs.map(mapNeteasePlaylistSong).filter(Boolean);
-  if (newsongMapped.length) {
-    push(mapDailyPlaylistCard({
-      name: '新歌推荐',
-      copywriter: '网易云个性化新歌',
-      picUrl: newsongMapped[0]?.coverUrl,
-    }, 'newsong', {
-      key: 'newsong:daily',
-      providerPlaylistId: 'daily-newsong',
-      title: '新歌推荐',
-      description: '网易云个性化新歌',
-      trackCount: newsongMapped.length,
-      webUrl: null,
-      syncMode: 'tracks',
-      coverUrl: newsongMapped[0]?.coverUrl,
-    }));
-  }
-
-  for (const item of personalized.slice(0, 16)) {
-    const id = neteaseIdText(item?.id);
-    if (!id) continue;
-    push(mapDailyPlaylistCard(item, 'personalized'));
   }
 
   logMod('INFO', `netease daily playlists: ${playlists.length} (songs=${dailyMapped.length}, radar=${playlists.filter((item) => item.kind === 'radar').length}, resource=${playlists.filter((item) => item.kind === 'resource').length})`);

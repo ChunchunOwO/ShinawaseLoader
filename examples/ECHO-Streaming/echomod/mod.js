@@ -104,6 +104,9 @@ state.autoRefreshDaily = stored.autoRefreshDaily != null ? stored.autoRefreshDai
 state.autoSyncDaily = stored.autoSyncDaily != null ? stored.autoSyncDaily === true : config.autoSyncDailyPlaylists === true;
 state.dailySidebarCollapsed = stored.dailySidebarCollapsed === true;
 state.dailySectionOpen = stored.dailySectionOpen !== false;
+state.dailyModuleOpen = stored.dailyModuleOpen && typeof stored.dailyModuleOpen === 'object'
+  ? { daily: stored.dailyModuleOpen.daily !== false, radar: stored.dailyModuleOpen.radar === true, history: stored.dailyModuleOpen.history === true }
+  : { daily: true, radar: false, history: false };
 state.accountSectionOpen = stored.accountSectionOpen === true;
 state.accountMessages = {};
 state.accountCookies = {};
@@ -303,7 +306,7 @@ const schedulePlaybackPrepare = (track) => {
 };
 const playCurrentStableKey = () => { const current = findPlaybackQueue()?.currentTrack; return current?.mediaType === 'streaming' ? String(current.stableKey || current.id || '') : ''; };
 const favoriteIdsFromSnapshot = (snapshot) => { const ids = {}; for (const items of Object.values(snapshot?.providers || {})) for (const item of items || []) ids[`${item.provider}:${item.providerTrackId}`] = true; for (const collection of snapshot?.collections || []) for (const item of collection.tracks || []) ids[`${item.provider}:${item.providerTrackId}`] = true; return ids; };
-const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, dailySidebarCollapsed: state.dailySidebarCollapsed, dailySectionOpen: state.dailySectionOpen, accountSectionOpen: state.accountSectionOpen, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
+const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, dailySidebarCollapsed: state.dailySidebarCollapsed, dailySectionOpen: state.dailySectionOpen, dailyModuleOpen: state.dailyModuleOpen, accountSectionOpen: state.accountSectionOpen, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
 const rememberSearch = (query) => { const value = String(query || '').trim(); if (!value) return; state.recentSearches = [value, ...state.recentSearches.filter((item) => item !== value)].slice(0, 8); };
 const providerRailState = (provider) => accountAwareProviders.has(provider?.name) && provider.accountConnected !== true ? 'signedOut' : !provider?.enabled ? 'disabled' : accountAwareProviders.has(provider?.name) ? 'signedIn' : 'available';
 const providerRailStatus = (provider) => { const rail = providerRailState(provider); return rail === 'disabled' ? copy.disabled : rail === 'signedOut' ? copy.notLoggedIn : rail === 'signedIn' ? copy.loggedIn(provider.accountDisplayName || provider.displayName) : copy.available; };
@@ -2092,7 +2095,7 @@ const selectNativePlaylist = (imported) => {
     return getComputedStyle(surface).display !== 'none';
   });
   if (!page) return false;
-  const nodes = [...page.querySelectorAll('button, [role="button"], [data-playlist-id], .playlist-item')];
+  const nodes = [...page.querySelectorAll('button, [role="button"], [data-playlist-id], .playlist-item, .playlist-home-card, article')];
   const match = (id && nodes.find((el) => String(el.getAttribute('data-playlist-id') || el.dataset.playlistId || '') === id))
     || (name && nodes.find((el) => (el.textContent || '').includes(name)));
   if (!match) return false;
@@ -2147,6 +2150,25 @@ const dailyKindLabel = (kind) => ({
   newsong: copy.dailyKindNewsong,
 }[kind] || copy.dailyTitle);
 const dailyPlaylistKey = (playlist) => String(playlist?.key || `${playlist?.kind || 'resource'}:${playlist?.providerPlaylistId || ''}`);
+const dailyModuleLimit = 4;
+const dailyAllowedKinds = new Set(['songs', 'resource', 'radar', 'history']);
+const dailyModuleDefs = () => ([
+  { id: 'daily', title: copy.dailyKindSongs, kinds: ['songs', 'resource'] },
+  { id: 'radar', title: copy.dailyKindRadar, kinds: ['radar'] },
+  { id: 'history', title: copy.dailyKindHistory, kinds: ['history'] },
+]);
+const groupedDailyPlaylists = () => dailyModuleDefs().map((mod) => ({
+  ...mod,
+  items: state.dailyPlaylists.filter((item) => dailyAllowedKinds.has(item.kind) && mod.kinds.includes(item.kind)).slice(0, dailyModuleLimit),
+})).filter((mod) => mod.items.length);
+const isDailyModuleOpen = (id) => {
+  if (id === 'radar' || id === 'history') return state.dailyModuleOpen?.[id] === true;
+  return state.dailyModuleOpen?.[id] !== false;
+};
+const toggleDailyModule = (id) => {
+  state.dailyModuleOpen = { ...(state.dailyModuleOpen || {}), [id]: !isDailyModuleOpen(id) };
+  persistMemory();
+};
 const neteaseConnected = () => {
   const status = state.accountStatuses.find((item) => item.provider === 'netease');
   if (status) return status.connected === true;
@@ -2250,7 +2272,7 @@ const loadDailyPlaylists = async (options = {}) => {
   render();
   try {
     const result = await invokeMain('neteaseDailyPlaylists', { refresh: options.refresh === true });
-    state.dailyPlaylists = Array.isArray(result?.playlists) ? result.playlists : [];
+    state.dailyPlaylists = (Array.isArray(result?.playlists) ? result.playlists : []).filter((item) => dailyAllowedKinds.has(item.kind));
     state.dailyLastRefreshAt = result?.fetchedAt || new Date().toISOString();
     state.actionMessage = state.dailyPlaylists.length ? copy.dailyScanned(state.dailyPlaylists.length) : copy.dailyEmpty;
     persistDailyState();
@@ -2270,10 +2292,13 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
   const item = asStreamingDailyPlaylist(playlist);
   const stream = streamApi();
   if (item.syncMode === 'official-daily' || item.providerPlaylistId === 'daily-recommend') {
-    if (!stream?.refreshNeteaseDailyRecommend) throw new Error(copy.noBridge);
-    const imported = await stream.refreshNeteaseDailyRecommend();
-    rememberDailySync(item, imported);
-    return imported;
+    if (stream?.refreshNeteaseDailyRecommend) {
+      try {
+        const imported = await stream.refreshNeteaseDailyRecommend();
+        rememberDailySync(item, imported);
+        return imported;
+      } catch {}
+    }
   }
   if (item.syncMode === 'url' || item.webUrl) {
     if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge);
@@ -2311,6 +2336,25 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
   const imported = { playlistId, playlistName, importedCount: listed.tracks.length };
   rememberDailySync(item, imported);
   return imported;
+};
+const openNativeDailyPlaylist = async (playlist) => {
+  const key = dailyPlaylistKey(playlist);
+  if (!playlist || state.syncingDailyKeys[key]) return;
+  state.syncingDailyKeys[key] = true;
+  try {
+    const synced = state.dailySyncedKeys[key];
+    if (synced?.libraryPlaylistId) {
+      const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
+      if (opened) return;
+    }
+    const imported = await syncDailyPlaylistToLibrary(playlist);
+    const opened = await openImportedPlaylist(imported);
+    if (!opened) showChromeNotice(copy.dailyOpenNative);
+  } catch (error) {
+    showChromeNotice(error instanceof Error ? error.message : String(error));
+  } finally {
+    delete state.syncingDailyKeys[key];
+  }
 };
 const syncDailyPlaylists = async (items, options = {}) => {
   const list = (items || []).filter(Boolean);
@@ -2446,23 +2490,33 @@ const renderFoldSection = (title, open, onToggle, tools, fill) => {
 };
 const renderDailyPlaylistPanel = () => {
   if (!neteaseConnected()) return null;
-  return renderFoldSection(copy.dailyTitle, state.dailySectionOpen, () => {
-    state.dailySectionOpen = !state.dailySectionOpen;
-    persistMemory();
-    render();
-  }, [
-    actionButton(copy.dailyScan, 'refresh', () => loadDailyPlaylists(), {
-      iconOnly: true, className: 'tool-button', title: copy.dailyScan, disabled: state.loadingDailyPlaylists || state.refreshingDaily,
-    }),
-  ], (body) => {
-    if (!state.dailyPlaylists.length) {
+  const wrap = make('div', 'streaming-daily-modules');
+  const groups = groupedDailyPlaylists();
+  if (!groups.length) {
+    wrap.append(renderFoldSection(copy.dailyTitle, true, () => {}, [
+      actionButton(copy.dailyScan, 'refresh', () => loadDailyPlaylists(), {
+        iconOnly: true, className: 'tool-button', title: copy.dailyScan, disabled: state.loadingDailyPlaylists || state.refreshingDaily,
+      }),
+    ], (body) => {
       body.append(make('div', 'streaming-results-empty', state.loadingDailyPlaylists ? copy.loading : copy.dailyEmpty));
-      return;
-    }
-    const list = make('div', 'streaming-account-playlist-list');
-    state.dailyPlaylists.forEach((item) => appendDailyPlaylistRow(list, item));
-    body.append(list);
+    }));
+    return wrap;
+  }
+  groups.forEach((mod, index) => {
+    wrap.append(renderFoldSection(mod.title, isDailyModuleOpen(mod.id), () => {
+      toggleDailyModule(mod.id);
+      render();
+    }, index === 0 ? [
+      actionButton(copy.dailyScan, 'refresh', () => loadDailyPlaylists(), {
+        iconOnly: true, className: 'tool-button', title: copy.dailyScan, disabled: state.loadingDailyPlaylists || state.refreshingDaily,
+      }),
+    ] : [], (body) => {
+      const list = make('div', 'streaming-account-playlist-list streaming-daily-module-list');
+      mod.items.forEach((item) => appendDailyPlaylistRow(list, item));
+      body.append(list);
+    }));
   });
+  return wrap;
 };
 const mergeAccountPlaylists = (primary, extra) => {
   const playlists = [];
@@ -2678,13 +2732,19 @@ const installNativePlaylistImport = () => {
     const style = document.createElement('style');
     style.id = dailyStyleId;
     style.textContent = `
-      .echo-streaming-daily-native { display: grid; gap: 2px; margin: 6px 8px 10px; }
-      .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-native-list { display: none; }
+      .echo-streaming-daily-native { display: grid; gap: 4px; margin: 6px 8px 10px; max-height: min(46vh, 360px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
+      .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-modules { display: none; }
       .echo-streaming-daily-native-head { display: grid; grid-template-columns: 28px minmax(0,1fr) 34px; align-items: center; gap: 4px; min-height: 34px; }
-      .echo-streaming-daily-native-head strong { overflow: hidden; font-size: 12px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+      .echo-streaming-daily-native-head strong { overflow: hidden; font-size: 12px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
       .echo-streaming-daily-toggle { display: grid; width: 28px; height: 28px; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
       .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-toggle { transform: rotate(-90deg); }
-      .echo-streaming-daily-native-list { display: grid; gap: 1px; max-height: 42vh; overflow: auto; }
+      .echo-streaming-daily-modules { display: grid; gap: 6px; min-height: 0; }
+      .echo-streaming-daily-module-head { display: grid; grid-template-columns: 22px minmax(0,1fr); align-items: center; gap: 2px; min-height: 28px; padding: 0 4px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      .echo-streaming-daily-module-head svg { transition: transform .16s ease; }
+      .echo-streaming-daily-module[data-open="false"] .echo-streaming-daily-module-head svg { transform: rotate(-90deg); }
+      .echo-streaming-daily-module-head span { overflow: hidden; font-size: 11px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-muted-text, #6c7179); }
+      .echo-streaming-daily-module[data-open="false"] .echo-streaming-daily-module-list { display: none; }
+      .echo-streaming-daily-module-list { display: grid; gap: 1px; max-height: 176px; overflow: auto; overscroll-behavior: contain; }
       .echo-streaming-daily-item { display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
       .echo-streaming-daily-item:hover { background: var(--theme-list-row-bg-hover, rgba(0,0,0,.05)); }
       .echo-streaming-daily-item img { width: 32px; height: 32px; object-fit: cover; border-radius: 7px; }
@@ -2701,8 +2761,11 @@ const installNativePlaylistImport = () => {
     document.head.append(style);
   };
   const findSidebar = () => {
-    const header = findHeader();
-    return header?.parentElement || null;
+    const surface = livePlaylistsSurface();
+    if (!surface || !isNativeChrome(surface)) return null;
+    return surface.querySelector('aside.collection-playlist-sidebar, .collection-playlist-sidebar, aside.playlist-sidebar, .playlist-sidebar')
+      || findHeader()?.parentElement
+      || null;
   };
   const nativeIconButton = (svg, title, handler) => {
     const button = document.createElement('button');
@@ -2718,69 +2781,110 @@ const installNativePlaylistImport = () => {
     });
     return button;
   };
+  const dailySignature = () => [
+    neteaseConnected() ? '1' : '0',
+    state.loadingDailyPlaylists ? 'l' : '',
+    groupedDailyPlaylists().map((mod) => `${mod.id}:${mod.items.map((item) => dailyPlaylistKey(item)).join(',')}`).join('|'),
+  ].join('/');
+  const bindNativeDailyHost = (host) => {
+    if (host.dataset.bound === 'true') return;
+    host.dataset.bound = 'true';
+    host.addEventListener('click', (event) => {
+      const outer = event.target.closest('[data-daily-outer-fold]');
+      if (outer && host.contains(outer)) {
+        event.preventDefault();
+        event.stopPropagation();
+        state.dailySidebarCollapsed = !state.dailySidebarCollapsed;
+        persistMemory();
+        host.dataset.collapsed = String(state.dailySidebarCollapsed === true);
+        return;
+      }
+      const fold = event.target.closest('[data-daily-fold]');
+      if (fold && host.contains(fold)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const id = fold.getAttribute('data-daily-fold');
+        toggleDailyModule(id);
+        const module = host.querySelector(`[data-daily-module="${id}"]`);
+        if (module) module.dataset.open = String(isDailyModuleOpen(id));
+        return;
+      }
+      const row = event.target.closest('[data-daily-key]');
+      if (!row || !host.contains(row)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const playlist = state.dailyPlaylists.find((item) => dailyPlaylistKey(item) === row.getAttribute('data-daily-key'));
+      if (playlist) void openNativeDailyPlaylist(playlist);
+    });
+  };
   const renderNativeDaily = (host) => {
-    host.replaceChildren();
     ensureDailyStyle();
+    bindNativeDailyHost(host);
+    host.replaceChildren();
     host.dataset.collapsed = String(state.dailySidebarCollapsed === true);
+    host.dataset.signature = dailySignature();
     const header = document.createElement('div');
     header.className = 'echo-streaming-daily-native-head';
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'echo-streaming-daily-toggle';
+    toggle.setAttribute('data-daily-outer-fold', 'true');
     toggle.title = state.dailySidebarCollapsed ? togetherCopy.expand : togetherCopy.collapse;
     toggle.setAttribute('aria-label', toggle.title);
     toggle.innerHTML = chevronIcon(14);
-    const fold = () => {
-      state.dailySidebarCollapsed = !state.dailySidebarCollapsed;
-      persistMemory();
-      paintNativeDailyPanel();
-    };
-    toggle.addEventListener('click', fold);
     const title = document.createElement('strong');
     title.textContent = copy.dailyTitle;
-    title.style.cursor = 'pointer';
-    title.addEventListener('click', fold);
+    title.setAttribute('data-daily-outer-fold', 'true');
     header.append(toggle, title, nativeIconButton(refreshIcon(15), copy.dailyScan, () => loadDailyPlaylists()));
     host.append(header);
-    if (state.dailySidebarCollapsed) return;
-    const list = document.createElement('div');
-    list.className = 'echo-streaming-daily-native-list';
-    if (!state.dailyPlaylists.length) {
+    const modules = document.createElement('div');
+    modules.className = 'echo-streaming-daily-modules';
+    const groups = groupedDailyPlaylists();
+    if (!groups.length) {
       const empty = document.createElement('small');
       empty.textContent = state.loadingDailyPlaylists ? copy.loading : copy.dailyEmpty;
       empty.style.padding = '6px 8px';
       empty.style.color = 'var(--theme-muted-text, #6c7179)';
-      list.append(empty);
-      host.append(list);
+      modules.append(empty);
+      host.append(modules);
       return;
     }
-    state.dailyPlaylists.forEach((playlist) => {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'echo-streaming-daily-item';
-      const image = document.createElement('img');
-      image.src = playlist.coverThumb || playlist.coverUrl || defaultCover;
-      image.alt = '';
-      const main = document.createElement('span');
-      const name = document.createElement('strong');
-      name.textContent = playlist.title || '';
-      const meta = document.createElement('small');
-      meta.textContent = `${dailyKindLabel(playlist.kind)} · ${formatTrackCount(playlist.trackCount)}`;
-      main.append(name, meta);
-      row.append(image, main);
-      row.addEventListener('click', () => {
-        void (async () => {
-          const synced = state.dailySyncedKeys[dailyPlaylistKey(playlist)];
-          if (synced?.libraryPlaylistId) {
-            const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
-            if (opened) return;
-          }
-          await syncDailyPlaylists([playlist], { openNative: true });
-        })().catch((error) => showChromeNotice(error instanceof Error ? error.message : String(error)));
+    groups.forEach((mod) => {
+      const section = document.createElement('section');
+      section.className = 'echo-streaming-daily-module';
+      section.dataset.dailyModule = mod.id;
+      section.dataset.open = String(isDailyModuleOpen(mod.id));
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'echo-streaming-daily-module-head';
+      head.setAttribute('data-daily-fold', mod.id);
+      head.innerHTML = chevronIcon(12);
+      const label = document.createElement('span');
+      label.textContent = `${mod.title} · ${mod.items.length}`;
+      head.append(label);
+      const list = document.createElement('div');
+      list.className = 'echo-streaming-daily-module-list';
+      mod.items.forEach((playlist) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'echo-streaming-daily-item';
+        row.setAttribute('data-daily-key', dailyPlaylistKey(playlist));
+        const image = document.createElement('img');
+        image.src = playlist.coverThumb || playlist.coverUrl || defaultCover;
+        image.alt = '';
+        const main = document.createElement('span');
+        const name = document.createElement('strong');
+        name.textContent = playlist.title || '';
+        const meta = document.createElement('small');
+        meta.textContent = `${dailyKindLabel(playlist.kind)} · ${formatTrackCount(playlist.trackCount)}`;
+        main.append(name, meta);
+        row.append(image, main);
+        list.append(row);
       });
-      list.append(row);
+      section.append(head, list);
+      modules.append(section);
     });
-    host.append(list);
+    host.append(modules);
   };
   const mountDaily = () => {
     if (!neteaseConnected()) {
@@ -2794,11 +2898,13 @@ const installNativePlaylistImport = () => {
       host = document.createElement('section');
       host.className = 'echo-streaming-daily-native';
       host.setAttribute(dailyMarker, 'true');
-      const header = findHeader();
+      const header = sidebar.querySelector(':scope > header, :scope > .collection-playlist-sidebar-header, :scope > .playlist-sidebar-header, :scope > .playlist-home-header');
       if (header?.nextSibling) sidebar.insertBefore(host, header.nextSibling);
       else sidebar.append(host);
     }
-    renderNativeDaily(host);
+    bindNativeDailyHost(host);
+    if (host.dataset.signature !== dailySignature()) renderNativeDaily(host);
+    else host.dataset.collapsed = String(state.dailySidebarCollapsed === true);
     return true;
   };
   const mountDailyDetail = () => {
