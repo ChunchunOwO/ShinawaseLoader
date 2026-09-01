@@ -1640,11 +1640,41 @@ const togetherPlayCommandFrom = (value) => {
   };
 };
 
+const togetherFlagTrue = (value) => {
+  if (value === true || value === 1) return true;
+  const text = String(value ?? '').trim().toLowerCase();
+  return text === 'true' || text === '1' || text === 'yes';
+};
+
 const extractTogetherRoomId = (body) => {
   const record = neteaseRecord(body);
   const data = neteaseRecord(record.data);
   const roomInfo = neteaseRecord(data.roomInfo || data.room || record.roomInfo || record.room);
-  return neteaseIdText(roomInfo.roomId || roomInfo.id || data.roomId || record.roomId);
+  const direct = neteaseIdText(
+    roomInfo.roomId || roomInfo.id || roomInfo.roomid
+    || data.roomId || data.roomid || record.roomId
+  );
+  if (direct) return direct;
+  const share = parseTogetherShare(roomInfo.shareUrl || roomInfo.url || data.shareUrl || data.url || record.shareUrl);
+  return share?.roomId || null;
+};
+
+const togetherServerRoom = (body) => {
+  const record = neteaseRecord(body);
+  const data = neteaseRecord(record.data);
+  const roomInfo = neteaseRecord(data.roomInfo || data.room || record.roomInfo || record.room);
+  const roomId = extractTogetherRoomId(body);
+  const inviterId = neteaseIdText(
+    roomInfo.creatorId || roomInfo.inviterId || roomInfo.ownerId || roomInfo.hostId
+    || data.creatorId || data.inviterId || data.ownerId
+  );
+  const flagged = togetherFlagTrue(data.inRoom) || togetherFlagTrue(roomInfo.inRoom) || togetherFlagTrue(record.inRoom);
+  const hasPeople = togetherUsersFrom(roomInfo).length + togetherUsersFrom(data).length > 0;
+  return {
+    inRoom: flagged || Boolean(roomId && (hasPeople || roomInfo.roomId || data.roomInfo)),
+    roomId,
+    inviterId,
+  };
 };
 
 const createTogetherService = ({ log, broadcast, electron }) => {
@@ -1793,7 +1823,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       mergedUsers.push(user);
     }
     const inviterId = neteaseIdText(roomInfo.creatorId || roomInfo.inviterId || roomInfo.ownerId || data.inviterId || extras.inviterId || state.inviterId);
-    if (data.inRoom === false && extras.forceRoom !== true && extras.inRoom !== true) {
+    if (data.inRoom != null && !togetherFlagTrue(data.inRoom) && extras.forceRoom !== true && extras.inRoom !== true) {
       if (sessionActive && state.roomId) return;
       if (state.inRoom) {
         state.inRoom = false;
@@ -1807,8 +1837,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       return;
     }
     const inRoom = extras.inRoom === true
-      || data.inRoom === true
-      || roomInfo.inRoom === true
+      || togetherFlagTrue(data.inRoom)
+      || togetherFlagTrue(roomInfo.inRoom)
       || Boolean(sessionActive && state.roomId)
       || Boolean(roomId && (mergedUsers.length || extras.forceRoom));
     if (extras.activate === false && roomId) {
@@ -2022,7 +2052,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   const refreshInvites = async (cookie) => {
     const status = await ncmCall('listentogether_status', { cookie });
     if (status.ok) {
-      const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
+      const server = togetherServerRoom(status.body);
+      const serverInRoom = Boolean(server.inRoom || server.roomId);
       if (sessionActive && state.inRoom) {
         if (serverInRoom) missedInRoom = 0;
         else missedInRoom += 1;
@@ -2033,17 +2064,35 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           restorePrompted = false;
           clearRoom();
         } else {
-          await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId, metaOnly: !serverInRoom });
+          await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId || server.roomId, metaOnly: !serverInRoom });
         }
       } else if (serverInRoom && !sessionActive && !state.inRoom) {
-        await applyRoomBody(status.body, { inRoom: true, forceRoom: true, activate: false });
+        await applyRoomBody(status.body, {
+          inRoom: true,
+          forceRoom: true,
+          activate: false,
+          roomId: server.roomId,
+          inviterId: server.inviterId,
+        });
+        if (pendingRestore?.roomId && cookie) {
+          const check = await ncmCall('listentogether_room_check', { cookie, roomId: pendingRestore.roomId });
+          if (check.ok) {
+            await applyRoomBody(check.body, {
+              inRoom: true,
+              forceRoom: true,
+              activate: false,
+              roomId: pendingRestore.roomId,
+              inviterId: pendingRestore.inviterId || server.inviterId,
+            });
+          }
+        }
       } else {
         missedInRoom = 0;
         if (!serverInRoom) {
           pendingRestore = null;
           restorePrompted = false;
         }
-        await applyRoomBody(status.body, { inRoom: serverInRoom });
+        await applyRoomBody(status.body, { inRoom: serverInRoom, roomId: server.roomId, inviterId: server.inviterId });
       }
       mergeInvites(collectTogetherInvites(status.body));
     } else if (state.inRoom === false) {
@@ -2147,18 +2196,37 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       emit(true);
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
-      if (state.inRoom && state.roomId) return { ok: true, ...emit(true) };
-      let result = await ncmCall('listentogether_room_create', { cookie });
-      if (!result.ok) {
-        const status = await ncmCall('listentogether_status', { cookie });
-        const existingId = extractTogetherRoomId(status.body);
-        const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
-        if (status.ok && (serverInRoom || existingId)) {
-          log('INFO', `together create reused existing room ${existingId || ''}`);
-          result = status;
-        } else {
-          throw new Error(result.error);
+      if (state.inRoom && state.roomId && sessionActive) return { ok: true, ...emit(true) };
+      const status = await ncmCall('listentogether_status', { cookie });
+      if (status.ok) {
+        const server = togetherServerRoom(status.body);
+        if (server.roomId || server.inRoom) {
+          log('INFO', `together found existing room ${server.roomId || ''} before create`);
+          await applyRoomBody(status.body, {
+            inRoom: true,
+            forceRoom: true,
+            activate: false,
+            roomId: server.roomId,
+            inviterId: server.inviterId,
+          });
         }
+      }
+      if (pendingRestore?.roomId) return restore();
+      const result = await ncmCall('listentogether_room_create', { cookie });
+      if (!result.ok) {
+        const retry = await ncmCall('listentogether_status', { cookie });
+        const server = togetherServerRoom(retry.body);
+        if (retry.ok && (server.inRoom || server.roomId)) {
+          await applyRoomBody(retry.body, {
+            inRoom: true,
+            forceRoom: true,
+            activate: false,
+            roomId: server.roomId,
+            inviterId: server.inviterId,
+          });
+          if (pendingRestore?.roomId) return restore();
+        }
+        throw new Error(result.error);
       }
       sessionActive = true;
       pendingRestore = null;
@@ -2269,12 +2337,23 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         state.progressMs = held.progressMs || 0;
         state.startedAt = held.startedAt || Date.now();
         state.inRoom = true;
-        state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : 'guest';
+        const isHost = Boolean(state.userId && state.inviterId && state.userId === state.inviterId);
+        state.role = isHost ? 'host' : 'guest';
         state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
       }
       const status = await ncmCall('listentogether_status', { cookie });
-      if (status.ok) await applyRoomBody(status.body, { inRoom: true, forceRoom: true });
+      if (status.ok) {
+        const server = togetherServerRoom(status.body);
+        await applyRoomBody(status.body, {
+          inRoom: true,
+          forceRoom: true,
+          roomId: server.roomId || state.roomId,
+          inviterId: server.inviterId || state.inviterId,
+        });
+      }
       await refreshRoom(cookie);
+      if (!(state.userId && state.inviterId && state.userId === state.inviterId)) state.role = 'guest';
+      else state.role = 'host';
       if (!state.inRoom || !state.roomId) throw new Error('together_restore_failed');
       state.lastError = null;
       log('INFO', `together restored room ${state.roomId}`);
@@ -2293,7 +2372,10 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       emit(true);
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
-      if (pendingRestore) throw new Error('together_restore_pending');
+      if (pendingRestore?.roomId) {
+        const restored = await restore();
+        if (!restored.ok) return restored;
+      }
       if (!state.inRoom || !state.roomId) {
         const created = await create();
         if (!created.ok) return created;
@@ -2509,7 +2591,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       await refreshInvites(cookie);
       if (state.inRoom && sessionActive && !pendingRestore) await refreshRoom(cookie);
       if (!state.friends.length) await refreshFriends(cookie).catch(() => undefined);
-      emit();
+      emit(Boolean(pendingRestore));
     } catch (error) {
       log('WARN', `together poll: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -2530,6 +2612,12 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     tray = null;
   };
 
+  const remindRestore = () => {
+    if (!pendingRestore?.roomId) return snapshot();
+    try { broadcast('together-restore-prompt', snapshot()); } catch {}
+    return emit(true);
+  };
+
   return {
     snapshot,
     emit,
@@ -2545,6 +2633,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     report,
     playCommand,
     refresh: pollStatus,
+    remindRestore,
   };
 };
 
@@ -2926,7 +3015,7 @@ const activate = (host) => {
     };
   });
 
-  host.handle('togetherStatus', async () => ({ ok: true, ...together.snapshot() }));
+  host.handle('togetherStatus', async () => ({ ok: true, ...together.remindRestore() }));
   host.handle('togetherCreate', async () => together.create());
   host.handle('togetherAccept', async (payload) => together.accept(payload));
   host.handle('togetherLeave', async () => together.leave());

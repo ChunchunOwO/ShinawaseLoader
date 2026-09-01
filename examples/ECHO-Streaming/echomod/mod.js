@@ -31,9 +31,9 @@ const lyricsCopy = chinese ? {
   open: 'Lyrics', loading: 'Loading lyrics...', missing: 'No lyrics available', instrumental: 'Instrumental', source: 'Source', back: 'Back to Streaming', failed: 'Failed to load lyrics'
 };
 const togetherCopy = chinese ? {
-  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出房间', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出房间', restoreSong: '上次在听', needTrack: '先播放一首网易云歌曲，再邀请好友同步。', inRoomBar: '一起听中',
+  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出房间', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '检测到已有一起听房间', restoreBody: '这个网易云账号已经在一起听房间里（可能是安装 Mod 之前、或用官方客户端进的）。要在 ECHO 里恢复同步，还是退出该房间？', restore: '恢复一起听', restoreLeave: '退出房间', restoreSong: '房间里在听', needTrack: '先播放一首网易云歌曲，再邀请好友同步。', inRoomBar: '一起听中',
 } : {
-  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave room', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave room', restoreSong: 'Last track', needTrack: 'Play a NetEase track first, then invite a friend.', inRoomBar: 'Listening together',
+  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave room', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'Existing listen-together room found', restoreBody: 'This NetEase account is already in a listen-together room (joined before the mod, or from the official client). Resume sync here, or leave that room?', restore: 'Resume', restoreLeave: 'Leave room', restoreSong: 'Room track', needTrack: 'Play a NetEase track first, then invite a friend.', inRoomBar: 'Listening together',
 };
 
 const ncmCopy = chinese ? {
@@ -3034,6 +3034,8 @@ const formatTogetherClock = (ms) => {
 const togetherErrorMessage = (error) => {
   const message = error instanceof Error ? error.message : String(error || '');
   if (/netease_login_required/iu.test(message)) return togetherCopy.needLogin;
+  if (/together_restore_pending/iu.test(message)) return togetherCopy.restoreTitle;
+  if (/together_restore_failed/iu.test(message)) return togetherCopy.restoreTitle;
   return message;
 };
 const togetherTrackFromId = (songId, meta = {}) => {
@@ -3453,15 +3455,23 @@ const renderTogetherRestore = () => {
 };
 const renderTogetherBanner = () => {
   document.querySelectorAll('.echo-streaming-together-notice').forEach((node) => node.remove());
-  if (togetherUi.snapshot.pendingRestore) return;
   const bar = document.querySelector('footer.player-bar');
   if (!bar) return;
   const snap = togetherUi.snapshot;
+  const pending = snap.pendingRestore;
   const invite = (snap.invites || []).find((item) => !snap.inRoom || item.roomId !== snap.roomId);
-  if (!togetherInSession(snap) && !invite) return;
+  if (!pending?.roomId && !togetherInSession(snap) && !invite) return;
   const notice = make('div', 'player-download-notice echo-streaming-together-notice');
   notice.setAttribute('role', 'status');
   const copyBox = make('div', 'player-download-notice-copy');
+  if (pending?.roomId) {
+    copyBox.append(make('strong', '', togetherCopy.restoreTitle), make('span', '', pending.songTitle || togetherCopy.restoreBody));
+    notice.append(copyBox);
+    notice.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
+    notice.append(makeTogetherLeaveButton());
+    bar.prepend(notice);
+    return;
+  }
   if (togetherInSession(snap)) {
     copyBox.append(make('strong', '', togetherCopy.inRoomBar), make('span', '', `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''}`));
   } else {
