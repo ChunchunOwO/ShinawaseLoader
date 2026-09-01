@@ -4,7 +4,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { randomBytes } = require('node:crypto');
 
-// 26.8.28 stock asar still registers these exact IpcChannels strings.
+// Stock asar still registers these exact IpcChannels strings.
 const CHANNELS = {
   play: 'playback:play-media-item',
   resolve: 'playback:resolve-media-item',

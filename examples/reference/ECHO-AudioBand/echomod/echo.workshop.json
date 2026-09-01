@@ -1,0 +1,19 @@
+{
+  "type": "echo-workshop-item",
+  "schemaVersion": 1,
+  "id": "echo.audioband",
+  "title": "ECHO AudioBand",
+  "version": "1.4.18",
+  "content": {
+    "kind": "native-shell",
+    "entry": "native-shell.json"
+  },
+  "compatibility": {
+    "minEchoVersion": "26.8.15"
+  },
+  "files": [],
+  "license": {
+    "id": "All-Rights-Reserved",
+    "holder": "ECHO AudioBand"
+  }
+}

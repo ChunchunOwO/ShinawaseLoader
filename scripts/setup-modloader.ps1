@@ -40,11 +40,7 @@ $script:Strings = @{
     extrasTitle = '可选包'
     extrasHint = '数字键或 ↑↓ 选中    空格 开关    Enter 下一步'
     pkgStreaming = 'ECHO Streaming'
-    pkgPet = 'ECHO Classic Pet'
-    pkgOsu = 'ECHO osu!downloader'
-    pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
-    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = '准备目录'
     progressCopy = '复制 Loader'
     progressNode = '准备 Node 运行时'
@@ -78,11 +74,7 @@ $script:Strings = @{
     extrasTitle = 'optional packages'
     extrasHint = 'Number or arrows    Space toggle    Enter next'
     pkgStreaming = 'ECHO Streaming'
-    pkgPet = 'ECHO Classic Pet'
-    pkgOsu = 'ECHO osu!downloader'
-    pkgAudioBand = 'ECHO AudioBand'
     pkgMv = 'ECHO MV'
-    pkgWallpaper = 'ECHO Wallpaper Bridge'
     progressPrepare = 'prepare folders'
     progressCopy = 'copy loader'
     progressNode = 'prepare Node runtime'
@@ -449,7 +441,7 @@ function Get-SteamLibraryRoots {
   return $roots
 }
 
-# 26.8.28 Steam ships ECHO.exe. NEXT / Playtest / Steam suffixes are leftover
+# Current Steam ships ECHO.exe. NEXT / Playtest / Steam suffixes are leftover
 # names from older builds; still accepted so a previous install folder resolves.
 $script:EchoGameExePattern = '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$'
 
@@ -677,47 +669,13 @@ function Build-ModdedHost([string]$echoRoot, [string]$loaderRoot, [string]$echoE
 }
 
 function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loaderRoot, [string]$node) {
-  $runtimeRoot = Join-Path $loaderRoot 'modded-runtime'
-  if (Test-Path -LiteralPath $runtimeRoot) { Remove-Item -LiteralPath $runtimeRoot -Recurse -Force }
-  New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'resources') | Out-Null
-
-  foreach ($item in Get-ChildItem -LiteralPath $echoRoot -File -Force) {
-    if ($item.Extension -ieq '.exe' -and $item.Name -match '^ECHO') { continue }
-    New-HardLinkOrCopy $item.FullName (Join-Path $runtimeRoot $item.Name)
-  }
-  foreach ($item in Get-ChildItem -LiteralPath $echoRoot -Directory -Force) {
-    if ($item.Name -in @('resources', 'ShinawaseLoader', 'Mods', 'Plugins')) { continue }
-    $target = Join-Path $runtimeRoot $item.Name
-    try { New-Item -ItemType Junction -Path $target -Target $item.FullName -ErrorAction Stop | Out-Null }
-    catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
-  }
-  $originalAsar = Join-Path $echoRoot 'resources\app.asar'
-  $backupAsar = Join-Path $loaderRoot 'backups\app.asar.original'
-  if (Test-Path -LiteralPath $backupAsar) { $originalAsar = $backupAsar }
-  # Electron 43.3 embeds the asar header SHA256 in the exe. Copy (never
-  # hardlink) ECHO.exe so echo-asar.mjs can rewrite that hash after patching
-  # the isolated app.asar without touching the Steam original.
-  Copy-Item -LiteralPath $echoExe -Destination (Join-Path $runtimeRoot 'ECHO.exe') -Force
-  foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -File -Force) {
-    if ($item.Name -eq 'app.asar') { continue }
-    New-HardLinkOrCopy $item.FullName (Join-Path (Join-Path $runtimeRoot 'resources') $item.Name)
-  }
-  Copy-Item -LiteralPath $originalAsar -Destination (Join-Path $runtimeRoot 'resources\app.asar') -Force
-  $unpacked = Join-Path $runtimeRoot 'resources\app.asar.unpacked'
-  $sourceUnpacked = Join-Path $echoRoot 'resources\app.asar.unpacked'
-  try { New-Item -ItemType Junction -Path $unpacked -Target $sourceUnpacked -ErrorAction Stop | Out-Null }
-  catch { Copy-Item -LiteralPath $sourceUnpacked -Destination $unpacked -Recurse -Force }
-  # Keep Electron's native helper directories available in the isolated runtime.
-  foreach ($item in Get-ChildItem -LiteralPath (Join-Path $echoRoot 'resources') -Directory -Force) {
-    if ($item.Name -eq 'app.asar.unpacked') { continue }
-    $target = Join-Path (Join-Path $runtimeRoot 'resources') $item.Name
-    try { New-Item -ItemType Junction -Path $target -Target $item.FullName -ErrorAction Stop | Out-Null }
-    catch { Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force }
-  }
-  New-Item -ItemType Directory -Force -Path (Join-Path $runtimeRoot 'ShinawaseLoader\backups') | Out-Null
-  & $node (Join-Path $loaderRoot 'echo-asar.mjs') patch $runtimeRoot
-  if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime app.asar patch failed.' }
-  return $runtimeRoot
+  # Always copy the live Steam asar/exe. A leftover backups\app.asar.original
+  # from an older install must not pin the isolated runtime after Steam updates.
+  $sync = Join-Path $loaderRoot 'runtime-sync.mjs'
+  if (-not (Test-Path -LiteralPath $sync)) { throw 'runtime-sync.mjs is missing from the loader install.' }
+  & $node $sync --echo $echoRoot --force
+  if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime sync failed.' }
+  return (Join-Path $loaderRoot 'modded-runtime')
 }
 
 function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$EnableDirectAutoStart = $false) {
@@ -780,7 +738,13 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   foreach ($spec in $launcherSpecs) {
     $launcherPath = Join-Path $loaderRoot $spec.Name
     if ($spec.Command -eq 'host') {
-      Write-CmdFile $launcherPath @('@echo off', 'chcp 65001 >nul', "cd /d `"$escapedRoot`"", "start `"`" `"$moddedHost`" %*")
+      Write-CmdFile $launcherPath @(
+        '@echo off',
+        'chcp 65001 >nul',
+        "cd /d `"$escapedRoot`"",
+        "`"$node`" `"%~dp0runtime-sync.mjs`" --echo `"$escapedRoot`"",
+        "start `"`" `"$moddedHost`" %*"
+      )
     } else {
       Write-CmdFile $launcherPath @('@echo off', 'chcp 65001 >nul', "cd /d `"$escapedRoot`"", "start `"`" `"$node`" `"%~dp0ShinawaseLoader.mjs`" $($spec.Command) --echo `"$echoExe`" %*")
     }
@@ -839,11 +803,7 @@ function Get-ExamplePackagePath([string]$folderName) {
 function Choose-OptionalPackages {
   $source = @(
     @{ Key = '1'; Label = T 'pkgStreaming'; Folder = 'ECHO-Streaming'; Checked = $true },
-    @{ Key = '2'; Label = T 'pkgPet'; Folder = 'ECHO-Pet'; Checked = $true },
-    @{ Key = '3'; Label = T 'pkgOsu'; Folder = 'ECHO-OsuDownloader'; Checked = $true },
-    @{ Key = '4'; Label = T 'pkgAudioBand'; Folder = 'ECHO-AudioBand'; Checked = $true },
-    @{ Key = '5'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true },
-    @{ Key = '6'; Label = T 'pkgWallpaper'; Folder = 'ECHO-WallpaperBridge'; Checked = $true }
+    @{ Key = '2'; Label = T 'pkgMv'; Folder = 'ECHO-MV'; Checked = $true }
   )
   $index = 0
   $visible = $true

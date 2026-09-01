@@ -1,7 +1,7 @@
 # ShinawaseLoader external mod template
 
 1. Copy this folder and change `echo.mod.json` (`id`, `name`, `version`, and `description`).
-2. Put startup code in `mod.js`. It runs inside the ECHO Steam renderer and receives `echoExternalMod`. Keep `minEchoVersion` at `26.8.15` unless the package truly needs a newer host; the current aligned install is echo-steam **26.8.28** at `D:\SteamLibrary\steamapps\common\ECHO`.
+2. Put startup code in `mod.js`. It runs inside the ECHO Steam renderer and receives `echoExternalMod`. Keep `minEchoVersion` at `26.8.15` unless the package truly needs a newer host; the current aligned install is echo-steam **26.9.1** at `D:\SteamLibrary\steamapps\common\ECHO`.
 3. Put user-editable defaults in `config.json`. Add `config.schema.json` when you want labels, descriptions, switches, enum menus, or numeric limits in the Mods page.
 4. Optional: set `configUi` in `echo.mod.json` to a package-relative script such as `config-ui.js`. The Mods page runs that script with `echoConfigUi` so you can ship a custom configuration page. Use `echoConfigUi.ui.form(schema, config)` to reuse the loader's schema auto-form, `echoConfigUi.ui.field(key, spec, value)` for single loader-styled fields, and `echoConfigUi.defaults()` for a config object built from schema defaults. If the script is missing or throws, the loader falls back to the schema form.
 5. Add an SVG at `icon.svg` and package the folder as one `.echomod` or ZIP `.echo` file.

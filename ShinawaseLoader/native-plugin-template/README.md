@@ -20,7 +20,7 @@ Build the loader host addon so ShinawaseLoader can `LoadLibrary` declared DLLs i
 .\scripts\build-native-host.ps1 -EchoRoot "D:\SteamLibrary\steamapps\common\ECHO"
 ```
 
-Default Electron headers are **43.3.0** (echo-steam **26.8.28**, Chromium 150). The addon must match that ABI. Target install: `D:\SteamLibrary\steamapps\common\ECHO`. Keep `minEchoVersion` at `26.8.15` unless the plugin cannot run on that floor.
+Default Electron headers are **43.3.0** (echo-steam **26.9.1**, Chromium 150). The addon must match that ABI. Target install: `D:\SteamLibrary\steamapps\common\ECHO`. Keep `minEchoVersion` at `26.8.15` unless the plugin cannot run on that floor.
 
 Run `setup-modloader.bat` to install the isolated runtime (`ECHO.modded.exe` + `ShinawaseLoader\modded-runtime`). It never patches Steam `resources\app.asar`; `-PatchApp` is accepted for older callers and ignored. Keep `nativeHost` enabled in `loader.config.json`. Safe mode disables native loading.
 

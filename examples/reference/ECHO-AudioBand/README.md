@@ -1,8 +1,14 @@
 # ECHO AudioBand
 
-把 [AudioBand](https://github.com/AudioBand/AudioBand) 的「任务栏正在播放」条移植到 ECHO。模组开启即显示，不隐藏、不拦截官方任务栏播放器。界面由独立的 WinUI 3 进程绘制，不走 Electron `BrowserWindow`。
+参考 Mod：不出现在安装器可选包。自行打包后导入。 See [`../README.md`](../README.md).
+
+官方 ECHO 任务栏迷你播放器已经换成这套 WinUI AudioBand，源码在 `ECHOSteam/native/audioband`，不走加载器。这个目录只保留加载器模组版，方便对照。
+
+把 [AudioBand](https://github.com/AudioBand/AudioBand) 的「任务栏正在播放」条移植到 ECHO。加载器模组开启即显示。界面由独立的 WinUI 3 进程绘制，不走 Electron `BrowserWindow`。
 
 A port of the [AudioBand](https://github.com/AudioBand/AudioBand) taskbar now-playing bar. Enable the mod to show the bar. It does not hide or intercept ECHO’s official taskbar mini player. **The bar is a self-contained WinUI 3 host**, not an Electron overlay.
+
+Workshop packaging uses content kind `native-shell` (`echo.workshop.json` + `native-shell.json`). ShinawaseLoader’s built-in host speaks the same named-pipe protocol v1. The WinUI process is unchanged.
 
 ## 功能 Features
 
@@ -23,13 +29,13 @@ A port of the [AudioBand](https://github.com/AudioBand/AudioBand) taskbar now-pl
 需要 .NET 8 SDK（仓库脚本会用 `%LOCALAPPDATA%\dotnet-sdk`）。这是 **unpackaged + self-contained WinUI 3**：`WindowsPackageType=None`，`EnableMsixTooling=true` 走 WinAppSDK NuGet 的 PRI 任务，`WindowsAppSdkBootstrapInitialize=false` 因为运行时已打进 `echomod/host`。
 
 ```powershell
-.\examples\ECHO-AudioBand\build-winui.ps1
+.\examples\reference\ECHO-AudioBand\build-winui.ps1
 ```
 
 然后打包：
 
 ```powershell
-.\pack-mod.bat .\examples\ECHO-AudioBand\echomod .\examples\packages\ECHO-AudioBand.echomod --zip
+.\pack-mod.bat .\examples\reference\ECHO-AudioBand\echomod .\examples\reference\packages\ECHO-AudioBand.echomod --zip
 ```
 
 `echomod/host/` 是 publish 产物，不进 git。没编过 host 时 `main.cjs` 会打错误日志，配置页保存会返回 `winui_host_missing`。
@@ -67,8 +73,8 @@ A port of the [AudioBand](https://github.com/AudioBand/AudioBand) taskbar now-pl
 
 ## 原理 How it works
 
-- `main.cjs` 只做桥：拉起 `echomod/host/EchoAudioBand.exe`，用 named pipe 走 JSON Lines（WinUI WinExe 不能重定向 stdio，否则 Windows App Runtime 会在启动时崩）。
-- 官方 `ECHO Taskbar Mini Player` 窗口在 `loadFile` / `loadURL` / `browser-window-created` 时立刻隐藏，不销毁，以免拆掉 ECHO 自己的 IPC。
+- `native-shell.json` 指向 `host/EchoAudioBand.exe`。新加载器走内置 `native-shell-host.cjs`；旧加载器仍用 `main.cjs` 做同样的桥。进程参数是 `--pipe <name>`，stdio 必须 ignore（WinUI WinExe 重定向 stdio 会在 Windows App Runtime 启动时崩）。
+- 官方 `ECHO Taskbar Mini Player` 不隐藏、不拦截。
 - 歌词通过 `sdk.list` / `sdk.call` 发现 `echo.lyrics`、`echo.desktopLyrics`、`echo.playback`、`echo.streaming.getLyrics`，不写死某一版方法名。
 - WinUI 进程自己算任务栏几何（`TaskbarAl`、任务列表、`TrayNotifyWnd`）、系统主题、全屏 / 演示检测，并画条。
 - `mod.js` 只在拥有 `window.echo.playback` 的窗口里按 `pollIntervalMs` 读播放状态和歌词，封面转 data URL 后 `main.invoke('status')`。
@@ -81,9 +87,13 @@ A port of the [AudioBand](https://github.com/AudioBand/AudioBand) taskbar now-pl
 ## 限制 Limitations
 
 - 垂直任务栏或任务栏自动隐藏时，改为贴在工作区右下角上方的浮动条。
-- 需要 ShinawaseLoader native host（`main.cjs`）以及编好的 WinUI host。
+- 需要 ShinawaseLoader native host（`native-shell-host.cjs` 或 `main.cjs`）以及编好的 WinUI host。
 - 不 `SetParent` 进任务栏：Win11 任务栏嵌入不稳定。窗口用 `WS_EX_NOACTIVATE` + topmost 叠在条上。
 - Win10 没有 Mica，host 会改用 Acrylic。
+
+## v1.4.18
+
+- Workshop `native-shell` 清单（`echo.workshop.json` + `native-shell.json`）。新加载器走内置主机，不再双开 `main.cjs`。
 
 ## v1.4.0
 

@@ -6,5 +6,10 @@
   "pageSize": 30,
   "hideUnavailable": false,
   "showDisabledProviders": true,
-  "musicFolder": ""
+  "musicFolder": "",
+  "autoRefreshDailyPlaylists": true,
+  "autoSyncDailyPlaylists": false,
+  "autoUnblock": true,
+  "similarAutoPlay": false,
+  "similarCount": 10
 }

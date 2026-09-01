@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
+import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './runtime-sync.mjs';
 
 const c = {
   reset: '\x1b[0m',
@@ -77,10 +78,11 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.6.5';
-// Aligned Echo Steam build. Do not treat FileVersion 26.8.28 as an Electron ABI.
+const loaderVersion = '1.6.6';
+// Last verified Steam host. Do not treat FileVersion as an Electron ABI.
+// Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
 const alignedEchoProduct = 'echo-steam';
-const alignedEchoVersion = '26.8.28';
+const alignedEchoVersion = '26.9.1';
 const alignedElectronVersion = '43.3.0';
 const echoSteamAppId = '5105150';
 const echoUserDataFolderName = 'ECHO Steam';
@@ -101,9 +103,9 @@ const defaultPort = Number(process.env.ECHO_MOD_PORT || 17862);
 const defaultDebugPort = Number(process.env.ECHO_MOD_DEBUG_PORT || 9229);
 const togetherRelayPort = Number(process.env.ECHO_TOGETHER_RELAY_PORT || 47891);
 const togetherModId = 'echo.listen-together';
-const packageTypes = new Set(['echo-external-mod', 'echo-plugin-package', 'echo-next-plugin-package']);
+const packageTypes = new Set(['echo-external-mod', 'echo-plugin-package', 'echo-next-plugin-package', 'echo-workshop-item']);
 const packageExtensions = new Set(['.echomod', '.echo']);
-const maxPackageBytes = 128 * 1024 * 1024;
+const maxPackageBytes = 512 * 1024 * 1024;
 const logFilePath = join(logsRoot, 'loader.log');
 const errorLogPath = join(logsRoot, 'errors.log');
 const logRanks = { DEBUG: 10, INFO: 20, WARN: 30, ERROR: 40 };
@@ -413,8 +415,8 @@ const modSummaries = () => {
       enabled: state.mods[id].enabled === true,
       importedAt: typeof entry.importedAt === 'string' ? entry.importedAt : null,
       directory: record.directory,
-      main: Boolean(manifest.main || manifest.native?.main),
-      native: Boolean(manifest.native || manifest.main),
+      main: Boolean(manifest.main || manifest.native?.main || manifest.nativeShell),
+      native: Boolean(manifest.native || manifest.main || manifest.nativeShell),
       nativeMemory: manifest.native?.memory === true,
     }];
   });
@@ -441,22 +443,55 @@ const modFile = (id, fileName) => {
 };
 
 const packageFile = (path, data) => ({ path: safeRelative(path), data: Buffer.isBuffer(data) ? data : Buffer.from(data) });
-const packagePayloadFromDirectory = (directory) => {
-  const manifestName = ['echo.mod.json', 'echo.plugin.json', 'manifest.json'].find((name) => existsSync(join(directory, name)));
-  if (!manifestName) throw new Error('mod_manifest_missing');
-  const manifest = readJson(join(directory, manifestName), null);
-  if (!manifest) throw new Error('mod_manifest_invalid');
+const projectNativeShellManifest = (workshop, entry) => ({
+  id: workshop.id,
+  name: workshop.title || workshop.id,
+  version: workshop.version || '1.0.0',
+  description: entry?.description || '',
+  entry: entry?.renderer || 'mod.js',
+  nativeShell: workshop.content?.entry || 'native-shell.json',
+  config: entry?.config || 'config.json',
+  configSchema: entry?.configSchema,
+  configUi: entry?.configUi,
+  icon: entry?.icon,
+  minEchoVersion: workshop.compatibility?.minEchoVersion,
+  content: workshop.content,
+});
+const collectDirectoryFiles = (directory, skipName) => {
   const files = [];
   const visit = (current, prefix = '') => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const filePath = join(current, entry.name);
       const packagePath = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) visit(filePath, packagePath);
-      else if (entry.isFile() && packagePath !== manifestName) files.push(packageFile(packagePath, readFileSync(filePath)));
+      else if (entry.isFile() && packagePath !== skipName) files.push(packageFile(packagePath, readFileSync(filePath)));
     }
   };
   visit(directory);
-  return { type: manifestName === 'echo.plugin.json' ? 'echo-plugin-package' : 'echo-external-mod', manifest, manifestFile: manifestName, files };
+  return files;
+};
+const packagePayloadFromDirectory = (directory) => {
+  const manifestName = ['echo.mod.json', 'echo.plugin.json', 'manifest.json'].find((name) => existsSync(join(directory, name)));
+  if (manifestName) {
+    const manifest = readJson(join(directory, manifestName), null);
+    if (!manifest) throw new Error('mod_manifest_invalid');
+    return {
+      type: manifestName === 'echo.plugin.json' ? 'echo-plugin-package' : 'echo-external-mod',
+      manifest,
+      manifestFile: manifestName,
+      files: collectDirectoryFiles(directory, manifestName),
+    };
+  }
+  const workshop = readJson(join(directory, 'echo.workshop.json'), null);
+  if (!workshop || workshop.type !== 'echo-workshop-item' || workshop.content?.kind !== 'native-shell') throw new Error('mod_manifest_missing');
+  const entry = readJson(join(directory, String(workshop.content.entry || 'native-shell.json')), {});
+  return {
+    type: 'echo-workshop-item',
+    manifest: projectNativeShellManifest(workshop, entry),
+    manifestFile: 'echo.workshop.json',
+    files: collectDirectoryFiles(directory, 'echo.workshop.json'),
+    workshop,
+  };
 };
 const packagePayloadFromZip = (source) => {
   const entries = readZip(readFileSync(source), { maxBytes: maxPackageBytes });
@@ -465,12 +500,25 @@ const packagePayloadFromZip = (source) => {
   if (!manifestEntry) throw new Error('mod_manifest_missing');
   let manifest = JSON.parse(manifestEntry.data.toString('utf8'));
   let type = manifestEntry.path.toLowerCase().endsWith('plugin.json') ? 'echo-plugin-package' : 'echo-external-mod';
-  if (manifestEntry.path.toLowerCase().endsWith('workshop.json') && manifest.content?.entry) {
-    const nested = byPath.get(String(manifest.content.entry).toLowerCase());
-    if (nested) {
-      const packageValue = JSON.parse(nested.data.toString('utf8'));
-      manifest = packageValue.manifest || manifest;
-      type = packageValue.type || type;
+  if (manifestEntry.path.toLowerCase().endsWith('workshop.json')) {
+    if (manifest.type === 'echo-workshop-item' && manifest.content?.kind === 'native-shell') {
+      const nested = byPath.get(String(manifest.content.entry || 'native-shell.json').toLowerCase());
+      const entry = nested ? JSON.parse(nested.data.toString('utf8')) : {};
+      return {
+        type: 'echo-workshop-item',
+        manifest: projectNativeShellManifest(manifest, entry),
+        manifestFile: manifestEntry.path,
+        files: entries.filter((entryFile) => entryFile.path !== manifestEntry.path).map((entryFile) => packageFile(entryFile.path, entryFile.data)),
+        workshop: manifest,
+      };
+    }
+    if (manifest.content?.entry) {
+      const nested = byPath.get(String(manifest.content.entry).toLowerCase());
+      if (nested) {
+        const packageValue = JSON.parse(nested.data.toString('utf8'));
+        manifest = packageValue.manifest || manifest;
+        type = packageValue.type || type;
+      }
     }
   }
   return { type, manifest, manifestFile: manifestEntry.path, files: entries.filter((entry) => entry.path !== manifestEntry.path).map((entry) => packageFile(entry.path, entry.data)) };
@@ -510,6 +558,9 @@ const importPackage = (source) => {
   rmSync(installedDirectory(manifest.id, 'plugin'), { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
   writeJson(join(target, kind === 'plugin' ? 'echo.plugin.json' : 'echo.mod.json'), manifest);
+  if (payload.type === 'echo-workshop-item' && payload.workshop) {
+    writeJson(join(target, 'echo.workshop.json'), payload.workshop);
+  }
   for (const file of validatedFiles) {
     const path = file.path;
     const targetFile = join(target, path);
@@ -1048,7 +1099,7 @@ const extendRuntimeExpression = `(() => {
         if (!surface.dataset.echoExternalHidden) surface.style.removeProperty('display');
       });
     };
-    // echo-steam 26.8.28 dropped per-route [data-workshop-icon] nav hooks the
+    // echo-steam dropped per-route [data-workshop-icon] nav hooks the
     // CSS hiding relied on, but exposes native sidebar route hiding through the
     // sidebarHiddenRouteIds app setting. Apply both: the CSS path still covers
     // older ECHO builds, the settings patch covers the Steam renderer. Only
@@ -1909,6 +1960,41 @@ const findEcho = () => {
   if (!found.length) throw new Error('ECHO executable not found; pass --echo <directory-or-exe> (Playtest is never auto-selected)');
   return found[0];
 };
+const echoRootFromExe = (exePath) => {
+  try { return statSync(exePath).isDirectory() ? exePath : dirname(exePath); } catch { return dirname(exePath); }
+};
+const describeRuntimeSync = () => {
+  try {
+    const echoRoot = echoRootFromExe(findEcho());
+    const stock = fingerprintStock(echoRoot);
+    const previous = readRuntimeFingerprint(root);
+    const current = previous?.asarSha256 === stock.asarSha256
+      && (previous?.patchStatus === 'patched' || previous?.patchStatus === 'already-patched');
+    return {
+      ok: true,
+      current,
+      echoVersion: stock.echoVersion,
+      electronVersion: stock.electronVersion,
+      asarSha256: stock.asarSha256,
+      lastSync: previous,
+    };
+  } catch (error) {
+    return { ok: false, current: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+const syncIsolatedRuntime = (options = {}) => {
+  try {
+    const echoRoot = echoRootFromExe(findEcho());
+    const result = syncModdedRuntime({ echoRoot, loaderRoot: root, force: options.force === true });
+    const detail = result.stock?.echoVersion || result.error || result.reason || '';
+    log(result.ok ? 'INFO' : 'WARN', `isolated runtime ${result.status}${result.reason ? ` (${result.reason})` : ''}`, detail);
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log('WARN', 'isolated runtime sync failed', message);
+    return { ok: false, status: 'error', error: message };
+  }
+};
 
 const attachMainInspector = async () => {
   const deadline = Date.now() + 15000;
@@ -1938,6 +2024,7 @@ const attachMainInspector = async () => {
 };
 const launchEcho = () => {
   if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
+  syncIsolatedRuntime();
   const executable = findEcho();
   if (echoProcess && !echoProcess.killed) return executable;
   echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`, `--inspect=${inspectPort}`], {
@@ -2067,6 +2154,7 @@ const server = createServer(async (request, response) => {
           selected: selectedEchoInstall?.path || null,
           edition: selectedEchoInstall?.edition || null,
           source: selectedEchoInstall?.source || null,
+          runtime: describeRuntimeSync(),
         },
         ...(togetherRelay ? { togetherRelay } : {}),
         echo: discoverEchoes(echoExe || null),
@@ -2131,6 +2219,13 @@ const server = createServer(async (request, response) => {
       const file = join(logsRoot, `perf-${Date.now()}.json`);
       writeJson(file, report);
       return jsonResponse(response, 200, { ok: true, file, report });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/runtime') {
+      return jsonResponse(response, 200, describeRuntimeSync());
+    }
+    if (request.method === 'POST' && url.pathname === '/api/runtime/sync') {
+      const body = await readRequest(request).catch(() => ({}));
+      return jsonResponse(response, 200, syncIsolatedRuntime({ force: body?.force === true }));
     }
     if (request.method === 'GET' && url.pathname === '/api/update') {
       try {
@@ -2286,6 +2381,18 @@ const run = async () => {
     console.log(`${c.gray}${t('launched')}${c.reset}  ${launchEcho()}`);
     return;
   }
+  if (command === 'sync-runtime') {
+    const result = syncIsolatedRuntime({ force: hasFlag('--force') });
+    console.log(JSON.stringify({
+      ok: result.ok,
+      status: result.status,
+      reason: result.reason,
+      echoVersion: result.stock?.echoVersion || result.next?.echoVersion || null,
+      error: result.error || null,
+    }, null, 2));
+    if (!result.ok && result.status !== 'busy') process.exitCode = 1;
+    return;
+  }
 
   const isAttach = command === 'attach';
   try {
@@ -2309,6 +2416,8 @@ const run = async () => {
     console.log(`${c.gray}${t('inspect')}${c.reset}  ${inspectPort}`);
     console.log(`${c.gray}${t('native')}${c.reset}   ${nativeHostEnabled ? nativePort : t('off')}`);
     if (togetherRelayServer) console.log(`${c.gray}${t('together')}${c.reset} ${togetherRelayPort}`);
+    const runtime = syncIsolatedRuntime();
+    if (runtime?.stock?.echoVersion) console.log(`${c.gray}runtime${c.reset}  ${runtime.status} ${runtime.stock.echoVersion}`);
   });
 
   if (isAttach) {

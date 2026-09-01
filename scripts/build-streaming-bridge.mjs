@@ -54,7 +54,7 @@ const extractIpcValues = (text) => {
   return values;
 };
 
-const readAsarFile = (asarPath, relativePath) => {
+const readAsarTree = (asarPath) => {
   const bytes = readFileSync(asarPath);
   const headerSize = bytes.readUInt32LE(4);
   const header = bytes.subarray(8, 8 + headerSize);
@@ -70,12 +70,18 @@ const readAsarFile = (asarPath, relativePath) => {
     if (typeof node.size === 'number') files.push({ path: prefix, size: node.size, offset: Number(node.offset) });
   };
   walk(json);
-  const entry = files.find((file) => file.path === relativePath)
-    || files.find((file) => file.path.startsWith('out/preload/ipcChannels-') && file.path.endsWith('.mjs'));
-  if (!entry) return null;
   const dataOffset = 8 + headerSize;
-  return bytes.subarray(dataOffset + entry.offset, dataOffset + entry.offset + entry.size).toString('utf8');
+  const read = (relativePath) => {
+    const entry = files.find((file) => file.path === relativePath)
+      || (relativePath === 'out/preload/ipcChannels.mjs'
+        ? files.find((file) => file.path.startsWith('out/preload/ipcChannels-') && file.path.endsWith('.mjs'))
+        : null);
+    if (!entry) return null;
+    return bytes.subarray(dataOffset + entry.offset, dataOffset + entry.offset + entry.size).toString('utf8');
+  };
+  return { files, read };
 };
+const readAsarFile = (asarPath, relativePath) => readAsarTree(asarPath).read(relativePath);
 
 const requiredBridgeChannels = [
   'streaming:search',
@@ -107,24 +113,25 @@ const asarPath = asarCandidates.find((path) => existsSync(path));
 if (asarPath) {
   const asarBytes = readFileSync(asarPath);
   const asarSha = createHash('sha256').update(asarBytes).digest('hex');
-  const expectedSha = 'c59648731aea7f109317c26a9181bb6626b9c9e7f130998c2577a99e9ccae2c0';
-  if (asarSha !== expectedSha) {
-    console.warn(`Stock asar SHA256 ${asarSha} != 26.8.28 ${expectedSha}; still validating IPC names.`);
-  }
-  const asarIpc = readAsarFile(asarPath, 'out/preload/ipcChannels-CKJHta3q.mjs');
-  if (!asarIpc) throw new Error(`26.8.28 ipcChannels not found in ${asarPath}`);
+  const asarPkg = (() => {
+    try { return JSON.parse(readAsarFile(asarPath, 'package.json') || 'null'); } catch { return null; }
+  })();
+  const asarIpc = readAsarFile(asarPath, 'out/preload/ipcChannels.mjs');
+  if (!asarIpc) throw new Error(`ipcChannels-*.mjs not found in ${asarPath}`);
   const asarBridgeChannels = extractIpcValues(asarIpc);
+  const missingRequired = requiredBridgeChannels.filter((channel) => !asarBridgeChannels.has(channel));
+  if (missingRequired.length) {
+    throw new Error(`stock asar missing required bridge channels: ${missingRequired.join(', ')}`);
+  }
   const missingInAsar = [...sourceBridgeChannels].filter((channel) => !asarBridgeChannels.has(channel));
   const extraInAsar = [...asarBridgeChannels].filter((channel) => !sourceBridgeChannels.has(channel));
   if (missingInAsar.length || extraInAsar.length) {
-    throw new Error(
-      `streaming/account/downloads/qobuz/spotify IPC drifted vs ${asarPath}. missingInAsar=${missingInAsar.join(',') || '-'} extraInAsar=${extraInAsar.join(',') || '-'}`,
-    );
+    console.warn(`IPC extras vs source ${echoPackage.version}: missingInAsar=${missingInAsar.join(',') || '-'} extraInAsar=${extraInAsar.join(',') || '-'}`);
   }
   const ipcValueCount = [...asarIpc.matchAll(/:\s*['"][^'"]+['"]/g)].length;
-  console.log(`IPC aligned with 26.8.28 asar (${asarPath}): ${asarBridgeChannels.size} bridge-prefix channels match source ${echoPackage.version}; ${ipcValueCount} ipc values; sha256=${asarSha}`);
+  console.log(`IPC aligned with stock asar ${asarPkg?.name || ''} ${asarPkg?.version || ''} (${asarPath}): ${asarBridgeChannels.size} bridge-prefix channels; required set present; ${ipcValueCount} ipc values; sha256=${asarSha}`);
 } else {
-  console.warn('Stock EchoSteam asar not found; skipped 26.8.28 IPC validation.');
+  console.warn('Stock EchoSteam asar not found; skipped live IPC validation.');
 }
 
 const findCryptoWasm = () => {

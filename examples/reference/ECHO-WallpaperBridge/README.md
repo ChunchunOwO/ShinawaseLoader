@@ -1,5 +1,7 @@
 # ECHO Wallpaper Bridge
 
+参考 Mod：不出现在安装器可选包。自行打包后导入。 See [`../README.md`](../README.md).
+
 在 ECHO 内直接查看 Wallpaper Engine 桥接的实时数据：32 段频谱可视化、能量 / 瞬态仪表、正在播放与输出模式。数据来自 ECHO 主进程内置的本地桥接服务（SSE），与 Wallpaper Engine 网页壁纸使用完全相同的数据源。派生自 ECHO 仓库 `examples/wallpaper-engine/echo-bridge-example.js` 的接入模式。
 
 An in-app viewer for ECHO's built-in Wallpaper Engine bridge: a live 32-band spectrum visualizer, energy / transient meters, now-playing and output-mode readouts. It consumes the same localhost SSE stream that Wallpaper Engine web wallpapers use, following the pattern of `examples/wallpaper-engine/echo-bridge-example.js` in the ECHO repository.
@@ -37,7 +39,7 @@ An in-app viewer for ECHO's built-in Wallpaper Engine bridge: a live 32-band spe
 ## 打包 Pack
 
 ```powershell
-.\pack-mod.bat .\examples\ECHO-WallpaperBridge\echomod .\examples\packages\ECHO-WallpaperBridge.echomod --zip
+.\pack-mod.bat .\examples\reference\ECHO-WallpaperBridge\echomod .\examples\reference\packages\ECHO-WallpaperBridge.echomod --zip
 ```
 
 ## 注意 Notes

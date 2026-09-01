@@ -1,7 +1,7 @@
 # ShinawaseLoader external plugin template
 
 1. Copy this folder and update `echo.plugin.json`.
-2. Put renderer startup code in `plugin.js`. Keep `minEchoVersion` at `26.8.15` unless the plugin needs a newer host. The current aligned install is echo-steam **26.8.28** at `D:\SteamLibrary\steamapps\common\ECHO`.
+2. Put renderer startup code in `plugin.js`. Keep `minEchoVersion` at `26.8.15` unless the plugin needs a newer host. The current aligned install is echo-steam **26.9.1** at `D:\SteamLibrary\steamapps\common\ECHO`.
 3. Package it with `pack-mod.bat <folder> <output.echo> --zip`.
 4. Drop the package into the game's `Plugins` folder or import it from the Loader page.
 

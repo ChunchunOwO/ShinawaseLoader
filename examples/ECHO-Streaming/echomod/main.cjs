@@ -16,6 +16,7 @@
  */
 
 const { createWriteStream, existsSync, readFileSync } = require('node:fs');
+const { createRequire } = require('node:module');
 const { mkdir, rename, rm } = require('node:fs/promises');
 const { join, resolve } = require('node:path');
 const { homedir } = require('node:os');
@@ -482,6 +483,438 @@ const listNeteasePlaylistTracks = async (playlistId) => {
   };
 };
 
+let ncmApiCached = undefined;
+
+const loadNcmApi = () => {
+  if (ncmApiCached !== undefined) return ncmApiCached;
+  const roots = [
+    process.env.ECHO_MOD_HOME,
+    join(__dirname, '..', '..', '..', 'ShinawaseLoader'),
+    join(__dirname, '..', '..'),
+  ].filter(Boolean);
+  for (const root of roots) {
+    const packageJson = join(root, 'package.json');
+    try {
+      ncmApiCached = createRequire(existsSync(packageJson) ? packageJson : join(root, 'index.js'))('@neteasecloudmusicapienhanced/api');
+      return ncmApiCached;
+    } catch {}
+    try {
+      ncmApiCached = require(join(root, 'node_modules', '@neteasecloudmusicapienhanced', 'api'));
+      return ncmApiCached;
+    } catch {}
+  }
+  try {
+    ncmApiCached = require('@neteasecloudmusicapienhanced/api');
+    return ncmApiCached;
+  } catch {
+    ncmApiCached = null;
+    return null;
+  }
+};
+
+const ncmInvoke = async (name, params) => {
+  const ncm = loadNcmApi();
+  if (!ncm || typeof ncm[name] !== 'function') return null;
+  try {
+    const response = await ncm[name](params);
+    return response && typeof response === 'object' && 'body' in response ? response.body : response;
+  } catch (error) {
+    logMod('WARN', `ncm ${name} failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+};
+
+const neteaseRecord = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+
+const neteaseIdText = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return String(Math.trunc(value));
+  const text = String(value ?? '').trim();
+  return /^\d+$/u.test(text) && text !== '0' ? text : null;
+};
+
+const dailySongsFromBody = (value) => {
+  const body = neteaseRecord(value);
+  const data = neteaseRecord(body.data);
+  if (Array.isArray(data.dailySongs)) return data.dailySongs;
+  if (Array.isArray(body.recommend)) return body.recommend;
+  if (Array.isArray(data.songs)) return data.songs;
+  if (Array.isArray(body.songs)) return body.songs;
+  return [];
+};
+
+const resolveNeteaseUserId = async (cookie) => {
+  const fromBody = (value) => {
+    const body = neteaseRecord(value);
+    const data = neteaseRecord(body.data);
+    const account = neteaseRecord(body.account ?? data.account);
+    const profile = neteaseRecord(body.profile ?? data.profile);
+    return neteaseIdText(profile.userId)
+      || neteaseIdText(profile.userid)
+      || neteaseIdText(account.id)
+      || neteaseIdText(account.userId)
+      || neteaseIdText(data.userId)
+      || neteaseIdText(body.userId);
+  };
+  for (const name of ['login_status', 'user_account']) {
+    const userId = fromBody(await ncmInvoke(name, { cookie }));
+    if (userId) return userId;
+  }
+  for (const url of ['https://music.163.com/api/w/nuser/account/get', 'https://music.163.com/api/nuser/account/get']) {
+    try {
+      const userId = fromBody(await probeFetchJson(url, { headers: neteaseApiHeaders(cookie) }));
+      if (userId) return userId;
+    } catch {}
+  }
+  return null;
+};
+
+const mapDailyPlaylistCard = (item, kind, extras = {}) => {
+  const record = neteaseRecord(item);
+  const id = String(extras.providerPlaylistId || record.id || record.providerPlaylistId || '').trim();
+  if (!id) return null;
+  const creator = record.creator && typeof record.creator === 'object' ? record.creator : {};
+  const cover = record.picUrl || record.coverImgUrl || record.coverUrl || extras.coverUrl || null;
+  const numeric = /^\d+$/u.test(id);
+  return {
+    key: extras.key || `${kind}:${id}`,
+    kind,
+    provider: 'netease',
+    providerPlaylistId: id,
+    title: String(extras.title || record.name || record.title || '').trim() || id,
+    description: String(extras.description || record.copywriter || record.description || '').trim() || null,
+    creator: String(extras.creator || creator.nickname || record.nickname || '网易云音乐').trim(),
+    coverUrl: neteaseImageUrl(cover, 800),
+    coverThumb: neteaseImageUrl(cover, 300),
+    trackCount: Number(extras.trackCount ?? record.trackCount ?? record.playcount ?? record.playCount) || null,
+    webUrl: extras.webUrl !== undefined ? extras.webUrl : (numeric ? `https://music.163.com/#/playlist?id=${id}` : null),
+    syncMode: extras.syncMode || (numeric ? 'url' : kind === 'songs' ? 'official-daily' : 'tracks'),
+    dailyId: extras.dailyId || null,
+  };
+};
+
+const isDailySongsCard = (item) => {
+  const record = neteaseRecord(item);
+  const id = String(record.id ?? '');
+  const name = String(record.name || record.title || '');
+  const type = Number(record.type);
+  return id === '0' || type === 0 || /每日歌曲推荐|每日推荐歌曲/u.test(name);
+};
+
+const collectHomepagePlaylists = (node, found) => {
+  if (!node) return found;
+  if (Array.isArray(node)) {
+    for (const item of node) collectHomepagePlaylists(item, found);
+    return found;
+  }
+  if (typeof node !== 'object') return found;
+  const record = node;
+  const blockCode = String(record.blockCode || record.block_code || '');
+  const skipBlock = blockCode && !/PLAYLIST|RCMD|RADAR|OFFICIAL|STYLE/iu.test(blockCode);
+  if (skipBlock) {
+    for (const value of Object.values(record)) {
+      if (value && typeof value === 'object') collectHomepagePlaylists(value, found);
+    }
+    return found;
+  }
+  const resourceType = String(record.resourceType || record.resource_type || record.actionType || '');
+  const action = String(record.action || record.targetUrl || record.url || '');
+  const ui = neteaseRecord(record.uiElement || record.ui_element);
+  const mainTitle = neteaseRecord(ui.mainTitle || ui.main_title);
+  const image = neteaseRecord(ui.image);
+  const id = neteaseIdText(record.resourceId || record.resource_id || record.creativeId || record.id);
+  const looksPlaylist = /playlist/iu.test(resourceType)
+    || /playlist/iu.test(action)
+    || /orpheus:\/\/playlist/iu.test(action)
+    || record.resourceType === 'list';
+  if (looksPlaylist && id && !found.has(id)) {
+    found.set(id, {
+      id,
+      name: String(mainTitle.title || record.title || record.name || '').trim() || id,
+      copywriter: String(ui.subTitle?.title || record.copywriter || '').trim() || null,
+      picUrl: image.imageUrl || record.picUrl || record.coverUrl || null,
+      trackCount: Number(record.playCount || record.trackCount) || null,
+    });
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === 'object') collectHomepagePlaylists(value, found);
+  }
+  return found;
+};
+
+const fetchNeteaseDailySongs = async (cookie, afresh = false) => {
+  let body = await ncmInvoke('recommend_songs', { cookie, afresh: afresh ? true : undefined });
+  if (!body) {
+    try {
+      body = await probeFetchJson('https://music.163.com/api/v3/discovery/recommend/songs', {
+        method: 'POST',
+        headers: { ...neteaseApiHeaders(cookie), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(afresh ? { afresh: 'true' } : {}).toString(),
+      });
+    } catch {
+      try {
+        body = await probeFetchJson('https://music.163.com/api/v3/discovery/recommend/songs', {
+          headers: neteaseApiHeaders(cookie),
+        });
+      } catch {
+        body = null;
+      }
+    }
+  }
+  return dailySongsFromBody(body);
+};
+
+const fetchNeteaseRecommendResources = async (cookie) => {
+  let body = await ncmInvoke('recommend_resource', { cookie });
+  if (!body) {
+    try {
+      body = await probeFetchJson('https://music.163.com/api/v1/discovery/recommend/resource', {
+        headers: neteaseApiHeaders(cookie),
+      });
+    } catch {
+      body = null;
+    }
+  }
+  const record = neteaseRecord(body);
+  const recommend = Array.isArray(record.recommend) ? record.recommend
+    : Array.isArray(neteaseRecord(record.data).recommend) ? neteaseRecord(record.data).recommend
+    : [];
+  return recommend.filter((item) => item && !isDailySongsCard(item));
+};
+
+const fetchNeteasePersonalizedPlaylists = async (cookie) => {
+  let body = await ncmInvoke('personalized', { cookie, limit: 30 });
+  if (!body) {
+    try {
+      body = await probeFetchJson('https://music.163.com/api/personalized/playlist?limit=30', {
+        headers: neteaseApiHeaders(cookie),
+      });
+    } catch {
+      body = null;
+    }
+  }
+  const record = neteaseRecord(body);
+  return Array.isArray(record.result) ? record.result
+    : Array.isArray(neteaseRecord(record.data).result) ? neteaseRecord(record.data).result
+    : [];
+};
+
+const fetchNeteaseHomepagePlaylists = async (cookie, refresh = false) => {
+  const body = await ncmInvoke('homepage_block_page', { cookie, refresh: refresh ? true : false });
+  const found = new Map();
+  collectHomepagePlaylists(body, found);
+  return [...found.values()];
+};
+
+const fetchNeteaseRadarPlaylists = async (cookie) => {
+  const userId = await resolveNeteaseUserId(cookie);
+  const names = [];
+  if (userId) {
+    let body = await ncmInvoke('user_playlist', { cookie, uid: userId, limit: 1000, offset: 0 });
+    if (!body) {
+      try {
+        const params = new URLSearchParams({ uid: userId, limit: '1000', offset: '0', includeVideo: 'true' });
+        body = await probeFetchJson(`https://music.163.com/api/user/playlist?${params.toString()}`, {
+          headers: neteaseApiHeaders(cookie),
+        });
+      } catch {
+        body = null;
+      }
+    }
+    const record = neteaseRecord(body);
+    const lists = Array.isArray(record.playlist) ? record.playlist
+      : Array.isArray(neteaseRecord(record.data).playlist) ? neteaseRecord(record.data).playlist
+      : [];
+    for (const item of lists) {
+      const name = String(item?.name || '');
+      if (/雷达/u.test(name)) names.push(item);
+    }
+  }
+  return names;
+};
+
+const fetchNeteaseHistoryDates = async (cookie) => {
+  let body = await ncmInvoke('history_recommend_songs', { cookie });
+  if (!body) {
+    try {
+      body = await probeFetchJson('https://music.163.com/api/discovery/recommend/songs/history/recent', {
+        headers: neteaseApiHeaders(cookie),
+      });
+    } catch {
+      body = null;
+    }
+  }
+  const data = neteaseRecord(neteaseRecord(body).data);
+  const dates = Array.isArray(data.dates) ? data.dates
+    : Array.isArray(neteaseRecord(body).dates) ? neteaseRecord(body).dates
+    : [];
+  return dates.map((item) => String(item || '').trim()).filter((item) => /^\d{4}-\d{2}-\d{2}$/u.test(item)).slice(0, 14);
+};
+
+const fetchNeteaseHistorySongs = async (cookie, date) => {
+  let body = await ncmInvoke('history_recommend_songs_detail', { cookie, date });
+  if (!body) {
+    try {
+      const params = new URLSearchParams({ date });
+      body = await probeFetchJson(`https://music.163.com/api/discovery/recommend/songs/history/detail?${params.toString()}`, {
+        headers: neteaseApiHeaders(cookie),
+      });
+    } catch {
+      body = null;
+    }
+  }
+  return dailySongsFromBody(body);
+};
+
+const fetchNeteaseNewSongs = async (cookie) => {
+  let body = await ncmInvoke('personalized_newsong', { cookie, limit: 20 });
+  if (!body) {
+    try {
+      body = await probeFetchJson('https://music.163.com/api/personalized/newsong?limit=20', {
+        headers: neteaseApiHeaders(cookie),
+      });
+    } catch {
+      body = null;
+    }
+  }
+  const record = neteaseRecord(body);
+  const result = Array.isArray(record.result) ? record.result
+    : Array.isArray(neteaseRecord(record.data).result) ? neteaseRecord(record.data).result
+    : [];
+  return result.map((item) => item?.song || item).filter(Boolean);
+};
+
+const listNeteaseDailyPlaylists = async (options = {}) => {
+  const session = streamingAccountSession('netease');
+  const cookie = session.cookie;
+  if (!cookie) throw new Error('netease_login_required');
+  const refresh = options.refresh === true;
+  const playlists = [];
+  const seen = new Set();
+  const push = (item) => {
+    if (!item || seen.has(item.key)) return;
+    seen.add(item.key);
+    playlists.push(item);
+  };
+
+  const [dailySongs, radarLists, homepage, resources, dates, newsongs, personalized] = await Promise.all([
+    fetchNeteaseDailySongs(cookie, refresh).catch((error) => {
+      logMod('WARN', `daily songs: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }),
+    fetchNeteaseRadarPlaylists(cookie).catch(() => []),
+    fetchNeteaseHomepagePlaylists(cookie, refresh).catch(() => []),
+    fetchNeteaseRecommendResources(cookie).catch(() => []),
+    fetchNeteaseHistoryDates(cookie).catch(() => []),
+    fetchNeteaseNewSongs(cookie).catch(() => []),
+    fetchNeteasePersonalizedPlaylists(cookie).catch(() => []),
+  ]);
+  const dailyMapped = dailySongs.map(mapNeteasePlaylistSong).filter(Boolean);
+  push(mapDailyPlaylistCard({
+    name: '每日推荐',
+    copywriter: '根据网易云音乐账号生成，每天 6:00 更新。',
+    picUrl: dailyMapped[0]?.coverUrl,
+  }, 'songs', {
+    key: 'songs:daily-recommend',
+    providerPlaylistId: 'daily-recommend',
+    title: '每日推荐',
+    description: '根据网易云音乐账号生成，每天 6:00 更新。',
+    trackCount: dailyMapped.length,
+    webUrl: null,
+    syncMode: 'official-daily',
+    coverUrl: dailyMapped[0]?.coverUrl,
+  }));
+
+  for (const item of radarLists) push(mapDailyPlaylistCard(item, 'radar'));
+
+  for (const item of homepage) {
+    const title = String(item.name || '');
+    push(mapDailyPlaylistCard(item, /雷达/u.test(title) ? 'radar' : 'resource'));
+  }
+
+  for (const item of resources) {
+    const id = neteaseIdText(item?.id);
+    if (!id) continue;
+    push(mapDailyPlaylistCard(item, 'resource'));
+  }
+
+  for (const date of dates) {
+    push(mapDailyPlaylistCard({
+      name: `历史日推 ${date}`,
+      copywriter: '网易云历史每日推荐歌曲',
+    }, 'history', {
+      key: `history:${date}`,
+      providerPlaylistId: `daily-history-${date}`,
+      title: `历史日推 ${date}`,
+      description: '网易云历史每日推荐歌曲',
+      webUrl: null,
+      syncMode: 'tracks',
+      dailyId: date,
+    }));
+  }
+
+  const newsongMapped = newsongs.map(mapNeteasePlaylistSong).filter(Boolean);
+  if (newsongMapped.length) {
+    push(mapDailyPlaylistCard({
+      name: '新歌推荐',
+      copywriter: '网易云个性化新歌',
+      picUrl: newsongMapped[0]?.coverUrl,
+    }, 'newsong', {
+      key: 'newsong:daily',
+      providerPlaylistId: 'daily-newsong',
+      title: '新歌推荐',
+      description: '网易云个性化新歌',
+      trackCount: newsongMapped.length,
+      webUrl: null,
+      syncMode: 'tracks',
+      coverUrl: newsongMapped[0]?.coverUrl,
+    }));
+  }
+
+  for (const item of personalized.slice(0, 16)) {
+    const id = neteaseIdText(item?.id);
+    if (!id) continue;
+    push(mapDailyPlaylistCard(item, 'personalized'));
+  }
+
+  logMod('INFO', `netease daily playlists: ${playlists.length} (songs=${dailyMapped.length}, radar=${playlists.filter((item) => item.kind === 'radar').length}, resource=${playlists.filter((item) => item.kind === 'resource').length})`);
+  return {
+    playlists,
+    fetchedAt: new Date().toISOString(),
+    authenticated: true,
+  };
+};
+
+const listNeteaseDailyPlaylistTracks = async (payload) => {
+  const session = streamingAccountSession('netease');
+  const cookie = session.cookie;
+  if (!cookie) throw new Error('netease_login_required');
+  const kind = String(payload?.kind || '').trim();
+  const id = String(payload?.id || payload?.dailyId || payload?.providerPlaylistId || '').trim();
+  const afresh = payload?.refresh === true;
+  if (kind === 'songs' || id === 'daily-recommend') {
+    const songs = await fetchNeteaseDailySongs(cookie, afresh);
+    const tracks = songs.map(mapNeteasePlaylistSong).filter(Boolean);
+    if (!tracks.length) throw new Error('netease_daily_empty');
+    return { id: 'daily-recommend', name: '每日推荐', kind: 'songs', trackCount: tracks.length, tracks };
+  }
+  if (kind === 'history' || id.startsWith('daily-history-')) {
+    const date = String(payload?.dailyId || id.replace(/^daily-history-/u, '')).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new Error('invalid_history_date');
+    const songs = await fetchNeteaseHistorySongs(cookie, date);
+    const tracks = songs.map(mapNeteasePlaylistSong).filter(Boolean);
+    if (!tracks.length) throw new Error('netease_daily_empty');
+    return { id: `daily-history-${date}`, name: `历史日推 ${date}`, kind: 'history', trackCount: tracks.length, tracks };
+  }
+  if (kind === 'newsong' || id === 'daily-newsong') {
+    const songs = await fetchNeteaseNewSongs(cookie);
+    const tracks = songs.map(mapNeteasePlaylistSong).filter(Boolean);
+    if (!tracks.length) throw new Error('netease_daily_empty');
+    return { id: 'daily-newsong', name: '新歌推荐', kind: 'newsong', trackCount: tracks.length, tracks };
+  }
+  if (/^\d+$/u.test(id)) return listNeteasePlaylistTracks(id);
+  throw new Error('invalid_daily_playlist');
+};
+
 const qqSongWrapperKeys = ['songinfo', 'songInfo', 'track_info', 'trackinfo', 'trackInfo', 'data'];
 const unwrapQqSong = (value) => {
   let record = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -890,12 +1323,1142 @@ const resolveBilibiliAudio = async (item) => {
   };
 };
 
+const togetherTrayPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQUlEQVR4nGOI9vn/nxLMgE0QFyDKAEIArwHEAqwGELIJlzwDMZrxGYJhAKFQHwkGkBWIFEcjVRISVZIyVTITqRgA0LMwhgcvo/EAAAAASUVORK5CYII=', 'base64');
+
+const ncmCall = async (name, params) => {
+  const body = await ncmInvoke(name, params);
+  if (body == null) return { ok: false, error: `ncm_${name}_unavailable`, body: null, code: null };
+  const record = neteaseRecord(body);
+  const nested = neteaseRecord(record.data);
+  const code = Number(record.code ?? nested.code);
+  if (Number.isFinite(code) && code !== 200 && code !== 201) {
+    return { ok: false, error: String(record.message || record.msg || nested.message || nested.msg || `ncm_${name}_${code}`), body: record, code };
+  }
+  return { ok: true, body: record, code: Number.isFinite(code) ? code : 200 };
+};
+
+const ncmBatchPath = async (cookie, path, payload) => {
+  const body = await ncmInvoke('batch', { cookie, [path]: JSON.stringify(payload) });
+  if (!body) return { ok: false, error: 'ncm_batch_unavailable', body: null };
+  const nested = body[path] != null ? body[path] : body;
+  const record = typeof nested === 'string' ? (() => { try { return probeParseJson(nested); } catch { return {}; } })() : neteaseRecord(nested);
+  const code = Number(record?.code);
+  if (Number.isFinite(code) && code !== 200 && code !== 201) {
+    return { ok: false, error: String(record.message || record.msg || `ncm_batch_${code}`), body: record, code };
+  }
+  return { ok: true, body: record, code: Number.isFinite(code) ? code : 200 };
+};
+
+const togetherShareUrl = (roomId, inviterId, songId) => {
+  const params = new URLSearchParams();
+  if (songId) params.set('songId', String(songId));
+  if (roomId) params.set('roomId', String(roomId));
+  if (inviterId) params.set('inviterId', String(inviterId));
+  return `https://st.music.163.com/listen-together/share/?${params.toString()}`;
+};
+
+const parseTogetherShare = (value) => {
+  const text = typeof value === 'string' ? value : (() => {
+    try { return JSON.stringify(value || ''); } catch { return String(value || ''); }
+  })();
+  const roomId = (text.match(/[?&]roomId=(\d+)/iu) || [])[1] || null;
+  const inviterId = (text.match(/[?&]inviterId=(\d+)/iu) || [])[1] || null;
+  const songId = (text.match(/[?&]songId=(\d+)/iu) || [])[1] || null;
+  if (!roomId || !inviterId) return null;
+  return { roomId, inviterId, songId };
+};
+
+const togetherUserFrom = (value) => {
+  const row = neteaseRecord(value);
+  const nested = neteaseRecord(row.user || row.profile || row.follow || row.member || row.followUser || row.followedUser);
+  const userId = neteaseIdText(row.userId || row.userid || row.uid || row.userIdStr || row.id
+    || nested.userId || nested.userid || nested.uid || nested.userIdStr || nested.id);
+  if (!userId) return null;
+  const nickname = String(row.nickname || row.nickName || nested.nickname || nested.nickName || userId).trim();
+  const avatarUrl = neteaseImageUrl(row.avatarUrl || row.avatarurl || nested.avatarUrl || nested.avatarurl || null, 120);
+  const joinedAt = Number(row.joinTime || row.joinedAt || row.enterTime || nested.joinTime) || null;
+  const mutual = row.mutual === true || row.followed === true || nested.mutual === true;
+  return { userId, nickname, avatarUrl, joinedAt, mutual };
+};
+
+const togetherUsersFrom = (value) => {
+  const lists = [];
+  if (Array.isArray(value)) lists.push(value);
+  const record = neteaseRecord(value);
+  for (const key of ['roomUsers', 'users', 'members', 'userList', 'onlineUsers', 'records', 'list', 'follow', 'followeds', 'follows', 'userprofiles', 'userlist', 'userList']) {
+    if (Array.isArray(record[key])) lists.push(record[key]);
+  }
+  const nestedUser = neteaseRecord(record.user);
+  if (Array.isArray(nestedUser.userlist) || Array.isArray(nestedUser.users)) lists.push(nestedUser.userlist || nestedUser.users);
+  const users = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const item of list) {
+      const user = togetherUserFrom(item);
+      if (!user || seen.has(user.userId)) continue;
+      seen.add(user.userId);
+      users.push(user);
+    }
+  }
+  return users;
+};
+
+const togetherInviteFrom = (value, fallback = {}) => {
+  if (typeof value === 'string') {
+    const share = parseTogetherShare(value);
+    if (!share) return null;
+    return {
+      roomId: share.roomId,
+      inviterId: share.inviterId,
+      songId: share.songId,
+      nickname: fallback.nickname || null,
+      avatarUrl: fallback.avatarUrl || null,
+      at: fallback.at || Date.now(),
+    };
+  }
+  const row = neteaseRecord(value);
+  const nested = neteaseRecord(row.data || row.invitation || row.content || row.msg);
+  const share = parseTogetherShare(row.msg || row.lastMsg || row.url || row.shareUrl || nested.msg || nested.url || nested.content || row);
+  const roomId = neteaseIdText(row.roomId || nested.roomId || share?.roomId);
+  const inviterId = neteaseIdText(row.inviterId || row.fromUserId || row.userId || nested.inviterId || share?.inviterId);
+  if (!roomId || !inviterId) return null;
+  const fromUser = togetherUserFrom(row.fromUser || row.user || row.inviter || nested.fromUser) || togetherUserFrom(row);
+  return {
+    roomId,
+    inviterId,
+    songId: neteaseIdText(row.songId || nested.songId || share?.songId),
+    nickname: fromUser?.nickname || fallback.nickname || null,
+    avatarUrl: fromUser?.avatarUrl || fallback.avatarUrl || null,
+    at: Number(row.lastMsgTime || row.time || nested.time) || fallback.at || Date.now(),
+  };
+};
+
+const collectTogetherInvites = (value, found = [], seen = new Set()) => {
+  if (!value) return found;
+  if (typeof value === 'string') {
+    const invite = togetherInviteFrom(value);
+    if (invite) {
+      const key = `${invite.roomId}:${invite.inviterId}`;
+      if (!seen.has(key)) { seen.add(key); found.push(invite); }
+    }
+    return found;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectTogetherInvites(item, found, seen);
+    return found;
+  }
+  if (typeof value !== 'object') return found;
+  const invite = togetherInviteFrom(value);
+  if (invite) {
+    const key = `${invite.roomId}:${invite.inviterId}`;
+    if (!seen.has(key)) { seen.add(key); found.push(invite); }
+  }
+  for (const nested of Object.values(value)) {
+    if (nested && (typeof nested === 'object' || typeof nested === 'string')) collectTogetherInvites(nested, found, seen);
+  }
+  return found;
+};
+
+const togetherPlayCommandFrom = (value) => {
+  const row = neteaseRecord(value);
+  const info = neteaseRecord(typeof row.commandInfo === 'string' ? probeParseJson(row.commandInfo) : (row.commandInfo || row.playCommand || row.command || row));
+  const commandType = String(info.commandType || info.type || '').trim();
+  const targetSongId = neteaseIdText(info.targetSongId || info.songId || info.trackId);
+  if (!commandType && !targetSongId) return null;
+  return {
+    commandType: commandType || 'PLAY',
+    playStatus: String(info.playStatus || row.playStatus || 'PLAY').toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY',
+    progressMs: Math.max(0, Math.floor(Number(info.progress ?? info.progressMs ?? row.progress) || 0)),
+    formerSongId: neteaseIdText(info.formerSongId) || '-1',
+    targetSongId: targetSongId || '0',
+    clientSeq: Math.max(0, Math.floor(Number(info.clientSeq ?? row.clientSeq) || 0)),
+  };
+};
+
+const createTogetherService = ({ log, broadcast, electron }) => {
+  const state = {
+    loggedIn: false,
+    loginError: null,
+    userId: null,
+    nickname: null,
+    avatarUrl: null,
+    inRoom: false,
+    role: null,
+    roomId: null,
+    inviterId: null,
+    users: [],
+    startedAt: null,
+    songId: null,
+    songTitle: null,
+    songArtist: null,
+    songCover: null,
+    songDurationMs: 0,
+    playStatus: 'PAUSE',
+    progressMs: 0,
+    clientSeq: 1,
+    playlistIds: [],
+    playlistVersion: 1,
+    friends: [],
+    invites: [],
+    shareUrl: null,
+    lastCommand: null,
+    lastError: null,
+    busy: null,
+  };
+  let sessionActive = false;
+  let pendingRestore = null;
+  let restorePrompted = false;
+  let statusTimer = 0;
+  let heartbeatTimer = 0;
+  let tray = null;
+  let disposed = false;
+  let snapshotStamp = '';
+
+  const cookieOrThrow = () => {
+    const session = streamingAccountSession('netease');
+    if (!session.cookie) {
+      const error = new Error('netease_login_required');
+      error.code = 'netease_login_required';
+      throw error;
+    }
+    return session.cookie;
+  };
+
+  const snapshot = () => ({
+    loggedIn: state.loggedIn,
+    loginError: state.loginError,
+    userId: state.userId,
+    nickname: state.nickname,
+    avatarUrl: state.avatarUrl,
+    inRoom: state.inRoom,
+    role: state.role,
+    roomId: state.roomId,
+    inviterId: state.inviterId,
+    users: state.users,
+    startedAt: state.startedAt,
+    elapsedMs: state.startedAt ? Math.max(0, Date.now() - state.startedAt) : 0,
+    songId: state.songId,
+    songTitle: state.songTitle,
+    songArtist: state.songArtist,
+    songCover: state.songCover,
+    songDurationMs: state.songDurationMs,
+    playStatus: state.playStatus,
+    progressMs: state.progressMs,
+    clientSeq: state.clientSeq,
+    playlistIds: state.playlistIds,
+    friends: state.friends,
+    invites: state.invites,
+    shareUrl: state.shareUrl,
+    lastCommand: state.lastCommand,
+    lastError: state.lastError,
+    busy: state.busy,
+    sessionActive,
+    pendingRestore,
+  });
+
+  const emit = (force = false) => {
+    const next = snapshot();
+    const stamp = JSON.stringify({
+      loggedIn: next.loggedIn,
+      inRoom: next.inRoom,
+      roomId: next.roomId,
+      role: next.role,
+      users: next.users.map((user) => user.userId),
+      songId: next.songId,
+      playStatus: next.playStatus,
+      progressMs: Math.floor((next.progressMs || 0) / 1000),
+      invites: next.invites.map((item) => `${item.roomId}:${item.inviterId}`),
+      lastCommand: next.lastCommand,
+      lastError: next.lastError,
+      busy: next.busy,
+      friends: next.friends.length,
+      pendingRestore: next.pendingRestore?.roomId || null,
+      sessionActive: next.sessionActive,
+    });
+    if (!force && stamp === snapshotStamp) return next;
+    snapshotStamp = stamp;
+    try { broadcast('together-state', next); } catch {}
+    rebuildTray();
+    return next;
+  };
+
+  const fail = (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    state.lastError = message;
+    log('WARN', `together: ${message}`);
+    emit(true);
+    return { ok: false, error: message, ...snapshot() };
+  };
+
+  const applySongMeta = async (songId) => {
+    if (!songId || songId === state.songId && state.songTitle) return;
+    const songs = await fetchNeteaseSongDetails([songId]).catch(() => new Map());
+    const mapped = mapNeteasePlaylistSong(songs.get(songId));
+    if (!mapped) return;
+    state.songId = mapped.providerTrackId;
+    state.songTitle = mapped.title;
+    state.songArtist = mapped.artist;
+    state.songCover = mapped.coverThumb || mapped.coverUrl;
+    state.songDurationMs = Math.round((Number(mapped.duration) || 0) * 1000);
+  };
+
+  const applyRoomBody = async (body, extras = {}) => {
+    const record = neteaseRecord(body);
+    const data = neteaseRecord(record.data);
+    const roomInfo = neteaseRecord(data.roomInfo || data.room || extras.roomInfo || record.roomInfo);
+    const roomId = neteaseIdText(roomInfo.roomId || data.roomId || extras.roomId || state.roomId);
+    const users = togetherUsersFrom(roomInfo) || togetherUsersFrom(data);
+    const moreUsers = togetherUsersFrom(data.roomUsers);
+    const mergedUsers = [...users];
+    const seen = new Set(users.map((user) => user.userId));
+    for (const user of moreUsers) {
+      if (seen.has(user.userId)) continue;
+      seen.add(user.userId);
+      mergedUsers.push(user);
+    }
+    const inviterId = neteaseIdText(roomInfo.creatorId || roomInfo.inviterId || roomInfo.ownerId || data.inviterId || extras.inviterId || state.inviterId);
+    if (data.inRoom === false && extras.forceRoom !== true && extras.inRoom !== true) {
+      if (state.inRoom) {
+        state.inRoom = false;
+        state.role = null;
+        state.roomId = null;
+        state.inviterId = null;
+        state.users = [];
+        state.startedAt = null;
+        state.shareUrl = null;
+      }
+      return;
+    }
+    const inRoom = extras.inRoom === true
+      || data.inRoom === true
+      || roomInfo.inRoom === true
+      || Boolean(roomId && (mergedUsers.length || extras.forceRoom));
+    if (extras.activate === false && roomId) {
+      const command = togetherPlayCommandFrom(data) || togetherPlayCommandFrom(roomInfo) || togetherPlayCommandFrom(data.playInfo);
+      const songId = command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : (state.songId || pendingRestore?.songId || null);
+      let songTitle = pendingRestore?.songTitle || null;
+      let songArtist = pendingRestore?.songArtist || null;
+      let songCover = pendingRestore?.songCover || null;
+      if (songId && !songTitle) {
+        const songs = await fetchNeteaseSongDetails([songId]).catch(() => new Map());
+        const mapped = mapNeteasePlaylistSong(songs.get(songId));
+        if (mapped) {
+          songTitle = mapped.title;
+          songArtist = mapped.artist;
+          songCover = mapped.coverThumb || mapped.coverUrl;
+        }
+      }
+      pendingRestore = {
+        roomId,
+        inviterId: inviterId || pendingRestore?.inviterId || null,
+        users: mergedUsers.length ? mergedUsers : (pendingRestore?.users || []),
+        songId,
+        songTitle,
+        songArtist,
+        songCover,
+        playStatus: command?.playStatus || pendingRestore?.playStatus || 'PAUSE',
+        progressMs: command?.progressMs || pendingRestore?.progressMs || 0,
+        startedAt: Number(roomInfo.createTime || roomInfo.startTime || data.createTime) || pendingRestore?.startedAt || null,
+      };
+      if (!restorePrompted) {
+        restorePrompted = true;
+        log('INFO', `together leftover room ${roomId}, waiting for restore/leave`);
+        try { broadcast('together-restore-prompt', snapshot()); } catch {}
+      }
+      emit(true);
+      return;
+    }
+    if (roomId) state.roomId = roomId;
+    if (inviterId) state.inviterId = inviterId;
+    if (mergedUsers.length) state.users = mergedUsers;
+    state.inRoom = Boolean(inRoom && state.roomId);
+    if (state.inRoom && !state.startedAt) state.startedAt = Date.now();
+    if (!state.inRoom) {
+      state.startedAt = null;
+      state.role = null;
+      state.shareUrl = null;
+    } else {
+      state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : (state.role || 'guest');
+      state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+    }
+    const command = togetherPlayCommandFrom(data) || togetherPlayCommandFrom(roomInfo) || togetherPlayCommandFrom(data.playInfo);
+    if (command && command.clientSeq >= (state.lastCommand?.clientSeq || 0)) {
+      state.lastCommand = command;
+      if (command.targetSongId && command.targetSongId !== '0') {
+        state.songId = command.targetSongId;
+        state.playStatus = command.playStatus;
+        state.progressMs = command.progressMs;
+        await applySongMeta(state.songId);
+      }
+    }
+    const playlist = neteaseRecord(neteaseRecord(data.playlist).displayList || neteaseRecord(data.playlist));
+    const ids = Array.isArray(playlist.result) ? playlist.result : Array.isArray(data.displayList) ? data.displayList : [];
+    const playlistIds = ids.map((id) => neteaseIdText(id?.id ?? id)).filter(Boolean);
+    if (playlistIds.length) state.playlistIds = playlistIds;
+  };
+
+  const refreshAccount = async () => {
+    const session = streamingAccountSession('netease');
+    if (!session.cookie) {
+      state.loggedIn = false;
+      state.userId = null;
+      state.nickname = null;
+      state.avatarUrl = null;
+      state.loginError = session.detail || 'no session';
+      return false;
+    }
+    const status = await ncmCall('login_status', { cookie: session.cookie });
+    const data = neteaseRecord(status.body?.data);
+    const profile = neteaseRecord(data.profile || status.body?.profile);
+    const account = neteaseRecord(data.account || status.body?.account);
+    const userId = neteaseIdText(profile.userId || account.id) || await resolveNeteaseUserId(session.cookie);
+    state.loggedIn = Boolean(userId);
+    state.userId = userId;
+    state.nickname = String(profile.nickname || '').trim() || state.nickname;
+    state.avatarUrl = neteaseImageUrl(profile.avatarUrl, 120) || state.avatarUrl;
+    state.loginError = state.loggedIn ? null : (status.error || 'login_status_failed');
+    return state.loggedIn;
+  };
+
+  const mergeInvites = (items) => {
+    const seen = new Set(state.invites.map((item) => `${item.roomId}:${item.inviterId}`));
+    for (const item of items || []) {
+      if (!item?.roomId || !item?.inviterId) continue;
+      if (state.userId && item.inviterId === state.userId) continue;
+      if (state.inRoom && item.roomId === state.roomId) continue;
+      const key = `${item.roomId}:${item.inviterId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      state.invites = [item, ...state.invites].slice(0, 20);
+    }
+  };
+
+  const refreshFriends = async (cookie) => {
+    const friends = [];
+    const seen = new Set();
+    const push = (user) => {
+      if (!user || seen.has(user.userId) || user.userId === state.userId) return;
+      seen.add(user.userId);
+      friends.push(user);
+    };
+    for (const scene of [2, 0]) {
+      let cursor = 0;
+      for (let page = 0; page < 6; page += 1) {
+        const result = await ncmCall('user_follow_mixed', { cookie, scene, size: 50, cursor });
+        const data = neteaseRecord(result.body?.data);
+        const batch = togetherUsersFrom(data).concat(togetherUsersFrom(result.body));
+        if (!batch.length) break;
+        batch.forEach(push);
+        const next = data.cursor ?? data.nextCursor ?? data.nextcursor;
+        if (next == null || next === cursor || batch.length < 10) break;
+        cursor = next;
+      }
+      if (friends.length) break;
+    }
+    if (state.userId) {
+      for (let offset = 0; offset < 150; offset += 30) {
+        const follows = await ncmCall('user_follows', { cookie, uid: state.userId, limit: 30, offset });
+        const batch = togetherUsersFrom(follows.body?.follow)
+          .concat(togetherUsersFrom(follows.body?.data))
+          .concat(togetherUsersFrom(follows.body));
+        if (!batch.length) break;
+        batch.forEach(push);
+        if (batch.length < 20) break;
+      }
+      const fans = await ncmCall('user_followeds', { cookie, uid: state.userId, limit: 50, offset: 0 });
+      togetherUsersFrom(fans.body?.followeds).concat(togetherUsersFrom(fans.body?.data)).concat(togetherUsersFrom(fans.body)).forEach(push);
+    }
+    const inbox = await ncmCall('msg_private', { cookie, limit: 30, offset: 0 });
+    const msgs = Array.isArray(inbox.body?.msgs) ? inbox.body.msgs : [];
+    for (const msg of msgs) {
+      const fromUser = togetherUserFrom(neteaseRecord(msg).fromUser || neteaseRecord(msg).user);
+      if (fromUser) push(fromUser);
+    }
+    friends.sort((left, right) => Number(right.mutual) - Number(left.mutual));
+    state.friends = friends;
+  };
+
+  const searchFriends = async (cookie, query) => {
+    const users = [];
+    const seen = new Set();
+    const push = (user) => {
+      if (!user || seen.has(user.userId) || user.userId === state.userId) return;
+      seen.add(user.userId);
+      users.push(user);
+    };
+    const needle = String(query || '').trim().toLowerCase();
+    for (const friend of state.friends) {
+      if (!needle || friend.nickname.toLowerCase().includes(needle) || friend.userId.includes(needle)) push(friend);
+    }
+    if (needle) {
+      for (const name of ['search', 'cloudsearch']) {
+        const result = await ncmCall(name, { cookie, keywords: query, type: 1002, limit: 30, offset: 0 });
+        const body = result.body || {};
+        const found = neteaseRecord(body.result || body.data);
+        togetherUsersFrom(found.userprofiles)
+          .concat(togetherUsersFrom(found.userlist))
+          .concat(togetherUsersFrom(found.users))
+          .concat(togetherUsersFrom(found.user))
+          .concat(togetherUsersFrom(found))
+          .forEach(push);
+        if (users.length) break;
+      }
+    }
+    return users;
+  };
+
+  const refreshInvites = async (cookie) => {
+    const status = await ncmCall('listentogether_status', { cookie });
+    if (status.ok) {
+      const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
+      if (serverInRoom && !sessionActive && !state.inRoom) {
+        await applyRoomBody(status.body, { inRoom: true, forceRoom: true, activate: false });
+      } else {
+        if (!serverInRoom) {
+          pendingRestore = null;
+          restorePrompted = false;
+        }
+        await applyRoomBody(status.body, { inRoom: serverInRoom });
+      }
+      mergeInvites(collectTogetherInvites(status.body));
+    } else if (state.inRoom === false) {
+      state.lastError = state.lastError || status.error;
+    }
+    const inbox = await ncmCall('msg_private', { cookie, limit: 30, offset: 0 });
+    const msgs = Array.isArray(inbox.body?.msgs) ? inbox.body.msgs : Array.isArray(inbox.body?.data) ? inbox.body.data : [];
+    for (const msg of msgs) {
+      const row = neteaseRecord(msg);
+      const fromUser = togetherUserFrom(row.fromUser || row.user);
+      let payload = row.lastMsg || row.msg || row.lastMsgJson;
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload); } catch {}
+      }
+      const invite = togetherInviteFrom(payload, {
+        nickname: fromUser?.nickname,
+        avatarUrl: fromUser?.avatarUrl,
+        at: Number(row.lastMsgTime || row.time) || Date.now(),
+      }) || togetherInviteFrom(row, { nickname: fromUser?.nickname, avatarUrl: fromUser?.avatarUrl });
+      if (invite) mergeInvites([invite]);
+    }
+  };
+
+  const refreshRoom = async (cookie = streamingAccountCookie('netease')) => {
+    if (!cookie || !state.roomId) return;
+    const check = await ncmCall('listentogether_room_check', { cookie, roomId: state.roomId });
+    if (check.ok) await applyRoomBody(check.body, { forceRoom: true, roomId: state.roomId });
+    const playlist = await ncmCall('listentogether_sync_playlist_get', { cookie, roomId: state.roomId });
+    if (playlist.ok) await applyRoomBody(playlist.body, { forceRoom: true, roomId: state.roomId });
+  };
+
+  const playCommand = async (commandType, extras = {}) => {
+    if (!state.inRoom || !state.roomId) return { ok: false, error: 'together_not_in_room' };
+    const cookie = cookieOrThrow();
+    const targetSongId = extras.targetSongId || state.songId || '0';
+    const formerSongId = extras.formerSongId || state.songId || '-1';
+    state.clientSeq += 1;
+    const sent = {
+      commandType,
+      playStatus: extras.playStatus || state.playStatus,
+      progressMs: extras.progressMs != null ? extras.progressMs : state.progressMs,
+      formerSongId,
+      targetSongId,
+      clientSeq: state.clientSeq,
+    };
+    const result = await ncmCall('listentogether_play_command', {
+      cookie,
+      roomId: state.roomId,
+      commandType: sent.commandType,
+      progress: sent.progressMs,
+      playStatus: sent.playStatus,
+      formerSongId: sent.formerSongId,
+      targetSongId: sent.targetSongId,
+      clientSeq: sent.clientSeq,
+    });
+    if (!result.ok) return fail(new Error(result.error));
+    state.lastCommand = sent;
+    if (targetSongId && targetSongId !== '0') state.songId = String(targetSongId);
+    state.playStatus = sent.playStatus;
+    state.progressMs = sent.progressMs;
+    state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+    emit();
+    return { ok: true, ...snapshot() };
+  };
+
+  const heartbeat = async () => {
+    if (!sessionActive || pendingRestore || !state.inRoom || !state.roomId) return;
+    const cookie = streamingAccountCookie('netease');
+    if (!cookie) return;
+    const result = await ncmCall('listentogether_heatbeat', {
+      cookie,
+      roomId: state.roomId,
+      songId: state.songId || '0',
+      playStatus: state.playStatus,
+      progress: state.progressMs,
+    });
+    if (result.ok) await applyRoomBody(result.body, { forceRoom: true, roomId: state.roomId });
+    emit();
+  };
+
+  const clearRoom = () => {
+    state.inRoom = false;
+    state.role = null;
+    state.roomId = null;
+    state.inviterId = null;
+    state.users = [];
+    state.startedAt = null;
+    state.playlistIds = [];
+    state.shareUrl = null;
+    state.lastCommand = null;
+  };
+
+  const create = async () => {
+    try {
+      state.busy = 'create';
+      emit(true);
+      const cookie = cookieOrThrow();
+      if (!(await refreshAccount())) throw new Error('netease_login_required');
+      if (state.inRoom && state.roomId) return { ok: true, ...emit(true) };
+      const result = await ncmCall('listentogether_room_create', { cookie });
+      if (!result.ok) throw new Error(result.error);
+      sessionActive = true;
+      pendingRestore = null;
+      restorePrompted = false;
+      state.role = 'host';
+      state.inviterId = state.userId;
+      state.startedAt = Date.now();
+      await applyRoomBody(result.body, { inRoom: true, inviterId: state.userId, forceRoom: true });
+      if (!state.roomId) throw new Error('together_create_failed');
+      await refreshRoom(cookie);
+      state.lastError = null;
+      log('INFO', `together room created ${state.roomId}`);
+      return { ok: true, ...emit(true) };
+    } catch (error) {
+      return fail(error);
+    } finally {
+      state.busy = null;
+      emit();
+    }
+  };
+
+  const accept = async (payload) => {
+    try {
+      state.busy = 'accept';
+      emit(true);
+      const cookie = cookieOrThrow();
+      if (!(await refreshAccount())) throw new Error('netease_login_required');
+      const roomId = neteaseIdText(payload?.roomId);
+      const inviterId = neteaseIdText(payload?.inviterId);
+      if (!roomId || !inviterId) throw new Error('together_invite_invalid');
+      const result = await ncmCall('listentogether_accept', { cookie, roomId, inviterId });
+      if (!result.ok) throw new Error(result.error);
+      sessionActive = true;
+      pendingRestore = null;
+      restorePrompted = false;
+      state.role = 'guest';
+      state.inviterId = inviterId;
+      state.startedAt = Date.now();
+      await applyRoomBody(result.body, { inRoom: true, roomId, inviterId, forceRoom: true });
+      await refreshRoom(cookie);
+      state.invites = state.invites.filter((item) => item.roomId !== roomId);
+      state.lastError = null;
+      log('INFO', `together joined room ${state.roomId} from ${inviterId}`);
+      return { ok: true, ...emit(true) };
+    } catch (error) {
+      return fail(error);
+    } finally {
+      state.busy = null;
+      emit();
+    }
+  };
+
+  const leave = async () => {
+    try {
+      state.busy = 'leave';
+      emit(true);
+      const cookie = streamingAccountCookie('netease');
+      const roomId = state.roomId || pendingRestore?.roomId;
+      if (cookie && roomId) {
+        await ncmCall('listentogether_end', { cookie, roomId });
+      }
+      log('INFO', `together left room ${roomId || ''}`);
+      pendingRestore = null;
+      restorePrompted = false;
+      sessionActive = false;
+      clearRoom();
+      state.lastError = null;
+      return { ok: true, ...emit(true) };
+    } catch (error) {
+      pendingRestore = null;
+      restorePrompted = false;
+      sessionActive = false;
+      clearRoom();
+      return fail(error);
+    } finally {
+      state.busy = null;
+      emit();
+    }
+  };
+
+  const restore = async () => {
+    try {
+      state.busy = 'restore';
+      emit(true);
+      const cookie = cookieOrThrow();
+      if (!(await refreshAccount())) throw new Error('netease_login_required');
+      const held = pendingRestore;
+      sessionActive = true;
+      pendingRestore = null;
+      restorePrompted = false;
+      if (held?.roomId) {
+        state.roomId = held.roomId;
+        state.inviterId = held.inviterId || state.userId;
+        state.users = held.users || [];
+        state.songId = held.songId || state.songId;
+        state.songTitle = held.songTitle || state.songTitle;
+        state.songArtist = held.songArtist || state.songArtist;
+        state.songCover = held.songCover || state.songCover;
+        state.playStatus = held.playStatus || state.playStatus;
+        state.progressMs = held.progressMs || 0;
+        state.startedAt = held.startedAt || Date.now();
+        state.inRoom = true;
+        state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : 'guest';
+        state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+      }
+      const status = await ncmCall('listentogether_status', { cookie });
+      if (status.ok) await applyRoomBody(status.body, { inRoom: true, forceRoom: true });
+      await refreshRoom(cookie);
+      if (!state.inRoom || !state.roomId) throw new Error('together_restore_failed');
+      state.lastError = null;
+      log('INFO', `together restored room ${state.roomId}`);
+      return { ok: true, restored: true, ...emit(true) };
+    } catch (error) {
+      return fail(error);
+    } finally {
+      state.busy = null;
+      emit();
+    }
+  };
+
+  const invite = async (payload) => {
+    try {
+      state.busy = 'invite';
+      emit(true);
+      const cookie = cookieOrThrow();
+      if (!(await refreshAccount())) throw new Error('netease_login_required');
+      if (pendingRestore) throw new Error('together_restore_pending');
+      if (!state.inRoom || !state.roomId) {
+        const created = await create();
+        if (!created.ok) return created;
+      }
+      const userIds = [...new Set((Array.isArray(payload?.userIds) ? payload.userIds : [payload?.userId])
+        .map((id) => neteaseIdText(id))
+        .filter(Boolean))];
+      if (!userIds.length) throw new Error('together_invite_user_required');
+      const payloads = [
+        { roomId: state.roomId, userIdList: JSON.stringify(userIds.map((id) => Number(id))), refer: 'inbox_invite' },
+        { roomId: state.roomId, userIdList: userIds.join(','), refer: 'songplay_more' },
+        { roomId: state.roomId, invitedUserIds: JSON.stringify(userIds), refer: 'inbox_invite' },
+        { roomId: String(state.roomId), userIds: JSON.stringify(userIds) },
+      ];
+      let sent = false;
+      let lastError = null;
+      for (const path of ['/api/listen/together/play/invitation/send', '/api/listen/together/play/invitation/send/v2']) {
+        for (const body of payloads) {
+          const result = await ncmBatchPath(cookie, path, body);
+          if (result.ok) { sent = true; break; }
+          lastError = result.error;
+        }
+        if (sent) break;
+      }
+      if (!sent) {
+        const share = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+        const text = await ncmCall('send_text', {
+          cookie,
+          msg: `邀请你一起听 ${share}`,
+          user_ids: userIds.join(','),
+        });
+        if (!text.ok) throw new Error(lastError || text.error || 'together_invite_failed');
+        sent = true;
+      }
+      state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+      if (payload?.copyLink === true) {
+        try { electron?.clipboard?.writeText?.(state.shareUrl); } catch {}
+      }
+      state.lastError = null;
+      log('INFO', `together invited ${userIds.join(',')} to ${state.roomId}`);
+      return { ok: true, sent, invitedUserIds: userIds, shareUrl: state.shareUrl, ...emit(true) };
+    } catch (error) {
+      return fail(error);
+    } finally {
+      state.busy = null;
+      emit();
+    }
+  };
+
+  const friends = async (payload) => {
+    try {
+      const cookie = cookieOrThrow();
+      if (!(await refreshAccount())) throw new Error('netease_login_required');
+      const query = String(payload?.query || '').trim();
+      if (!state.friends.length || payload?.refresh === true) await refreshFriends(cookie);
+      const list = query ? await searchFriends(cookie, query) : state.friends;
+      return { ok: true, friends: list, query, ...snapshot() };
+    } catch (error) {
+      return fail(error);
+    }
+  };
+
+  const syncList = async (payload) => {
+    try {
+      if (!state.inRoom || !state.roomId) throw new Error('together_not_in_room');
+      const cookie = cookieOrThrow();
+      const ids = [...new Set((Array.isArray(payload?.ids) ? payload.ids : [])
+        .map((id) => neteaseIdText(id))
+        .filter(Boolean))];
+      if (!ids.length) return { ok: true, ...snapshot() };
+      state.playlistVersion += 1;
+      const result = await ncmCall('listentogether_sync_list_command', {
+        cookie,
+        roomId: state.roomId,
+        commandType: 'REPLACE',
+        userId: state.userId,
+        version: state.playlistVersion,
+        randomList: ids.join(','),
+        displayList: ids.join(','),
+      });
+      if (!result.ok) throw new Error(result.error);
+      state.playlistIds = ids;
+      return { ok: true, ...emit() };
+    } catch (error) {
+      return fail(error);
+    }
+  };
+
+  const report = async (payload) => {
+    try {
+      if (!state.inRoom || !state.roomId) return { ok: true, ...snapshot() };
+      const songId = neteaseIdText(payload?.songId) || state.songId;
+      const playStatus = String(payload?.playStatus || state.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
+      const progressMs = Math.max(0, Math.floor(Number(payload?.progressMs) || 0));
+      const commandType = String(payload?.commandType || '').trim();
+      const former = state.songId || '-1';
+      const songChanged = Boolean(songId && songId !== state.songId);
+      const statusChanged = playStatus !== state.playStatus;
+      const seeked = Math.abs(progressMs - state.progressMs) > 1800;
+      state.songId = songId || state.songId;
+      state.playStatus = playStatus;
+      state.progressMs = progressMs;
+      if (payload?.title) state.songTitle = String(payload.title);
+      if (payload?.artist) state.songArtist = String(payload.artist);
+      if (payload?.coverUrl) state.songCover = String(payload.coverUrl);
+      if (Number(payload?.durationMs) > 0) state.songDurationMs = Math.floor(Number(payload.durationMs));
+      if (songId && !state.songTitle) await applySongMeta(songId);
+      if (commandType || songChanged || statusChanged || (seeked && commandType)) {
+        await playCommand(commandType || (songChanged ? 'GOTO' : (statusChanged ? playStatus : 'seek')), {
+          targetSongId: songId,
+          formerSongId: former,
+          playStatus,
+          progressMs,
+        });
+      } else {
+        emit();
+      }
+      return { ok: true, ...snapshot() };
+    } catch (error) {
+      return fail(error);
+    }
+  };
+
+  const rebuildTray = () => {
+    if (!tray || disposed) return;
+    try {
+      const { Menu } = electron || {};
+      if (!Menu?.buildFromTemplate) return;
+      const snap = snapshot();
+      const inviteItems = snap.invites.slice(0, 8).map((item) => ({
+        label: item.nickname ? `接受 ${item.nickname}` : `接受房间 ${item.roomId}`,
+        click: () => { void accept(item); },
+      }));
+      const template = [
+        { label: snap.pendingRestore ? '一起听待恢复' : (snap.inRoom ? `一起听中 · ${snap.users.length || 1} 人` : '网易云一起听'), enabled: false },
+        { type: 'separator' },
+      ];
+      if (snap.pendingRestore) {
+        const names = (snap.pendingRestore.users || []).map((user) => user.nickname).filter(Boolean).slice(0, 3).join('、');
+        template.push({ label: names ? `房间：${names}` : `房间 ${snap.pendingRestore.roomId}`, enabled: false });
+        template.push({ label: '恢复一起听', click: () => { void restore(); } });
+        template.push({ label: '退出一起听', click: () => { void leave(); } });
+        template.push({ type: 'separator' });
+      }
+      if (!snap.loggedIn) {
+        template.push({ label: '请先登录网易云', enabled: false });
+      } else {
+        const friendItems = (snap.friends || []).slice(0, 10).map((friend) => ({
+          label: friend.nickname || friend.userId,
+          click: () => { void invite({ userIds: [friend.userId] }); },
+        }));
+        if (friendItems.length) {
+          friendItems.push({ type: 'separator' });
+          friendItems.push({ label: '更多好友…', click: () => { try { broadcast('together-open-invite', snapshot()); } catch {} } });
+          template.push({ label: snap.inRoom ? '邀请好友' : '邀请好友一起听', submenu: friendItems });
+        } else {
+          template.push({
+            label: snap.inRoom ? '邀请好友' : '邀请一起听',
+            click: () => { try { broadcast('together-open-invite', snapshot()); } catch {} },
+          });
+        }
+        if (inviteItems.length) template.push({ label: `接受邀请 (${inviteItems.length})`, submenu: inviteItems });
+        if (snap.inRoom) {
+          template.push({
+            label: '复制邀请链接',
+            click: () => { try { electron.clipboard?.writeText?.(snap.shareUrl || ''); } catch {} },
+          });
+          template.push({ label: '离开一起听', click: () => { void leave(); } });
+        }
+      }
+      template.push({ type: 'separator' });
+      template.push({ label: '展开/收纳侧栏', click: () => { try { broadcast('together-toggle-rail', {}); } catch {} } });
+      tray.setContextMenu(Menu.buildFromTemplate(template));
+      tray.setToolTip(snap.inRoom
+        ? `一起听 · ${snap.users.length || 1} 人${snap.songTitle ? ` · ${snap.songTitle}` : ''}`
+        : '网易云一起听');
+    } catch (error) {
+      log('WARN', `together tray: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const ensureTray = () => {
+    if (tray || disposed) return;
+    const Tray = electron?.Tray;
+    const nativeImage = electron?.nativeImage;
+    if (!Tray || !nativeImage) return;
+    try {
+      let icon = nativeImage.createFromBuffer(togetherTrayPng);
+      if (icon?.isEmpty?.()) {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#5B4CFF"/><circle cx="16" cy="16" r="6" fill="#fff"/></svg>';
+        icon = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+      }
+      tray = new Tray(icon);
+      tray.setToolTip('网易云一起听');
+      tray.on('click', () => { try { broadcast('together-toggle-rail', {}); } catch {} });
+      rebuildTray();
+    } catch (error) {
+      log('WARN', `together tray create failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const pollStatus = async () => {
+    if (disposed) return;
+    try {
+      if (!(await refreshAccount())) {
+        if (state.inRoom) clearRoom();
+        emit();
+        return;
+      }
+      const cookie = streamingAccountCookie('netease');
+      await refreshInvites(cookie);
+      if (state.inRoom && sessionActive && !pendingRestore) await refreshRoom(cookie);
+      if (!state.friends.length) await refreshFriends(cookie).catch(() => undefined);
+      emit();
+    } catch (error) {
+      log('WARN', `together poll: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const start = () => {
+    ensureTray();
+    void pollStatus();
+    statusTimer = setInterval(() => { void pollStatus(); }, 8000);
+    heartbeatTimer = setInterval(() => { void heartbeat(); }, 5000);
+  };
+
+  const dispose = () => {
+    disposed = true;
+    clearInterval(statusTimer);
+    clearInterval(heartbeatTimer);
+    try { tray?.destroy?.(); } catch {}
+    tray = null;
+  };
+
+  return {
+    snapshot,
+    emit,
+    start,
+    dispose,
+    create,
+    accept,
+    leave,
+    restore,
+    invite,
+    friends,
+    syncList,
+    report,
+    playCommand,
+    refresh: pollStatus,
+  };
+};
+
+const mapNeteaseComment = (value, selfId) => {
+  const row = neteaseRecord(value);
+  const user = neteaseRecord(row.user);
+  const id = neteaseIdText(row.commentId || row.commentid || row.id);
+  if (!id) return null;
+  const replied = Array.isArray(row.beReplied) ? row.beReplied.map((item) => mapNeteaseComment(item, selfId)).filter(Boolean) : [];
+  const userId = neteaseIdText(user.userId || row.userId);
+  return {
+    id,
+    content: String(row.content || '').trim(),
+    time: Number(row.time) || 0,
+    likedCount: Number(row.likedCount || row.likeCount) || 0,
+    liked: row.liked === true,
+    userId,
+    nickname: String(user.nickname || row.nickname || userId || '').trim(),
+    avatarUrl: neteaseImageUrl(user.avatarUrl || row.avatarUrl, 80),
+    owner: Boolean(selfId && userId && selfId === userId),
+    replies: replied,
+  };
+};
+
+const neteaseSongTrack = (song) => {
+  const mapped = mapNeteasePlaylistSong(song);
+  if (!mapped) return null;
+  return { ...mapped, provider: 'netease', playable: true };
+};
+
+const unblockNeteaseSong = async (id) => {
+  const cookie = streamingAccountCookie('netease');
+  const sources = ['qq', 'kugou', 'pyncmd', 'joox'];
+  for (const source of sources) {
+    const result = await ncmCall('song_url_match', source ? { id, source, cookie } : { id, cookie });
+    const data = result.body?.data;
+    const url = typeof data === 'string' ? data : (data && typeof data === 'object' ? (data.url || data.proxyUrl) : null);
+    const proxyUrl = result.body?.proxyUrl;
+    const playUrl = (proxyUrl && /^https?:/iu.test(String(proxyUrl)) ? String(proxyUrl) : url);
+    if (playUrl && /^https?:/iu.test(String(playUrl))) {
+      return {
+        url: String(playUrl),
+        headers: { 'User-Agent': defaultUserAgent, Referer: 'https://music.163.com/' },
+        mimeType: 'audio/mpeg',
+        codec: 'mp3',
+        unblocked: true,
+        source: source || 'auto',
+      };
+    }
+  }
+  const v1 = await ncmCall('song_url_v1', { id, level: 'exhigh', unblock: 'true', cookie });
+  const row = Array.isArray(v1.body?.data) ? v1.body.data[0] : neteaseRecord(v1.body?.data);
+  const url = row?.url || row?.proxyUrl;
+  if (url && /^https?:/iu.test(String(url))) {
+    return {
+      url: String(url),
+      headers: { 'User-Agent': defaultUserAgent, Referer: 'https://music.163.com/' },
+      mimeType: 'audio/mpeg',
+      codec: 'mp3',
+      unblocked: true,
+      source: 'v1',
+    };
+  }
+  return null;
+};
+
+const listNeteaseComments = async (id, payload = {}) => {
+  const cookie = streamingAccountCookie('netease');
+  const page = Math.max(1, Math.floor(Number(payload.page) || 1));
+  const pageSize = Math.max(10, Math.min(50, Math.floor(Number(payload.pageSize) || 20)));
+  const sortType = Number(payload.sortType) || 3;
+  const selfId = cookie ? await resolveNeteaseUserId(cookie) : null;
+  const hot = await ncmCall('comment_hot', { cookie, id, type: 0, limit: 15, offset: 0 });
+  const newest = await ncmCall('comment_new', { cookie, id, type: 0, pageNo: page, pageSize, sortType });
+  const legacy = await ncmCall('comment_music', { cookie, id, limit: pageSize, offset: (page - 1) * pageSize });
+  const hotList = (Array.isArray(hot.body?.hotComments) ? hot.body.hotComments : [])
+    .map((item) => mapNeteaseComment(item, selfId)).filter(Boolean);
+  const data = neteaseRecord(newest.body?.data);
+  const list = (Array.isArray(data.comments) ? data.comments
+    : Array.isArray(newest.body?.comments) ? newest.body.comments
+      : Array.isArray(legacy.body?.comments) ? legacy.body.comments
+        : [])
+    .map((item) => mapNeteaseComment(item, selfId)).filter(Boolean);
+  const total = Number(data.totalCount ?? newest.body?.total ?? legacy.body?.total) || list.length;
+  return {
+    id,
+    selfId,
+    total,
+    page,
+    pageSize,
+    hasMore: data.hasMore === true || list.length >= pageSize,
+    hot: hotList,
+    comments: list,
+  };
+};
+
+const listNeteaseSimilar = async (id, limit = 10) => {
+  const cookie = streamingAccountCookie('netease');
+  const size = Math.max(3, Math.min(50, Math.floor(Number(limit) || 10)));
+  const result = await ncmCall('simi_song', { cookie, id, limit: size, offset: 0 });
+  const songs = Array.isArray(result.body?.songs) ? result.body.songs
+    : Array.isArray(neteaseRecord(result.body?.data).songs) ? result.body.data.songs
+      : [];
+  const tracks = songs.map(neteaseSongTrack).filter(Boolean).slice(0, size);
+  return { id, tracks };
+};
+
+const wrapNeteaseUnblockResolve = (enabled, forceIds) => {
+  const install = () => {
+    const original = globalThis.__shinawaseResolveStreamingPlayback;
+    if (typeof original !== 'function' || original.__echoUnblockWrapped) return typeof original === 'function';
+    const wrapped = async (request) => {
+      const provider = String(request?.provider || '');
+      const id = String(request?.providerTrackId || '').trim();
+      const force = provider === 'netease' && /^\d+$/u.test(id) && (forceIds.has(id) || request?.unblock === true);
+      if (force) forceIds.delete(id);
+      if (force) {
+        const unblocked = await unblockNeteaseSong(id);
+        if (unblocked?.url) return unblocked;
+      }
+      try {
+        const source = await original(request);
+        if (source?.url) return source;
+      } catch (error) {
+        if (provider === 'netease' && /^\d+$/u.test(id) && enabled) {
+          const unblocked = await unblockNeteaseSong(id);
+          if (unblocked?.url) return unblocked;
+        }
+        throw error;
+      }
+      if (provider === 'netease' && /^\d+$/u.test(id) && enabled) {
+        const unblocked = await unblockNeteaseSong(id);
+        if (unblocked?.url) return unblocked;
+      }
+      throw new Error('streaming_source_unavailable');
+    };
+    wrapped.__echoUnblockWrapped = true;
+    globalThis.__shinawaseResolveStreamingPlayback = wrapped;
+    return true;
+  };
+  if (!install()) {
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      if (install() || tries > 20) clearInterval(timer);
+    }, 500);
+  }
+};
+
 const activate = (host) => {
   const app = host.electron?.app || host.app;
   if (host.electron) electronRuntime = host.electron;
   logHost = host;
   process.__echoStreamingResolveBilibili = resolveBilibiliAudio;
   globalThis.__echoStreamingResolveBilibili = resolveBilibiliAudio;
+  const autoUnblock = host.config?.autoUnblock !== false;
+  const forceUnblockIds = new Set();
+  wrapNeteaseUnblockResolve(autoUnblock, forceUnblockIds);
+  const together = createTogetherService({
+    log: (level, message) => { try { host.log(level, message); } catch {} },
+    broadcast: (name, payload) => { try { host.broadcast(name, payload); } catch {} },
+    electron: host.electron || electronRuntime,
+  });
+  together.start();
 
   const musicRoot = () => {
     const override = String(host.config?.musicFolder || '').trim();
@@ -928,6 +2491,27 @@ const activate = (host) => {
     try {
       const playlist = await listNeteasePlaylistTracks(playlistId);
       try { host.log('INFO', `netease playlist ${playlistId}: ${playlist.tracks.length} tracks (auth=${playlist.authenticated}, privacy=${playlist.privacy})`); } catch {}
+      return { ok: true, ...playlist };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  host.handle('neteaseDailyPlaylists', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    try {
+      const result = await listNeteaseDailyPlaylists({ refresh: body.refresh === true });
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  host.handle('neteaseDailyPlaylistTracks', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    try {
+      const playlist = await listNeteaseDailyPlaylistTracks(body);
+      try { host.log('INFO', `netease daily ${playlist.kind}:${playlist.id}: ${playlist.tracks.length} tracks`); } catch {}
       return { ok: true, ...playlist };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -1082,7 +2666,121 @@ const activate = (host) => {
     };
   });
 
-  return () => {};
+  host.handle('togetherStatus', async () => ({ ok: true, ...together.snapshot() }));
+  host.handle('togetherCreate', async () => together.create());
+  host.handle('togetherAccept', async (payload) => together.accept(payload));
+  host.handle('togetherLeave', async () => together.leave());
+  host.handle('togetherRestore', async () => together.restore());
+  host.handle('togetherInvite', async (payload) => together.invite(payload));
+  host.handle('togetherFriends', async (payload) => together.friends(payload));
+  host.handle('togetherSyncList', async (payload) => together.syncList(payload));
+  host.handle('togetherReport', async (payload) => together.report(payload));
+  host.handle('togetherCommand', async (payload) => {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    return together.playCommand(String(body.commandType || 'PLAY'), body);
+  });
+  host.handle('togetherRefresh', async () => {
+    await together.refresh();
+    return { ok: true, ...together.snapshot() };
+  });
+
+  host.handle('neteaseComments', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    if (!id) return { ok: false, error: 'invalid_song_id' };
+    try { return { ok: true, ...(await listNeteaseComments(id, payload)) }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  host.handle('neteaseCommentAdd', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    const content = String(payload?.content || '').trim();
+    const replyId = neteaseIdText(payload?.commentId || payload?.replyId);
+    if (!id || !content) return { ok: false, error: 'invalid_comment' };
+    const cookie = streamingAccountCookie('netease');
+    if (!cookie) return { ok: false, error: 'netease_login_required' };
+    const params = replyId
+      ? { cookie, id, type: 0, t: 2, commentId: replyId, content }
+      : { cookie, id, type: 0, t: 1, content };
+    const result = await ncmCall('comment', params);
+    if (!result.ok) {
+      const added = await ncmCall(replyId ? 'comment_reply' : 'comment_add', {
+        cookie, id, type: 0, content, cid: replyId, commentId: replyId,
+      });
+      if (!added.ok) return { ok: false, error: added.error || result.error };
+    }
+    return { ok: true, ...(await listNeteaseComments(id, { page: 1 })) };
+  });
+  host.handle('neteaseCommentDelete', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    const cid = neteaseIdText(payload?.commentId || payload?.cid);
+    if (!id || !cid) return { ok: false, error: 'invalid_comment' };
+    const cookie = streamingAccountCookie('netease');
+    if (!cookie) return { ok: false, error: 'netease_login_required' };
+    let result = await ncmCall('comment', { cookie, id, type: 0, t: 0, commentId: cid });
+    if (!result.ok) result = await ncmCall('comment_delete', { cookie, id, type: 0, cid });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, ...(await listNeteaseComments(id, { page: Number(payload?.page) || 1 })) };
+  });
+  host.handle('neteaseCommentLike', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    const cid = neteaseIdText(payload?.commentId || payload?.cid);
+    if (!id || !cid) return { ok: false, error: 'invalid_comment' };
+    const cookie = streamingAccountCookie('netease');
+    if (!cookie) return { ok: false, error: 'netease_login_required' };
+    const liked = payload?.liked !== false && payload?.t !== 0;
+    const result = await ncmCall('comment_like', { cookie, id, type: 0, cid, t: liked ? 1 : 0 });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true };
+  });
+  host.handle('neteaseSimilar', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    if (!id) return { ok: false, error: 'invalid_song_id' };
+    try { return { ok: true, ...(await listNeteaseSimilar(id, payload?.limit)) }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  host.handle('neteaseUnblock', async (payload) => {
+    const id = neteaseIdText(payload?.id || payload?.songId);
+    if (!id) return { ok: false, error: 'invalid_song_id' };
+    if (payload?.force === true) forceUnblockIds.add(id);
+    const source = await unblockNeteaseSong(id);
+    if (!source?.url) return { ok: false, error: 'unblock_failed' };
+    return { ok: true, ...source, id };
+  });
+  host.handle('neteaseCaptcha', async (payload) => {
+    const phone = String(payload?.phone || '').replace(/\D/gu, '');
+    if (!/^1\d{10}$/u.test(phone) && !/^\d{6,15}$/u.test(phone)) return { ok: false, error: 'invalid_phone' };
+    const ctcode = String(payload?.ctcode || payload?.countrycode || '86').replace(/\D/gu, '') || '86';
+    const result = await ncmCall('captcha_sent', { phone, ctcode });
+    if (!result.ok) {
+      const retry = await ncmCall('captcha_sent_v1', { phone, ctcode });
+      if (!retry.ok) return { ok: false, error: result.error || retry.error };
+    }
+    return { ok: true, phone, ctcode };
+  });
+  host.handle('neteasePhoneLogin', async (payload) => {
+    const phone = String(payload?.phone || '').replace(/\D/gu, '');
+    const captcha = String(payload?.captcha || '').trim();
+    const password = String(payload?.password || '').trim();
+    if (!phone) return { ok: false, error: 'invalid_phone' };
+    if (!captcha && !password) return { ok: false, error: 'captcha_or_password_required' };
+    const countrycode = String(payload?.countrycode || payload?.ctcode || '86').replace(/\D/gu, '') || '86';
+    if (captcha) await ncmCall('captcha_verify', { phone, captcha, ctcode: countrycode });
+    const result = await ncmCall('login_cellphone', captcha
+      ? { phone, countrycode, captcha }
+      : { phone, countrycode, password });
+    const cookie = String(result.body?.cookie || '').trim();
+    if (!result.ok || !cookie) return { ok: false, error: result.error || 'login_failed' };
+    capturedProviderCookies.netease = cookie;
+    const profile = neteaseRecord(result.body?.profile);
+    return {
+      ok: true,
+      cookie,
+      userId: neteaseIdText(profile.userId || result.body?.account?.id),
+      nickname: String(profile.nickname || '').trim() || null,
+      avatarUrl: neteaseImageUrl(profile.avatarUrl, 120),
+    };
+  });
+
+  return () => { together.dispose(); };
 };
 
 module.exports = activate;

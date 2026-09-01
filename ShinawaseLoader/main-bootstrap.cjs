@@ -1,6 +1,6 @@
 'use strict';
 
-// Inspector bootstrap for echo-steam 26.8.28 / Electron 43.3.
+// Inspector bootstrap for echo-steam / Electron 43.3.
 // Registers auxiliary remap, streaming preload, playback shim, and the
 // in-process native host. session.setPreloads is deprecated; prefer
 // registerPreloadScript so extra preloads still run in the isolated world

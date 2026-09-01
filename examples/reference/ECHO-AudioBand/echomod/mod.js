@@ -566,8 +566,8 @@ const activateAudioBand = () => {
             log('configure failed', error);
             try {
               external.toast?.(chinese
-                ? 'AudioBand 无法连接 WinUI host。请运行 examples/ECHO-AudioBand/build-winui.ps1 后，用加载器重启 ECHO。'
-                : 'AudioBand could not reach its WinUI host. Run examples/ECHO-AudioBand/build-winui.ps1 and restart ECHO via the Loader.');
+                ? 'AudioBand 无法连接 WinUI host。请运行 examples/reference/ECHO-AudioBand/build-winui.ps1 后，用加载器重启 ECHO。'
+                : 'AudioBand could not reach its WinUI host. Run examples/reference/ECHO-AudioBand/build-winui.ps1 and restart ECHO via the Loader.');
             } catch {}
             return;
           }

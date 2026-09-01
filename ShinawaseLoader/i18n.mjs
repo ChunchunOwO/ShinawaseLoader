@@ -115,6 +115,9 @@ export const copy = {
     sortEnabled: '启用优先',
     echoHost: 'ECHO',
     echoProduct: '产品',
+    runtime: '运行时',
+    runtimeCurrent: '已对齐',
+    runtimeStale: '待同步',
   },
   en: {
     language: 'Language',
@@ -230,6 +233,9 @@ export const copy = {
     sortEnabled: 'Enabled first',
     echoHost: 'ECHO',
     echoProduct: 'product',
+    runtime: 'runtime',
+    runtimeCurrent: 'aligned',
+    runtimeStale: 'needs sync',
   },
 };
 

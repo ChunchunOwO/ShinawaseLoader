@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-// Stock Steam install (echo-steam 26.8.28). Reads resources/app.asar — the
+// Stock Steam install. Reads resources/app.asar — the
 // original archive, not ShinawaseLoader's isolated modded-runtime copy.
 export const DEFAULT_ECHO_ROOT = 'D:/SteamLibrary/steamapps/common/ECHO';
 

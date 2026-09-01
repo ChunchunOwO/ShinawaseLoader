@@ -3,7 +3,7 @@
   "name": "Example ECHO Plugin",
   "version": "1.0.0",
   "minEchoVersion": "26.8.15",
-  "description": "A minimal external ShinawaseLoader plugin. Floor is echo-steam 26.8.15; current aligned host is 26.8.28.",
+  "description": "A minimal external ShinawaseLoader plugin. Floor is echo-steam 26.8.15; current aligned host is 26.9.1.",
   "entry": "plugin.js",
   "config": "config.json"
 }

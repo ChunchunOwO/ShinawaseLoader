@@ -10,7 +10,7 @@ import { getStreamingService } from 'ECHOSTEAM_ROOT/src/main/streaming/Streaming
 
 let registered = false;
 
-// EchoSteam 26.8.28 ships these channel names in out/preload/ipcChannels-CKJHta3q.mjs
+// EchoSteam ships these channel names in out/preload/ipcChannels-*.mjs
 // (709 total) but the official main process does not register streaming/account/
 // downloads/qobuz/spotify handlers, and the official preload leaves those APIs
 // null. Re-register only this prefix set. Never remove steam:* / workshop:* /

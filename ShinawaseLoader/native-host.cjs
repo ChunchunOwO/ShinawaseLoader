@@ -1,9 +1,9 @@
 'use strict';
 
-// In-process native host for echo-steam 26.8.28 (Electron 43.3.0 / Chromium 150,
+// In-process native host for echo-steam (Electron 43.3.0 / Chromium 150,
 // Node >=22.23.2 <23). Build echo-native-host.node with
 // scripts/build-native-host.ps1 so the addon matches that Electron ABI.
-// ECHO.exe FileVersion 26.8.28 is the app stamp, not an Electron target.
+// ECHO.exe FileVersion is the app stamp, not an Electron target.
 
 const { createServer } = require('node:http');
 const { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, lstatSync } = require('node:fs');
@@ -115,9 +115,25 @@ const listInstalled = () => {
     if (!safeId(id) || entry?.enabled !== true) continue;
     const kind = entry.kind === 'plugin' ? 'plugin' : 'mod';
     const directory = kind === 'plugin' ? join(pluginsRoot, 'installed', id) : join(modsRoot, 'installed', id);
-    const manifestName = ['echo.plugin.json', 'echo.mod.json', 'manifest.json'].find((name) => existsSync(join(directory, name)));
+    const manifestName = ['echo.plugin.json', 'echo.mod.json', 'echo.workshop.json', 'manifest.json'].find((name) => existsSync(join(directory, name)));
     if (!manifestName) continue;
-    const manifest = readJson(join(directory, manifestName), null);
+    let manifest = readJson(join(directory, manifestName), null);
+    if (manifestName === 'echo.workshop.json' && manifest?.content?.kind === 'native-shell') {
+      const entry = readJson(join(directory, String(manifest.content.entry || 'native-shell.json')), {});
+      manifest = {
+        id: manifest.id,
+        name: manifest.title || manifest.id,
+        version: manifest.version,
+        description: entry.description || '',
+        entry: entry.renderer || 'mod.js',
+        nativeShell: manifest.content.entry || 'native-shell.json',
+        config: entry.config || 'config.json',
+        configSchema: entry.configSchema,
+        configUi: entry.configUi,
+        icon: entry.icon,
+        content: manifest.content,
+      };
+    }
     if (!manifest) continue;
     result.push({ id, kind, directory, manifest, config: readJson(join(directory, safeRelative(manifest.config || 'config.json')), {}) });
   }
@@ -279,15 +295,29 @@ const loadHostDll = (record, spec) => {
   throw new Error('native_host_addon_missing');
 };
 
+const readNativeShellSpec = (record) => {
+  const declared = record.manifest.nativeShell
+    || (record.manifest.content?.kind === 'native-shell' ? (record.manifest.content.entry || 'native-shell.json') : '');
+  if (!declared) return null;
+  try { return readJson(packageFile(record, declared), null); }
+  catch { return { exe: '', protocolVersion: 1 }; }
+};
+
 const activatePackage = async (record) => {
   await deactivatePackage(record.id);
   const native = record.manifest.native && typeof record.manifest.native === 'object' ? record.manifest.native : {};
-  const mainEntry = record.manifest.main || native.main;
+  const shellSpec = readNativeShellSpec(record);
+  const mainEntry = shellSpec ? '' : (record.manifest.main || native.main);
   const modules = Array.isArray(native.modules) ? native.modules : (native.entry ? [{ kind: native.kind || 'host-dll', entry: native.entry, export: native.export, invoke: native.invoke }] : []);
-  if (!mainEntry && !modules.length) return null;
+  if (!shellSpec && !mainEntry && !modules.length) return null;
   const host = createPackageHost(record);
   const loaded = { host, dlls: [], addons: [], dispose: null };
-  if (mainEntry) {
+  if (shellSpec) {
+    const shellHost = join(loaderRoot, 'native-shell-host.cjs');
+    delete hostRequire.cache[shellHost];
+    const activate = hostRequire(shellHost);
+    loaded.dispose = await activate(host, shellSpec);
+  } else if (mainEntry) {
     const file = packageFile(record, mainEntry);
     const imported = extname(file).toLowerCase() === '.mjs'
       ? await import(`${pathToFileURL(file).href}?t=${Date.now()}`)

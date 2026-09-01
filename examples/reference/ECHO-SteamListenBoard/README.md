@@ -1,5 +1,7 @@
 # ECHO Steam Listen Board
 
+参考 Mod：不出现在安装器可选包。自行打包后导入。 See [`../README.md`](../README.md).
+
 官方加载器测试 Mod：只检查**当前 ECHO 进程**里已经初始化的 Steam 运行时，并把聆听排行榜 / 用户统计写到 Steam App ID **5105150**。不随 `setup-modloader` 安装，也不在 examples/packages 的安装器可选列表里。
 
 Official loader test package: inspect the **in-process** ECHO Steam runtime and upload listening leaderboard / user-stat data for Steam App ID **5105150**. Standalone — not copied by `setup-modloader.bat` and not listed in the installer optional packages.
@@ -7,7 +9,7 @@ Official loader test package: inspect the **in-process** ECHO Steam runtime and 
 ## 打包 Pack
 
 ```powershell
-.\pack-mod.bat .\examples\ECHO-SteamListenBoard\echomod .\examples\packages\ECHO-SteamListenBoard.echomod --zip
+.\pack-mod.bat .\examples\reference\ECHO-SteamListenBoard\echomod .\examples\reference\packages\ECHO-SteamListenBoard.echomod --zip
 ```
 
 把生成的 `.echomod` 放到游戏 `Mods` 目录，或在加载器 Mods 页导入。This is not bundled by setup; pack and drop it yourself.

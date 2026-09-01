@@ -48,6 +48,37 @@
       "title": "音乐文件夹覆盖 / Music folder override",
       "description": "Base folder for right-click downloads. Empty = system Music folder. Tracks are saved under <folder>/Stream.",
       "default": ""
+    },
+    "autoRefreshDailyPlaylists": {
+      "type": "boolean",
+      "title": "自动刷新每日推荐歌单 / Auto-refresh daily playlists",
+      "description": "Scan and refresh NetEase daily songs, daily playlists, and radar lists at 06:05 Beijing time and after launch if today's set is stale.",
+      "default": true
+    },
+    "autoSyncDailyPlaylists": {
+      "type": "boolean",
+      "title": "自动同步新出现的每日歌单 / Auto-sync new daily playlists",
+      "description": "When auto-refresh runs, also import newly appeared daily playlists into the local Playlists page. Off keeps refresh limited to lists already synced.",
+      "default": false
+    },
+    "autoUnblock": {
+      "type": "boolean",
+      "title": "网易云歌曲解灰 / Unblock grey NetEase tracks",
+      "description": "When a NetEase track is greyed out or official resolve fails, fall back to the enhanced API match sources.",
+      "default": true
+    },
+    "similarAutoPlay": {
+      "type": "boolean",
+      "title": "相似歌曲自动播放 / Auto-play similar tracks",
+      "description": "Queue similar NetEase tracks and, after the batch finishes, recommend again from the last played song.",
+      "default": false
+    },
+    "similarCount": {
+      "type": "integer",
+      "title": "每次推荐首数 / Similar batch size",
+      "minimum": 3,
+      "maximum": 50,
+      "default": 10
     }
   }
 }

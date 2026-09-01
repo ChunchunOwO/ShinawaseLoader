@@ -10,12 +10,14 @@ ShinawaseLoader/loader-debug.log
 ShinawaseLoader/native-host.json
 ShinawaseLoader/echo-native-host.node
 ShinawaseLoader/node.exe
+ShinawaseLoader/modded-runtime/
+ShinawaseLoader/backups/
 Packages/template-self-test.echomod
 /backup.zip
 /shinawaseloader-*-sourcecode.zip
 /dev-preview/
 /.tmp-asar/
 /ShinawaseLoader/node_modules/
-/examples/ECHO-AudioBand/echomod/host/
-/examples/ECHO-AudioBand/winui/bin/
-/examples/ECHO-AudioBand/winui/obj/
+/examples/reference/ECHO-AudioBand/echomod/host/
+/examples/reference/ECHO-AudioBand/winui/bin/
+/examples/reference/ECHO-AudioBand/winui/obj/

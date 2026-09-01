@@ -20,13 +20,13 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `fetchJson(url, options)`, `uploadFile(input)`: Loader-mediated HTTP helpers.
 - `toast(message)`, `console.debug/info/warn/error`, `log(...)`: user feedback and Logs output.
 
-`GET /api/sdk` reports the `window.echo` namespaces available in the current ECHO build. `GET /api/status` reports active launch mode, performance settings, folder locations, and the aligned Echo target (`echoTarget`).
+`GET /api/sdk` reports the `window.echo` namespaces available in the current ECHO build. `GET /api/status` reports active launch mode, performance settings, folder locations, and the aligned Echo target (`echoTarget`, including `runtime` fingerprint vs the live Steam asar). `GET /api/runtime` / `POST /api/runtime/sync` inspect or force-refresh the isolated Mod runtime after a Steam update.
 
 Use `echo-external-mod.d.ts` for editor hints in JavaScript or TypeScript projects. The external SDK tracks the public bridge present in the installed build; it intentionally does not depend on ECHO's built-in plugin runtime.
 
-## echo-steam 26.8.28 alignment
+## echo-steam 26.9.1 alignment
 
-Current verified host: **echo-steam 26.8.28** at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.3.0**, Chromium 150.0.7871.212, Steam AppId **5105150**, Workshop SDK **1.12.0**.
+Current verified host: **echo-steam 26.9.1** at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.3.0**, Chromium 150.0.7871.212, Steam AppId **5105150**, Workshop SDK **1.15.0** (`native-shell` kind). The isolated Mod runtime (`ShinawaseLoader/modded-runtime`) is fingerprinted against the live Steam `app.asar` / `ECHO.exe`; Steam updates trigger `runtime-sync.mjs` on the next launch.
 
 - **userData**: `%APPDATA%\ECHO Steam`. Honor `ECHO_USER_DATA_PATH_OVERRIDE` when set. Do not treat leftover `%APPDATA%\ECHO NEXT` as the Steam edition store.
 - **Window kinds** (Electron names `MainWindow` / `DesktopLyrics` / `MiniPlayer` / `TaskbarMiniPlayer` / `Pet` / `Cli` / `DevConsole`). The loader classifies the main renderer as `Main` and injects only that surface.
@@ -82,7 +82,7 @@ Mods read the same settings through `echoExternalMod.loaderSettings` and can sub
 
 ## echo-steam renderer notes
 
-echo-steam 26.8.28 (the current Steam renderer; older docs called this "ECHO Next") reshaped the UI. The loader adapts automatically, but mod authors should know:
+echo-steam 26.9.1 (the current Steam renderer; older docs called this "ECHO Next") reshaped the UI. The loader adapts automatically, but mod authors should know:
 
 - **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader injects its group into either shape.
 - **`extend.hideNav(routeId)`**: the Steam renderer removed the per-route `[data-workshop-icon]` markers, so CSS hiding no longer matches. The loader additionally patches the native `sidebarHiddenRouteIds` app setting (via `window.echo.app.setSettings`) and restores it on `showNav` / cleanup. Route ids follow the current sidebar ids (`home`, `songs`, `streaming`, `queue`, `playlists`, `plugins`, `settings`, ...).
@@ -102,6 +102,8 @@ echo-steam 26.8.28 (the current Steam renderer; older docs called this "ECHO Nex
 ECHO's official plugin VM stays sandboxed and cannot touch Node, Electron, or the audio host. ShinawaseLoader's community native host is the authorized extension path for complete ECHO modification. It is loaded by the existing `app-asar-bridge` inside ECHO's Electron main process. That is in-process plugin loading, not remote `CreateRemoteThread` injection into an unrelated process.
 
 The Loader prefers a non-asar path: when it launches ECHO it passes `--inspect` and evaluates `main-bootstrap.cjs` in the Electron main process. That registers the official streaming/account IPC, `session.registerPreloadScript(streaming-preload.cjs)` (falls back to `setPreloads` on older Electron), and the native host. Isolated `ECHO.modded.exe` and the optional asar-bridge remain available. Safe mode and `--no-native-host` turn native loading off.
+
+Workshop items of kind `native-shell` (`echo.workshop.json` + `native-shell.json`) are installed as Mods. The loader host in `native-shell-host.cjs` spawns the packaged Windows exe (`--pipe <name>`, stdio ignored) and speaks protocol v1. A package can also set `nativeShell` on `echo.mod.json`; when that field is present the built-in host runs and `main.cjs` is not loaded.
 
 A package may declare:
 

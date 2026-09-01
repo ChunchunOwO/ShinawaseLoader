@@ -1108,6 +1108,7 @@ const renderStatus = async () => {
     const rows = [
       [T.loader, 'v' + (status.loaderVersion || LOADER_VERSION), 'ok'],
       [T.echoProduct || T.echoHost || 'ECHO', echoLabel, echo.selected && echo.version ? 'ok' : 'muted'],
+      [T.runtime || 'runtime', echo.runtime?.current ? (T.runtimeCurrent || 'aligned') + (echo.runtime.echoVersion ? ' ' + echo.runtime.echoVersion : '') : (T.runtimeStale || 'needs sync'), echo.runtime?.current ? 'ok' : 'warn'],
       [T.listen, '127.0.0.1:' + status.port, 'ok'],
       [T.cdp, String(status.debugPort), 'ok'],
       [T.inspect, String(status.inspectPort), 'ok'],

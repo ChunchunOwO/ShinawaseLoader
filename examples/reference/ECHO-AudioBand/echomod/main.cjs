@@ -143,6 +143,16 @@ const resolveHost = (dir) => {
 };
 
 const activate = (host) => {
+  try {
+    const loaderRoot = host.loaderRoot || process.env.ECHO_MOD_HOME;
+    if (loaderRoot) {
+      const builtin = require(join(loaderRoot, 'native-shell-host.cjs'));
+      const spec = existsSync(join(host.directory || __dirname, 'native-shell.json'))
+        ? require(join(host.directory || __dirname, 'native-shell.json'))
+        : { exe: 'host/EchoAudioBand.exe', protocolVersion: 1 };
+      if (typeof builtin === 'function') return builtin(host, spec);
+    }
+  } catch { /* older loader: fall through to the local host */ }
   const dir = host.directory || __dirname;
   const exe = resolveHost(dir);
   let currentConfig = normalizeConfig(host.config);

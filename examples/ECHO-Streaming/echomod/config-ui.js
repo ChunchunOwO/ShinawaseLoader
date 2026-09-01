@@ -9,6 +9,11 @@ const defaults = {
   hideUnavailable: false,
   showDisabledProviders: true,
   musicFolder: '',
+  autoRefreshDailyPlaylists: true,
+  autoSyncDailyPlaylists: false,
+  autoUnblock: true,
+  similarAutoPlay: false,
+  similarCount: 10,
 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const chinese = String(draft.locale || '').toLowerCase().startsWith('zh');
@@ -78,6 +83,8 @@ root.innerHTML = `
     </div>
     <section class="st-cfg-sec" data-sec="search"></section>
     <section class="st-cfg-sec" data-sec="display"></section>
+    <section class="st-cfg-sec" data-sec="daily"></section>
+    <section class="st-cfg-sec" data-sec="netease"></section>
     <section class="st-cfg-sec" data-sec="download"></section>
   </div>
 `;
@@ -183,6 +190,20 @@ const textInput = (key, placeholder) => {
   return input;
 };
 
+const daily = root.querySelector('[data-sec="daily"]');
+daily.append(toggle('autoRefreshDailyPlaylists',
+  t('每天 6:05（北京时间）以及启动后，如果今天的网易云日推还没刷过，就自动扫描并刷新已同步的每日推荐 / 每日歌单 / 雷达。', 'At 06:05 Beijing time and after launch, scan NetEase daily songs, daily playlists, and radar lists if today has not been refreshed yet.')));
+daily.append(toggle('autoSyncDailyPlaylists',
+  t('自动刷新时，把新出现的每日歌单也同步进本地歌单页。关闭后只刷新已经同步过的歌单。', 'When auto-refresh runs, also import newly appeared daily playlists into the local Playlists page. Off only refreshes lists already synced.')));
+
+const netease = root.querySelector('[data-sec="netease"]');
+netease.append(toggle('autoUnblock',
+  t('灰色或解析失败的网易云歌曲，自动走增强 API 解灰音源。', 'Grey or unresolvable NetEase tracks fall back to enhanced API match sources.')));
+netease.append(toggle('similarAutoPlay',
+  t('播放网易云歌曲时自动把相似歌曲加入队列；播完本批后再按最后一首继续推荐。', 'While a NetEase track plays, queue similar songs. After the batch finishes, recommend again from the last song.')));
+netease.append(field('similarCount', range('similarCount', 3, 50, 1),
+  t('每一批相似推荐的歌曲数量。', 'How many similar tracks to queue in each batch.')));
+
 const download = root.querySelector('[data-sec="download"]');
 download.append(field('defaultDownloadQuality', select('defaultDownloadQuality', downloadQualities),
   t('下载弹窗中预选的音质。“跟随播放音质”使用页面右上角的播放音质；每首歌只会显示它实际可用的音质，最近一次手动选择的音质会被记住。', 'Preselected quality in the download pickers. "Follow playback quality" mirrors the page quality selector; each song only lists the qualities it actually offers, and the last quality you pick is remembered.')));
@@ -199,6 +220,11 @@ echoConfigUi.onSave(() => ({
   hideUnavailable: draft.hideUnavailable === true,
   showDisabledProviders: draft.showDisabledProviders === true,
   musicFolder: String(draft.musicFolder || '').trim(),
+  autoRefreshDailyPlaylists: draft.autoRefreshDailyPlaylists !== false,
+  autoSyncDailyPlaylists: draft.autoSyncDailyPlaylists === true,
+  autoUnblock: draft.autoUnblock !== false,
+  similarAutoPlay: draft.similarAutoPlay === true,
+  similarCount: Math.max(3, Math.min(50, Math.round(Number(draft.similarCount) || 10))),
 }));
 
 return () => { root.replaceChildren(); };

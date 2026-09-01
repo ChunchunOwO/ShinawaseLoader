@@ -6,7 +6,7 @@
 
 *Community external ModLoader for ECHO Steam — local CDP injection, no built-in plugin VM.*
 
-![version](https://img.shields.io/badge/version-1.6.5-3b82f6?style=flat-square)
+![version](https://img.shields.io/badge/version-1.6.6-3b82f6?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square)
 ![node](https://img.shields.io/badge/node-22.23.2-339933?style=flat-square)
 ![mode](https://img.shields.io/badge/mode-external--CDP-8b5cf6?style=flat-square)
@@ -15,9 +15,9 @@
 
 </div>
 
-ShinawaseLoader 是 ECHO Steam（echo-steam 26.8.28，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 `ECHO.exe`。userData 为 `%APPDATA%\ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
+ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar/exe。userData 为 `%APPDATA%\ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
-> **v1.6.5**（当前）对齐 echo-steam 26.8.28。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
+> **v1.6.6**（当前）对齐 echo-steam 26.9.1，并在 Steam 更新后自动刷新 Mod 隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
 ## 目录
 
@@ -41,7 +41,7 @@ ShinawaseLoader 是 ECHO Steam（echo-steam 26.8.28，Electron 43.3.0）的社�
 | 渲染进程注入 | 默认 `external-cdp`：经 Chrome DevTools Protocol 注入，不改 `ECHO.exe`。 |
 | 主进程 bootstrap | Loader 启动 ECHO 时经 Node inspector（`--inspect`）加载 `streaming-bridge`、`native-host` 与额外 preload，不改写已安装的 `app.asar`。 |
 | 原生能力 | in-process native host（`.node` addon / host-dll，导出 `EchoNative_Init`）；可选当前进程内存 API。 |
-| 隔离运行时 | 安装时可生成 `ECHO.modded.exe`，与 Steam 可执行文件分离。 |
+| 隔离运行时 | 安装时生成 `ECHO.modded.exe` + `modded-runtime`。Steam 更新后启动前自动对照 asar/exe 指纹并重拷/重打补丁。 |
 | 可逆自启 | 可选 `app-asar-bridge`，用于双击 ECHO 即走 Loader 路径；CDP / inspector 模式不依赖它。 |
 | 运行模式 | 安全模式、调试模式、`attach-only`；单实例监听端口 `17862`。 |
 | 语言 | 首次运行选择中文 / English，写入 `%LOCALAPPDATA%\ShinawaseLoader\selection.json`，之后可在 Loader 页更改。 |
@@ -56,7 +56,7 @@ cd ShinawaseLoader
 .\setup-modloader.bat -Action menu
 ```
 
-安装结束后会进入 **可选包**：默认勾选全部官方示例（ECHO Streaming、ECHO Classic Pet、ECHO osu!downloader、ECHO AudioBand、ECHO MV、ECHO Wallpaper Bridge）。空格开关，Enter 导入到游戏 `Mods`。
+安装结束后会进入 **可选包**：默认勾选 **ECHO Streaming** 和 **ECHO MV**。空格开关，Enter 导入到游戏 `Mods`。其他示例已归档为 [`examples/reference/`](examples/reference/) 参考 Mod，不出现在安装列表里。
 
 安装后，请使用游戏目录下 `ShinawaseLoader` 中的启动器（Steam 快捷方式不会走 inspector bootstrap）：
 
@@ -78,6 +78,8 @@ cd ShinawaseLoader
 ```text
 --echo --safe-mode --debug --load-mode --inject-interval --startup-delay
 --native-port --inspect-port --no-native-host --locale
+
+`node ShinawaseLoader.mjs sync-runtime [--force]` 对照 Steam 的 `app.asar` / `ECHO.exe` 指纹，刷新隔离运行时。Steam 更新后启动 `start-echo-with-mods.cmd` 或 `ECHO.modded.exe` 也会自动做这一步。
 ```
 
 `--load-mode` 取值：`external-cdp`（默认）、`attach-only`、`disabled`。
@@ -86,11 +88,11 @@ cd ShinawaseLoader
 
 任选其一：
 
-1. 安装 Loader 时在 **可选包** 勾选官方示例（默认全选），脚本会把对应 `.echomod` 导入游戏 `Mods`。
+1. 安装 Loader 时在 **可选包** 勾选 ECHO Streaming / ECHO MV（默认勾选），脚本会把对应 `.echomod` 导入游戏 `Mods`。
 2. 用 Loader 启动 ECHO 后，打开应用内 **Mods** 页，导入 `.echomod` / `.echo`（也支持拖放）。
 3. 把包文件丢进游戏目录的 `Mods` 或 `Plugins` 文件夹，渲染进程就绪后会注入已启用的包。
 
-成品示例包在 [`examples/packages/`](examples/packages/)。`examples/` 源码目录不会被复制进安装位置，只有勾选的可选包会被导入。
+成品预装包在 [`examples/packages/`](examples/packages/)。参考 Mod 在 [`examples/reference/`](examples/reference/)。`examples/` 源码目录不会被复制进安装位置，只有勾选的可选包会被导入。
 
 ## 🛠️ Mod 开发
 
@@ -209,6 +211,7 @@ flowchart TB
 │   ├── loader-version.json
 │   ├── main-bootstrap.cjs
 │   ├── native-host.cjs
+│   ├── native-shell-host.cjs
 │   ├── streaming-bridge.ts
 │   ├── streaming-preload.cjs
 │   ├── mod-template/
@@ -224,13 +227,10 @@ flowchart TB
 │   ├── cdp-eval.mjs
 │   └── verify-echo-runtime.mjs
 ├── examples/                  # 官方示例（不随安装复制）
-│   ├── ECHO-AudioBand/
 │   ├── ECHO-MV/
-│   ├── ECHO-OsuDownloader/
-│   ├── ECHO-Pet/
 │   ├── ECHO-Streaming/
-│   ├── ECHO-WallpaperBridge/
-│   └── packages/
+│   ├── packages/              # 预装包：Streaming / MV
+│   └── reference/             # 归档参考 Mod（不进安装器可选包）
 ├── setup-modloader.bat
 ├── pack-mod.bat
 └── build-release.bat
@@ -238,27 +238,21 @@ flowchart TB
 
 ## 🧩 示例 Mod
 
-源码在 [`examples/`](examples/)，打包说明见 [`examples/README.md`](examples/README.md)。成品包在 [`examples/packages/`](examples/packages/)。安装脚本「可选包」里的名字与下表一致，默认全选。
+源码在 [`examples/`](examples/)，打包说明见 [`examples/README.md`](examples/README.md)。安装脚本「可选包」只提供下面两个，默认勾选。
 
 | 名称 | 说明 | 清单 |
 | --- | --- | --- |
-| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质。 | `echo.community-streaming` · 1.6.3 |
-| [ECHO Classic Pet](examples/ECHO-Pet) | 把官方桌宠小窗换成经典像素桌宠，带 VPet 式商店 / 打工 / 状态面板与侧栏控制。 | `echo.classic-pet` · 3.2.0 |
-| [ECHO osu!downloader](examples/ECHO-OsuDownloader) | osu! 谱面下载：搜索 beatmapset（Sayobot / 官方 / Catboy 镜像）、浏览 osu! 账号谱面库（最佳成绩 / 收藏 / 最常游玩），下载 .osz 自动提取音频、封面与 BPM 并导入曲库。 | `echo.osu-downloader` · 1.0.1 |
-| [ECHO AudioBand](examples/ECHO-AudioBand) | AudioBand 风格任务栏播放条：专辑封面、滚动标题、可拖拽进度与播放控制，渲染在 Windows 任务栏上。含 `main.cjs`。 | `echo.audioband` · 1.2.1 |
-| [ECHO MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条只留 MV 入口，歌词页面板与设置为 Mod 自建（不劫持官方舞台）；Bilibili 应用内播放 + YouTube 搜索、本地绑定。含 `main.cjs`。 | `echo.mv` · 1.0.10 |
-| [ECHO Wallpaper Bridge](examples/ECHO-WallpaperBridge) | ECHO 内置 Wallpaper Engine 桥接（`127.0.0.1:47668` SSE）的应用内可视化：32 段频谱、能量 / 瞬态仪表、正在播放与输出模式；可选导出 `--echo-wallpaper-*` CSS 变量供主题与其他 Mod 使用。 | `echo.wallpaper-bridge` · 1.0.0 |
+| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质。支持账号登录、歌单扫描、每日推荐、一起听、评论、相似推荐、灰色曲目回退。 | `echo.community-streaming` · 1.6.9 |
+| [ECHO MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条只留 MV 入口，歌词页面板与设置为 Mod 自建（不劫持官方舞台）；在线视频源应用内播放、外部搜索、本地绑定。含 `main.cjs`。 | `echo.mv` · 1.0.10 |
 
-从仓库根目录打包示例：
+从仓库根目录打包预装示例：
 
 ```powershell
 .\pack-mod.bat .\examples\ECHO-Streaming\echomod .\examples\packages\ECHO-Streaming.echomod --zip
-.\pack-mod.bat .\examples\ECHO-Pet\echomod .\examples\packages\ECHO-Pet.echomod --zip
-.\pack-mod.bat .\examples\ECHO-OsuDownloader\echomod .\examples\packages\ECHO-OsuDownloader.echomod --zip
-.\pack-mod.bat .\examples\ECHO-AudioBand\echomod .\examples\packages\ECHO-AudioBand.echomod --zip
 .\pack-mod.bat .\examples\ECHO-MV\echomod .\examples\packages\ECHO-MV.echomod --zip
-.\pack-mod.bat .\examples\ECHO-WallpaperBridge\echomod .\examples\packages\ECHO-WallpaperBridge.echomod --zip
 ```
+
+Pet、osu!downloader、AudioBand、Wallpaper Bridge、Together、Steam Listen Board、Auxiliary Fix 已归档为参考 Mod，见 [`examples/reference/`](examples/reference/)。不出现在安装器可选包中。
 
 ## ❓ 故障排查
 
@@ -272,7 +266,7 @@ flowchart TB
 确认是用 Loader 启动器打开的，而不是 Steam 快捷方式。Steam 入口不会执行 inspector 主进程 bootstrap。
 
 **ECHO 43.3+ 双击 `ECHO.modded.exe` 立刻退出？**  
-新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。重新运行安装或 `echo-asar.mjs patch <modded-runtime>` 即可。
+新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。Steam 更新后 Loader / `ECHO.modded.exe` 会自动对照指纹并调用 `runtime-sync.mjs`；也可手动 `node ShinawaseLoader.mjs sync-runtime --force`。
 
 **日志在哪里？**  
 游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误）。

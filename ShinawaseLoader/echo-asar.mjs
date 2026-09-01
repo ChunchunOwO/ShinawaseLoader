@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const marker = '/* shinawase-loader-bridge-v1 */';
@@ -11,8 +11,16 @@ const playbackMarker = '/* shinawase-loader-streaming-playback-v1 */';
 const MAIN_ENTRY = 'out/main/index.js';
 const PRELOAD_ENTRY = 'out/preload/index.mjs';
 const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the Steam distribution.';
-const KNOWN_STOCK_ASAR_SHA256 = 'c59648731aea7f109317c26a9181bb6626b9c9e7f130998c2577a99e9ccae2c0';
-const KNOWN_STOCK_HEADER_SHA256 = 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd';
+const KNOWN_STOCK_ASAR_SHA256 = {
+  '26.8.28': 'c59648731aea7f109317c26a9181bb6626b9c9e7f130998c2577a99e9ccae2c0',
+  '26.9.1': 'f245fd7683542bfd9f9e12fc628149bd04029819b6d2611ca274a1d7655545b6',
+};
+const KNOWN_STOCK_HEADER_SHA256 = {
+  '26.8.28': 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd',
+  '26.9.1': '8f685506c8b2ca9165e1ebd0a4c31385438e4bdeb41568cced2ce819a09cba1d',
+};
+const knownAsarHashes = new Set(Object.values(KNOWN_STOCK_ASAR_SHA256));
+const knownHeaderHashes = new Set(Object.values(KNOWN_STOCK_HEADER_SHA256));
 const align4 = (value) => (value + 3) & ~3;
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const archiveFor = (root) => join(root, 'resources', 'app.asar');
@@ -21,7 +29,7 @@ const backupFor = (root) => join(loaderFor(root), 'backups', 'app.asar.original'
 const stateFor = (root) => join(loaderFor(root), 'backups', 'app.asar.json');
 const normalizeFsPath = (value) => String(value || '').replace(/\\/g, '/');
 const isIsolatedRuntimePath = (value) => /\/modded-runtime(?:\/|$)/iu.test(normalizeFsPath(value));
-// 26.8.28 Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
+// Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
 // older folder layouts and are only resolved inside an isolated runtime copy.
 const echoExeFor = (root) => ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
   .map((name) => join(root, name))
@@ -273,8 +281,8 @@ const applyStreamingQualityPassthrough = (text) => {
 };
 
 // Electron 37 on Windows crashed natively (0xC0000005) when always-on-top was
-// applied to a transparent+frameless window in its first moments. 26.8.28
-// (Electron 43.3) still constructs the mini-player with alwaysOnTop: true and
+// applied to a transparent+frameless window in its first moments. Current
+// echo-steam (Electron 43.3) still constructs the mini-player with alwaysOnTop: true and
 // the apply* helpers still raise immediately; pet / desktop-lyrics now omit
 // the ctor flag and branch darwin vs Win32. Keep the 600ms deferral.
 const applyAuxiliaryWindowCrashFix = (text) => {
@@ -417,7 +425,7 @@ const writeArchive = (archive, replacements) => {
   renameSync(temporary, archive);
 };
 
-// 26.8.28 Steam still hides imported streaming playlists. SteamPlaylistsPage
+// Steam still hides imported streaming playlists. SteamPlaylistsPage
 // uses `.filter(i=>i.sourceProvider==="local")`; AlbumsPage / context menu /
 // appPrompt use `.filter(x=>x.sourceProvider==="local"&&x.kind!=="system")`.
 // Keep system playlists hidden, but show netease/qq/etc. imports. After
@@ -558,9 +566,9 @@ const verifyAnchors = (root) => {
   return {
     archive,
     stockAsarSha256: asarSha,
-    stockAsarSha256Match: asarSha === KNOWN_STOCK_ASAR_SHA256,
+    stockAsarSha256Match: knownAsarHashes.has(asarSha),
     headerSha256: headerSha,
-    headerSha256Match: headerSha === KNOWN_STOCK_HEADER_SHA256,
+    headerSha256Match: knownHeaderHashes.has(headerSha),
     exePath: exePath || null,
     exeEmbeddedHash,
     exeHeaderSync: Boolean(exeEmbeddedHash && exeEmbeddedHash === headerSha),
@@ -571,27 +579,32 @@ const verifyAnchors = (root) => {
   };
 };
 
-const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const [action = 'status', root = defaultRoot, flag] = process.argv.slice(2);
-try {
-  if (action === 'list') {
-    console.log(listArchive(root));
-  } else if (action === 'read') {
-    process.stdout.write(readArchiveFile(root, flag));
-  } else if (action === 'anchors') {
-    console.log(JSON.stringify(verifyAnchors(root), null, 2));
-  } else {
-    const result = action === 'patch'
-      ? patch(root)
-      : action === 'restore'
-        ? restore(root, flag === '--force')
-        : action === 'sync-integrity'
-          ? { status: 'synced', integrity: syncIntegrity(root) }
-          : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
-    const integrity = result.integrity?.status ? ` integrity=${result.integrity.status}` : '';
-    console.log(`ShinawaseLoader app.asar ${result.status}${integrity}`);
+export { patch, restore, syncIntegrity, verifyAnchors };
+
+const isMain = process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
+if (isMain) {
+  const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const [action = 'status', root = defaultRoot, flag] = process.argv.slice(2);
+  try {
+    if (action === 'list') {
+      console.log(listArchive(root));
+    } else if (action === 'read') {
+      process.stdout.write(readArchiveFile(root, flag));
+    } else if (action === 'anchors') {
+      console.log(JSON.stringify(verifyAnchors(root), null, 2));
+    } else {
+      const result = action === 'patch'
+        ? patch(root)
+        : action === 'restore'
+          ? restore(root, flag === '--force')
+          : action === 'sync-integrity'
+            ? { status: 'synced', integrity: syncIntegrity(root) }
+            : { status: existsSync(backupFor(root)) ? 'patched-or-backed-up' : 'not-patched' };
+      const integrity = result.integrity?.status ? ` integrity=${result.integrity.status}` : '';
+      console.log(`ShinawaseLoader app.asar ${result.status}${integrity}`);
+    }
+  } catch (error) {
+    console.error(`ShinawaseLoader app.asar failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
   }
-} catch (error) {
-  console.error(`ShinawaseLoader app.asar failed: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
 }

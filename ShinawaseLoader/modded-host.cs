@@ -5,10 +5,11 @@ using System.Linq;
 
 internal static class EchoModdedHost
 {
-    // echo-steam 26.8.28 / Steam AppId 5105150. Launch the isolated copy at
+    // echo-steam current Steam host / AppId 5105150. Launch the isolated copy at
     // ShinawaseLoader\modded-runtime\ECHO.exe — never the Steam original, and
     // never a hardlink of that exe (Electron 43.3 embeds the asar header hash).
     // userData is %APPDATA%\ECHO Steam unless ECHO_USER_DATA_PATH_OVERRIDE is set.
+    // Steam updates replace the stock asar/exe; sync the isolated runtime first.
     private const string SteamAppId = "5105150";
 
     private static string Quote(string value)
@@ -16,10 +17,79 @@ internal static class EchoModdedHost
         return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
     }
 
+    private static string FindNode(string loaderRoot)
+    {
+        var bundled = Path.Combine(loaderRoot, "node.exe");
+        if (File.Exists(bundled)) return bundled;
+        var configPath = Path.Combine(loaderRoot, "loader.config.json");
+        if (File.Exists(configPath))
+        {
+            var text = File.ReadAllText(configPath);
+            var marker = "\"runtimePath\"";
+            var at = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0)
+            {
+                var colon = text.IndexOf(':', at + marker.Length);
+                var first = colon >= 0 ? text.IndexOf('"', colon + 1) : -1;
+                var second = first >= 0 ? text.IndexOf('"', first + 1) : -1;
+                if (first >= 0 && second > first)
+                {
+                    var path = text.Substring(first + 1, second - first - 1).Replace("\\\\", "\\");
+                    if (File.Exists(path)) return path;
+                }
+            }
+        }
+        return "node";
+    }
+
+    private static void SyncIsolatedRuntime(string root, string loaderRoot)
+    {
+        var script = Path.Combine(loaderRoot, "runtime-sync.mjs");
+        if (!File.Exists(script)) return;
+        var node = FindNode(loaderRoot);
+        var logDir = Path.Combine(loaderRoot, "Logs");
+        try { Directory.CreateDirectory(logDir); } catch { }
+        var info = new ProcessStartInfo
+        {
+            FileName = node,
+            Arguments = Quote(script) + " --echo " + Quote(root),
+            WorkingDirectory = root,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        info.EnvironmentVariables["ECHO_MOD_HOME"] = loaderRoot;
+        info.EnvironmentVariables["ECHO_GAME_ROOT"] = root;
+        try
+        {
+            using (var proc = Process.Start(info))
+            {
+                if (proc == null) return;
+                var stdout = proc.StandardOutput.ReadToEnd();
+                var stderr = proc.StandardError.ReadToEnd();
+                if (!proc.WaitForExit(180000))
+                {
+                    try { proc.Kill(); } catch { }
+                    return;
+                }
+                try
+                {
+                    File.AppendAllText(Path.Combine(logDir, "runtime-sync.log"),
+                        "[" + DateTime.UtcNow.ToString("o") + "] exit=" + proc.ExitCode + Environment.NewLine
+                        + stdout + stderr + Environment.NewLine);
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
     public static int Main(string[] args)
     {
         var root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var loaderRoot = Path.Combine(root, "ShinawaseLoader");
+        SyncIsolatedRuntime(root, loaderRoot);
         var moddedExe = Path.Combine(loaderRoot, "modded-runtime", "ECHO.exe");
         if (!File.Exists(moddedExe))
         {

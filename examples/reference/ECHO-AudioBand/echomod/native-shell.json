@@ -1,0 +1,29 @@
+{
+  "type": "echo-workshop-native-shell",
+  "schemaVersion": 1,
+  "id": "echo.audioband",
+  "title": "ECHO AudioBand",
+  "description": "Standalone WinUI 3 taskbar now-playing bar using native-shell protocol v1.",
+  "protocolVersion": 1,
+  "platforms": ["win32"],
+  "exe": "host/EchoAudioBand.exe",
+  "renderer": "mod.js",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js",
+  "icon": "icon.svg",
+  "permissions": [
+    "process:spawn",
+    "ipc:named-pipe",
+    "shell:taskbar",
+    "cover:original",
+    "window:focus",
+    "playback:read",
+    "playback:control",
+    "lyrics:read"
+  ],
+  "pipe": {
+    "argument": "--pipe",
+    "stdio": "ignore"
+  }
+}
