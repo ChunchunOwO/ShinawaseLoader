@@ -1687,8 +1687,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     roomId: state.roomId,
     inviterId: state.inviterId,
     users: state.users,
-    startedAt: state.startedAt,
-    elapsedMs: state.startedAt ? Math.max(0, Date.now() - state.startedAt) : 0,
+    startedAt: Number(state.startedAt) || null,
+    elapsedMs: Number(state.startedAt) ? Math.max(0, Date.now() - Number(state.startedAt)) : 0,
     songId: state.songId,
     songTitle: state.songTitle,
     songArtist: state.songArtist,
@@ -1826,7 +1826,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (inviterId) state.inviterId = inviterId;
     if (mergedUsers.length) state.users = mergedUsers;
     state.inRoom = Boolean(inRoom && state.roomId);
-    if (state.inRoom && !state.startedAt) state.startedAt = Date.now();
+    if (state.inRoom && !Number(state.startedAt)) state.startedAt = Date.now();
     if (!state.inRoom) {
       state.startedAt = null;
       state.role = null;

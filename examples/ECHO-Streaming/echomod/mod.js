@@ -2089,33 +2089,41 @@ const findPlaylistsNav = () => document.querySelector('button.nav-item[data-work
 const selectNativePlaylist = (imported) => {
   const id = imported?.playlistId ? String(imported.playlistId) : '';
   const name = String(imported?.playlistName || '').trim();
-  const page = [...document.querySelectorAll('.playlists-page')].find((node) => {
+  const surface = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
+  const page = surface?.querySelector('.playlists-page') || [...document.querySelectorAll('.playlists-page')].find((node) => {
     if (!node.isConnected) return false;
-    const surface = node.closest('main') || node;
-    return getComputedStyle(surface).display !== 'none';
+    const host = node.closest('.page-surface, main') || node;
+    return getComputedStyle(host).display !== 'none';
   });
   if (!page) return false;
-  const nodes = [...page.querySelectorAll('button, [role="button"], [data-playlist-id], .playlist-item, .playlist-home-card, article')];
+  const nodes = [...page.querySelectorAll('.collection-playlist-nav-item--playlist, .playlist-list-item, button.collection-playlist-nav-item')]
+    .filter((el) => !el.closest('[data-echo-streaming-daily], .echo-streaming-daily-native'));
+  const labelOf = (el) => String(el.getAttribute('aria-label') || el.querySelector('strong')?.textContent || '').trim();
   const match = (id && nodes.find((el) => String(el.getAttribute('data-playlist-id') || el.dataset.playlistId || '') === id))
-    || (name && nodes.find((el) => (el.textContent || '').includes(name)));
+    || (name && nodes.find((el) => labelOf(el) === name))
+    || (name && nodes.find((el) => labelOf(el).includes(name)));
   if (!match) return false;
   match.click();
-  return true;
+  return Boolean(page.querySelector('.playlist-detail-panel, .playlist-detail-header, .playlist-track-list, .track-row'));
 };
 const openImportedPlaylist = async (imported) => {
   window.dispatchEvent(new Event('library:playlists-changed'));
   try { await libraryApi()?.getPlaylists?.(); } catch {}
   if (!imported?.playlistId) return false;
-  const nav = findPlaylistsNav();
-  if (nav) nav.click();
-  else {
-    try { external.extend?.navigate?.('playlists'); } catch {}
-    window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'playlists' }));
+  const live = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
+  if (!live) {
+    const nav = findPlaylistsNav();
+    if (nav) nav.click();
+    else {
+      try { external.extend?.navigate?.('playlists'); } catch {}
+      window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'playlists' }));
+    }
+    revealNativePlaylists();
   }
-  revealNativePlaylists();
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await sleep(80);
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await sleep(120);
     if (selectNativePlaylist(imported)) return true;
+    if (attempt === 4 || attempt === 12) window.dispatchEvent(new Event('library:playlists-changed'));
   }
   return false;
 };
@@ -2341,6 +2349,7 @@ const openNativeDailyPlaylist = async (playlist) => {
   const key = dailyPlaylistKey(playlist);
   if (!playlist || state.syncingDailyKeys[key]) return;
   state.syncingDailyKeys[key] = true;
+  showChromeNotice(copy.readingPlaylist);
   try {
     const synced = state.dailySyncedKeys[key];
     if (synced?.libraryPlaylistId) {
@@ -3183,6 +3192,9 @@ applyTogetherSnapshot = (snapshot) => {
     persistMemory();
   }
   togetherUi.wasInRoom = Boolean(togetherUi.snapshot.inRoom);
+  if (togetherUi.snapshot.inRoom) {
+    if (!togetherUi.roomClockAt) togetherUi.roomClockAt = Number(togetherUi.snapshot.startedAt) || Date.now();
+  } else togetherUi.roomClockAt = 0;
   paintTogetherChrome();
   if (togetherUi.snapshot.pendingRestore) return;
   void syncTogetherPlayback(togetherUi.snapshot, previous);
@@ -3414,11 +3426,16 @@ const openStreamingSheet = (tab) => {
   persistMemory();
   paintTogetherChrome();
 };
+const togetherRoomElapsed = (snap) => {
+  if (!snap?.inRoom) return 0;
+  if (!togetherUi.roomClockAt) togetherUi.roomClockAt = Number(snap.startedAt) || Date.now();
+  return Math.max(0, Date.now() - togetherUi.roomClockAt);
+};
 const togetherNowPlayingText = (snap) => [
   snap.songArtist || '',
-  snap.inRoom ? (snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused) : togetherCopy.idle,
-  snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.startedAt ? Date.now() - snap.startedAt : snap.elapsedMs)}` : '',
-  snap.inRoom ? `${formatTogetherClock(togetherDisplayedProgress())}${snap.songDurationMs ? ` / ${formatTogetherClock(snap.songDurationMs)}` : ''}` : '',
+  snap.inRoom ? (snap.songId ? (snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused) : (chinese ? '等待同步歌曲' : 'Waiting for a track')) : togetherCopy.idle,
+  snap.inRoom ? `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''} · ${formatTogetherClock(togetherRoomElapsed(snap))}` : '',
+  snap.inRoom && snap.songId ? `${formatTogetherClock(togetherDisplayedProgress())}${snap.songDurationMs ? ` / ${formatTogetherClock(snap.songDurationMs)}` : ''}` : '',
 ].filter(Boolean).join(' · ');
 const fillTogetherSheet = (root) => {
   const snap = togetherUi.snapshot;
@@ -3583,6 +3600,11 @@ const installTogetherChrome = () => {
     const meta = document.querySelector('.echo-streaming-drawer [data-together-meta]');
     if (meta && togetherUi.sheetOpen && togetherUi.sheetTab === 'together') {
       meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
+    }
+    togetherUi.refreshTick = (togetherUi.refreshTick || 0) + 1;
+    if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && togetherUi.refreshTick % 2 === 0 && !togetherUi.refreshBusy) {
+      togetherUi.refreshBusy = true;
+      void togetherInvoke('togetherRefresh', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => undefined).finally(() => { togetherUi.refreshBusy = false; });
     }
     if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying) {
       void (async () => {
