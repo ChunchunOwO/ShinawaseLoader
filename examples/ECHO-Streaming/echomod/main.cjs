@@ -1597,14 +1597,29 @@ const collectTogetherInvites = (value, found = [], seen = new Set()) => {
 
 const togetherPlayCommandFrom = (value) => {
   const row = neteaseRecord(value);
-  const info = neteaseRecord(typeof row.commandInfo === 'string' ? probeParseJson(row.commandInfo) : (row.commandInfo || row.playCommand || row.command || row));
-  const commandType = String(info.commandType || info.type || '').trim();
-  const targetSongId = neteaseIdText(info.targetSongId || info.songId || info.trackId);
-  if (!commandType && !targetSongId) return null;
+  const unwrap = (input) => {
+    if (input == null) return {};
+    if (typeof input === 'string') return neteaseRecord(probeParseJson(input));
+    const record = neteaseRecord(input);
+    if (typeof record.commandInfo === 'string' || (record.commandInfo && typeof record.commandInfo === 'object')) {
+      const nested = unwrap(record.commandInfo);
+      if (nested.commandType || nested.targetSongId || nested.songId || nested.playStatus != null) return { ...record, ...nested };
+    }
+    return record;
+  };
+  const info = unwrap(row.commandInfo || row.playCommand || row.playInfo || row.command || row);
+  const commandType = String(info.commandType || info.type || info.action || '').trim();
+  const targetSongId = neteaseIdText(
+    info.targetSongId || info.songId || info.trackId || info.musicId
+    || row.targetSongId || row.songId || row.currentSongId || row.trackId
+  );
+  const playStatusRaw = info.playStatus || info.status || row.playStatus;
+  const progress = info.progress ?? info.progressMs ?? info.position ?? row.progress ?? row.progressMs;
+  if (!commandType && !targetSongId && playStatusRaw == null && progress == null) return null;
   return {
-    commandType: commandType || 'PLAY',
-    playStatus: String(info.playStatus || row.playStatus || 'PLAY').toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY',
-    progressMs: Math.max(0, Math.floor(Number(info.progress ?? info.progressMs ?? row.progress) || 0)),
+    commandType: commandType || (targetSongId ? 'GOTO' : 'PLAY'),
+    playStatus: String(playStatusRaw || 'PLAY').toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY',
+    progressMs: Math.max(0, Math.floor(Number(progress) || 0)),
     formerSongId: neteaseIdText(info.formerSongId) || '-1',
     targetSongId: targetSongId || '0',
     clientSeq: Math.max(0, Math.floor(Number(info.clientSeq ?? row.clientSeq) || 0)),
@@ -1640,6 +1655,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     lastCommand: null,
     lastError: null,
     busy: null,
+    progressAt: 0,
   };
   let sessionActive = false;
   let pendingRestore = null;
@@ -1679,7 +1695,9 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     songCover: state.songCover,
     songDurationMs: state.songDurationMs,
     playStatus: state.playStatus,
-    progressMs: state.progressMs,
+    progressMs: state.playStatus === 'PLAY' && state.progressAt
+      ? Math.max(0, (state.progressMs || 0) + Math.max(0, Date.now() - state.progressAt))
+      : (state.progressMs || 0),
     clientSeq: state.clientSeq,
     playlistIds: state.playlistIds,
     friends: state.friends,
@@ -1817,15 +1835,35 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : (state.role || 'guest');
       state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
     }
-    const command = togetherPlayCommandFrom(data) || togetherPlayCommandFrom(roomInfo) || togetherPlayCommandFrom(data.playInfo);
-    if (command && command.clientSeq >= (state.lastCommand?.clientSeq || 0)) {
-      state.lastCommand = command;
-      if (command.targetSongId && command.targetSongId !== '0') {
-        state.songId = command.targetSongId;
-        state.playStatus = command.playStatus;
+    const command = togetherPlayCommandFrom(data)
+      || togetherPlayCommandFrom(data.playCommand)
+      || togetherPlayCommandFrom(data.playInfo)
+      || togetherPlayCommandFrom(roomInfo)
+      || togetherPlayCommandFrom(roomInfo.playCommand)
+      || togetherPlayCommandFrom(record);
+    const songId = (command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : null)
+      || neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
+    if (command) {
+      if (!state.lastCommand || command.clientSeq >= (state.lastCommand.clientSeq || 0)) state.lastCommand = command;
+      state.playStatus = command.playStatus || state.playStatus;
+      if (command.progressMs != null) {
         state.progressMs = command.progressMs;
-        await applySongMeta(state.songId);
+        state.progressAt = Date.now();
       }
+    } else {
+      if (data.playStatus || roomInfo.playStatus) {
+        state.playStatus = String(data.playStatus || roomInfo.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
+      }
+      const progress = data.progress ?? data.progressMs ?? roomInfo.progress ?? roomInfo.progressMs;
+      if (progress != null && Number.isFinite(Number(progress))) {
+        state.progressMs = Math.max(0, Math.floor(Number(progress) || 0));
+        state.progressAt = Date.now();
+      }
+    }
+    if (songId) {
+      const changed = songId !== state.songId;
+      state.songId = songId;
+      if (changed || !state.songTitle) await applySongMeta(state.songId);
     }
     const playlist = neteaseRecord(neteaseRecord(data.playlist).displayList || neteaseRecord(data.playlist));
     const ids = Array.isArray(playlist.result) ? playlist.result : Array.isArray(data.displayList) ? data.displayList : [];
@@ -2015,6 +2053,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (targetSongId && targetSongId !== '0') state.songId = String(targetSongId);
     state.playStatus = sent.playStatus;
     state.progressMs = sent.progressMs;
+    state.progressAt = Date.now();
     state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
     emit();
     return { ok: true, ...snapshot() };
@@ -2284,6 +2323,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       state.songId = songId || state.songId;
       state.playStatus = playStatus;
       state.progressMs = progressMs;
+      state.progressAt = Date.now();
       if (payload?.title) state.songTitle = String(payload.title);
       if (payload?.artist) state.songArtist = String(payload.artist);
       if (payload?.coverUrl) state.songCover = String(payload.coverUrl);

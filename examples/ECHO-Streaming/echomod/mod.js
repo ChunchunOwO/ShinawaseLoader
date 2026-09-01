@@ -31,9 +31,9 @@ const lyricsCopy = chinese ? {
   open: 'Lyrics', loading: 'Loading lyrics...', missing: 'No lyrics available', instrumental: 'Instrumental', source: 'Source', back: 'Back to Streaming', failed: 'Failed to load lyrics'
 };
 const togetherCopy = chinese ? {
-  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出一起听', restoreSong: '上次在听',
+  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出一起听', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出一起听', restoreSong: '上次在听',
 } : {
-  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave', restoreSong: 'Last track',
+  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave room', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave', restoreSong: 'Last track',
 };
 
 const ncmCopy = chinese ? {
@@ -3087,11 +3087,11 @@ togetherOnLocalPlay = async (track, options = {}) => {
   const ids = [...new Set((queue || []).map((item) => item?.provider === 'netease' ? String(item.providerTrackId || '') : '').filter((id) => /^\d+$/u.test(id)))];
   if (ids.length) await togetherInvoke('togetherSyncList', { ids }).catch(() => undefined);
 };
-const applyTogetherRemoteCommand = async (command, snapshot) => {
+const applyTogetherRemoteCommand = async (command, snapshot, force = false) => {
   if (!command || togetherUi.applying) return;
   const seq = Number(command.clientSeq) || 0;
-  if (seq && seq <= togetherUi.lastAppliedSeq) return;
-  if (seq && seq === togetherUi.lastSentSeq) {
+  if (!force && seq && seq <= togetherUi.lastAppliedSeq) return;
+  if (!force && seq && seq === togetherUi.lastSentSeq) {
     togetherUi.lastAppliedSeq = seq;
     return;
   }
@@ -3102,7 +3102,8 @@ const applyTogetherRemoteCommand = async (command, snapshot) => {
   const status = await playbackApi()?.getStatus?.().catch(() => null);
   const sameSong = Boolean(current?.songId && songId && current.songId === songId);
   const localPlaying = status?.state === 'playing' || status?.state === 'loading';
-  const samePlay = command.playStatus === 'PLAY' ? localPlaying : !localPlaying;
+  const wantPlay = command.playStatus !== 'PAUSE';
+  const samePlay = wantPlay ? localPlaying : !localPlaying;
   const samePos = Math.abs((Number(status?.positionMs) || 0) - (Number(command.progressMs) || 0)) < 1800;
   if (sameSong && samePlay && samePos && type !== 'GOTO') {
     togetherUi.lastAppliedSeq = seq || togetherUi.lastAppliedSeq;
@@ -3122,15 +3123,16 @@ const applyTogetherRemoteCommand = async (command, snapshot) => {
           togetherRemote: true,
           source: sourceFor('netease', togetherCopy.title),
         });
+        if (command.playStatus === 'PAUSE') await controls.pause?.();
       }
-    } else if (type === 'PAUSE') {
+    } else if (type === 'PAUSE' || command.playStatus === 'PAUSE') {
       await controls.pause?.();
     } else if (type === 'PLAY') {
       await controls.play?.();
-      if (progressSec > 0) await controls.seek?.(progressSec);
+      if (progressSec > 0 && !samePos) await controls.seek?.(progressSec);
     } else if (type === 'SEEK' || type === 'seek') {
       await controls.seek?.(progressSec);
-      if (command.playStatus === 'PLAY') await controls.play?.();
+      if (wantPlay) await controls.play?.();
     }
   } catch (error) {
     showChromeNotice(togetherErrorMessage(error));
@@ -3138,9 +3140,45 @@ const applyTogetherRemoteCommand = async (command, snapshot) => {
     window.setTimeout(() => { togetherUi.applying = false; }, 800);
   }
 };
+const togetherDisplayedProgress = () => {
+  const snap = togetherUi.snapshot;
+  const base = Number(snap.progressMs) || 0;
+  if (!snap.inRoom || snap.playStatus !== 'PLAY') return base;
+  const started = togetherUi.progressAt || 0;
+  return started ? base + Math.max(0, Date.now() - started) : base;
+};
+const syncTogetherPlayback = async (snapshot, previous) => {
+  if (!snapshot?.inRoom || snapshot.pendingRestore || togetherUi.applying) return;
+  const songId = String(snapshot.songId || snapshot.lastCommand?.targetSongId || '').trim();
+  const current = togetherCurrentNetease();
+  const joined = Boolean(snapshot.inRoom && !previous?.inRoom);
+  if (!songId) {
+    if ((joined || snapshot.role === 'host') && current) await togetherReportLocal('GOTO');
+    return;
+  }
+  const playStatus = snapshot.playStatus === 'PAUSE' ? 'PAUSE' : 'PLAY';
+  const progressMs = Number(snapshot.progressMs) || 0;
+  const status = await playbackApi()?.getStatus?.().catch(() => null);
+  const wrongSong = current?.songId !== songId;
+  const localPlaying = status?.state === 'playing' || status?.state === 'loading';
+  const wrongPlay = playStatus === 'PLAY' ? !localPlaying : localPlaying;
+  const drifted = Math.abs((Number(status?.positionMs) || 0) - progressMs) > 2500;
+  if (!joined && !wrongSong && !wrongPlay && !drifted) return;
+  const type = wrongSong || joined ? 'GOTO' : (wrongPlay ? playStatus : 'seek');
+  await applyTogetherRemoteCommand({
+    commandType: type,
+    targetSongId: songId,
+    progressMs,
+    playStatus,
+    clientSeq: Date.now(),
+  }, snapshot, true);
+};
 applyTogetherSnapshot = (snapshot) => {
   const previous = togetherUi.snapshot;
   togetherUi.snapshot = snapshot && typeof snapshot === 'object' ? snapshot : togetherUi.snapshot;
+  if (Number(togetherUi.snapshot.progressMs) !== Number(previous?.progressMs) || togetherUi.snapshot.songId !== previous?.songId) {
+    togetherUi.progressAt = Date.now();
+  }
   if (togetherUi.snapshot.inRoom && !togetherUi.wasInRoom && !togetherUi.snapshot.pendingRestore) {
     togetherUi.sheetOpen = true;
     togetherUi.sheetTab = 'together';
@@ -3149,18 +3187,7 @@ applyTogetherSnapshot = (snapshot) => {
   togetherUi.wasInRoom = Boolean(togetherUi.snapshot.inRoom);
   paintTogetherChrome();
   if (togetherUi.snapshot.pendingRestore) return;
-  const command = togetherUi.snapshot.lastCommand;
-  if (togetherUi.snapshot.inRoom && command && command.clientSeq !== previous?.lastCommand?.clientSeq) {
-    void applyTogetherRemoteCommand(command, togetherUi.snapshot);
-  } else if (togetherUi.snapshot.inRoom && !previous?.inRoom && togetherUi.snapshot.songId) {
-    void applyTogetherRemoteCommand({
-      commandType: 'GOTO',
-      targetSongId: togetherUi.snapshot.songId,
-      progressMs: togetherUi.snapshot.progressMs,
-      playStatus: togetherUi.snapshot.playStatus,
-      clientSeq: togetherUi.snapshot.clientSeq || 1,
-    }, togetherUi.snapshot);
-  }
+  void syncTogetherPlayback(togetherUi.snapshot, previous);
 };
 const togetherReportLocal = async (commandType) => {
   if (togetherUi.applying || !togetherUi.snapshot.inRoom) return;
@@ -3347,7 +3374,7 @@ const renderTogetherRestore = () => {
   if (pending.songTitle) dialog.append(make('small', '', `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`));
   const actions = make('div', 'echo-streaming-together-restore-actions');
   actions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
-  actions.append(actionButton(togetherCopy.restoreLeave, 'close', () => void togetherLeaveRoom(), { className: 'secondary-action' }));
+  actions.append(actionButton(togetherCopy.restoreLeave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
   dialog.append(actions);
   backdrop.append(dialog);
   document.body.append(backdrop);
@@ -3389,6 +3416,12 @@ const openStreamingSheet = (tab) => {
   persistMemory();
   paintTogetherChrome();
 };
+const togetherNowPlayingText = (snap) => [
+  snap.songArtist || '',
+  snap.inRoom ? (snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused) : togetherCopy.idle,
+  snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.startedAt ? Date.now() - snap.startedAt : snap.elapsedMs)}` : '',
+  snap.inRoom ? `${formatTogetherClock(togetherDisplayedProgress())}${snap.songDurationMs ? ` / ${formatTogetherClock(snap.songDurationMs)}` : ''}` : '',
+].filter(Boolean).join(' · ');
 const fillTogetherSheet = (root) => {
   const snap = togetherUi.snapshot;
   if (!ncmExtrasVisible()) {
@@ -3403,24 +3436,21 @@ const fillTogetherSheet = (root) => {
     nowPlaying.append(cover);
   } else nowPlaying.append(makeIcon('music', 18));
   const meta = make('div');
-  meta.append(make('strong', '', snap.songTitle || togetherCopy.songUnknown));
-  meta.append(make('small', '', [
-    snap.songArtist || '',
-    snap.inRoom ? (snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused) : togetherCopy.idle,
-    snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.elapsedMs)}` : '',
-    snap.songDurationMs ? `${formatTogetherClock(snap.progressMs)} / ${formatTogetherClock(snap.songDurationMs)}` : '',
-  ].filter(Boolean).join(' · ')));
+  meta.append(make('strong', 'echo-streaming-together-title', snap.songTitle || togetherCopy.songUnknown));
+  const line = make('small', 'echo-streaming-together-meta', togetherNowPlayingText(snap));
+  line.dataset.togetherMeta = 'true';
+  meta.append(line);
   nowPlaying.append(meta);
   root.append(nowPlaying);
   const actions = make('div', 'echo-streaming-together-actions');
   actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));
   if (snap.inRoom) {
     actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'secondary-action' }));
-    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'settings-danger-button', title: togetherCopy.leave }));
+    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
   }
   root.append(actions);
   const members = make('div', 'echo-streaming-together-members');
-  members.append(make('h3', '', togetherCopy.members));
+  members.append(make('h3', '', snap.inRoom ? togetherCopy.members : togetherCopy.idle));
   const users = snap.users?.length ? snap.users : (snap.inRoom && snap.userId ? [{ userId: snap.userId, nickname: snap.nickname, avatarUrl: snap.avatarUrl, joinedAt: snap.startedAt }] : []);
   if (!users.length) members.append(make('p', 'echo-streaming-together-empty', snap.inRoom ? togetherCopy.creating : togetherCopy.trayHint));
   users.forEach((user) => {
@@ -3508,13 +3538,18 @@ const paintStreamingSheet = () => {
   const title = make('strong', 'echo-streaming-drawer-title', togetherUi.sheetTab === 'comments' ? ncmCopy.comments : togetherCopy.title);
   head.append(title);
   if (togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
-    head.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'settings-danger-button', title: togetherCopy.leave }));
+    head.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave', title: togetherCopy.leave }));
   }
   head.append(actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   const body = make('div', 'echo-streaming-drawer__body');
   if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
   else fillTogetherSheet(body);
   panel.append(head, body);
+  if (togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
+    const foot = make('div', 'echo-streaming-together-foot');
+    foot.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
+    panel.append(foot);
+  }
   drawer.append(scrim, panel);
   document.body.append(drawer);
 };
@@ -3547,15 +3582,24 @@ const installTogetherChrome = () => {
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
     mountStreamingTransportButton();
-    const elapsed = document.querySelector('.echo-streaming-drawer .echo-streaming-together-now small');
-    if (elapsed && togetherUi.sheetOpen && togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
-      elapsed.textContent = `${togetherUi.snapshot.users?.length || 1} · ${formatTogetherClock(togetherUi.snapshot.startedAt ? Date.now() - togetherUi.snapshot.startedAt : togetherUi.snapshot.elapsedMs)}`;
+    const meta = document.querySelector('.echo-streaming-drawer [data-together-meta]');
+    if (meta && togetherUi.sheetOpen && togetherUi.sheetTab === 'together') {
+      meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
     }
-    if (togetherUi.snapshot.inRoom && !togetherUi.applying) {
+    if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying) {
       void (async () => {
         const status = await playbackApi()?.getStatus?.().catch(() => null);
         const current = togetherCurrentNetease();
-        if (!current || !status) return;
+        const remoteId = String(togetherUi.snapshot.songId || '').trim();
+        if (remoteId && current?.songId !== remoteId) {
+          await syncTogetherPlayback(togetherUi.snapshot, togetherUi.snapshot);
+          return;
+        }
+        if (!current || !status) {
+          if (togetherUi.snapshot.role === 'host') return;
+          if (remoteId) await syncTogetherPlayback(togetherUi.snapshot, { inRoom: true });
+          return;
+        }
         const playing = status.state === 'playing';
         const progressMs = Number(status.positionMs) || 0;
         const jumped = Math.abs(progressMs - togetherUi.expectedMs) > 2200;

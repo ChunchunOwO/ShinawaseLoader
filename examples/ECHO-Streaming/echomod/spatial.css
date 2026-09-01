@@ -1561,7 +1561,7 @@
   right: clamp(18px, 2.4vw, 34px);
   bottom: clamp(96px, 11vh, 128px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(430px, calc(100vw - 36px));
   min-height: 0;
   overflow: hidden;
@@ -1581,8 +1581,39 @@
   padding: 10px 10px 8px 14px;
 }
 
-.echo-streaming-drawer__head .settings-danger-button {
+.echo-streaming-together-foot {
+  display: flex;
   flex: none;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+}
+
+.echo-streaming-together-leave,
+.echo-streaming-drawer__head .echo-streaming-together-leave,
+.echo-streaming-together-actions .echo-streaming-together-leave {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, #e11d48 42%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #e11d48 14%, transparent);
+  color: #e11d48;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.echo-streaming-together-foot .echo-streaming-together-leave {
+  width: 100%;
+}
+
+.echo-streaming-drawer__head .echo-streaming-together-leave {
+  flex: none;
+  width: auto;
   min-height: 30px;
   padding-inline: 10px;
 }
