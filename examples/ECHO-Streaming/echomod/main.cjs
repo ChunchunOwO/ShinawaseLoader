@@ -1461,16 +1461,22 @@ const resolveBilibiliAudio = async (item) => {
 
 const togetherTrayPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQUlEQVR4nGOI9vn/nxLMgE0QFyDKAEIArwHEAqwGELIJlzwDMZrxGYJhAKFQHwkGkBWIFEcjVRISVZIyVTITqRgA0LMwhgcvo/EAAAAASUVORK5CYII=', 'base64');
 
+const ncmOkCode = (value) => value === 200 || value === 201;
+
 const ncmCall = async (name, params) => {
   const body = await ncmInvoke(name, params);
   if (body == null) return { ok: false, error: `ncm_${name}_unavailable`, body: null, code: null };
   const record = neteaseRecord(body);
   const nested = neteaseRecord(record.data);
-  const code = Number(record.code ?? nested.code);
-  if (Number.isFinite(code) && code !== 200 && code !== 201) {
+  const code = Number(record.code);
+  const nestedCode = Number(nested.code);
+  if (Number.isFinite(code) && !ncmOkCode(code)) {
     return { ok: false, error: String(record.message || record.msg || nested.message || nested.msg || `ncm_${name}_${code}`), body: record, code };
   }
-  return { ok: true, body: record, code: Number.isFinite(code) ? code : 200 };
+  if (!Number.isFinite(code) && Number.isFinite(nestedCode) && !ncmOkCode(nestedCode)) {
+    return { ok: false, error: String(nested.message || nested.msg || record.message || record.msg || `ncm_${name}_${nestedCode}`), body: record, code: nestedCode };
+  }
+  return { ok: true, body: record, code: Number.isFinite(code) ? code : (ncmOkCode(nestedCode) ? nestedCode : 200) };
 };
 
 const ncmBatchPath = async (cookie, path, payload) => {
@@ -1595,35 +1601,50 @@ const collectTogetherInvites = (value, found = [], seen = new Set()) => {
   return found;
 };
 
+const TOGETHER_COMMANDS = new Set(['PLAY', 'PAUSE', 'GOTO', 'SEEK']);
+
+const togetherUnwrapJson = (input) => {
+  if (input == null) return {};
+  if (typeof input === 'string') return neteaseRecord(probeParseJson(input));
+  const record = neteaseRecord(input);
+  if (typeof record.commandInfo === 'string' || (record.commandInfo && typeof record.commandInfo === 'object')) {
+    return { ...record, ...togetherUnwrapJson(record.commandInfo) };
+  }
+  if (typeof record.playCommand === 'string' || (record.playCommand && typeof record.playCommand === 'object')) {
+    return { ...record, ...togetherUnwrapJson(record.playCommand) };
+  }
+  return record;
+};
+
 const togetherPlayCommandFrom = (value) => {
   const row = neteaseRecord(value);
-  const unwrap = (input) => {
-    if (input == null) return {};
-    if (typeof input === 'string') return neteaseRecord(probeParseJson(input));
-    const record = neteaseRecord(input);
-    if (typeof record.commandInfo === 'string' || (record.commandInfo && typeof record.commandInfo === 'object')) {
-      const nested = unwrap(record.commandInfo);
-      if (nested.commandType || nested.targetSongId || nested.songId || nested.playStatus != null) return { ...record, ...nested };
-    }
-    return record;
-  };
-  const info = unwrap(row.commandInfo || row.playCommand || row.playInfo || row.command || row);
-  const commandType = String(info.commandType || info.type || info.action || '').trim();
-  const targetSongId = neteaseIdText(
-    info.targetSongId || info.songId || info.trackId || info.musicId
-    || row.targetSongId || row.songId || row.currentSongId || row.trackId
-  );
-  const playStatusRaw = info.playStatus || info.status || row.playStatus;
-  const progress = info.progress ?? info.progressMs ?? info.position ?? row.progress ?? row.progressMs;
-  if (!commandType && !targetSongId && playStatusRaw == null && progress == null) return null;
+  const candidate = row.commandInfo || row.playCommand || row.playInfo || row.command
+    || (row.commandType ? row : null);
+  if (!candidate) return null;
+  const info = togetherUnwrapJson(candidate);
+  let commandType = String(info.commandType || '').trim().toUpperCase();
+  const targetSongId = neteaseIdText(info.targetSongId || info.songId || info.trackId || info.musicId);
+  if (!TOGETHER_COMMANDS.has(commandType)) {
+    if (!targetSongId) return null;
+    commandType = 'GOTO';
+  }
+  const progress = info.progress ?? info.progressMs;
+  const hasProgress = progress != null && Number.isFinite(Number(progress));
   return {
-    commandType: commandType || (targetSongId ? 'GOTO' : 'PLAY'),
-    playStatus: String(playStatusRaw || 'PLAY').toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY',
-    progressMs: Math.max(0, Math.floor(Number(progress) || 0)),
+    commandType: commandType === 'SEEK' ? 'seek' : commandType,
+    playStatus: String(info.playStatus || 'PLAY').toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY',
+    progressMs: hasProgress ? Math.max(0, Math.floor(Number(progress))) : null,
     formerSongId: neteaseIdText(info.formerSongId) || '-1',
     targetSongId: targetSongId || '0',
     clientSeq: Math.max(0, Math.floor(Number(info.clientSeq ?? row.clientSeq) || 0)),
   };
+};
+
+const extractTogetherRoomId = (body) => {
+  const record = neteaseRecord(body);
+  const data = neteaseRecord(record.data);
+  const roomInfo = neteaseRecord(data.roomInfo || data.room || record.roomInfo || record.room);
+  return neteaseIdText(roomInfo.roomId || roomInfo.id || data.roomId || record.roomId);
 };
 
 const createTogetherService = ({ log, broadcast, electron }) => {
@@ -1660,6 +1681,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   let sessionActive = false;
   let pendingRestore = null;
   let restorePrompted = false;
+  let missedInRoom = 0;
   let statusTimer = 0;
   let heartbeatTimer = 0;
   let tray = null;
@@ -1760,7 +1782,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const record = neteaseRecord(body);
     const data = neteaseRecord(record.data);
     const roomInfo = neteaseRecord(data.roomInfo || data.room || extras.roomInfo || record.roomInfo);
-    const roomId = neteaseIdText(roomInfo.roomId || data.roomId || extras.roomId || state.roomId);
+    const roomId = extractTogetherRoomId(body) || neteaseIdText(extras.roomId || state.roomId);
     const users = togetherUsersFrom(roomInfo) || togetherUsersFrom(data);
     const moreUsers = togetherUsersFrom(data.roomUsers);
     const mergedUsers = [...users];
@@ -1772,6 +1794,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     }
     const inviterId = neteaseIdText(roomInfo.creatorId || roomInfo.inviterId || roomInfo.ownerId || data.inviterId || extras.inviterId || state.inviterId);
     if (data.inRoom === false && extras.forceRoom !== true && extras.inRoom !== true) {
+      if (sessionActive && state.roomId) return;
       if (state.inRoom) {
         state.inRoom = false;
         state.role = null;
@@ -1786,10 +1809,15 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const inRoom = extras.inRoom === true
       || data.inRoom === true
       || roomInfo.inRoom === true
+      || Boolean(sessionActive && state.roomId)
       || Boolean(roomId && (mergedUsers.length || extras.forceRoom));
     if (extras.activate === false && roomId) {
-      const command = togetherPlayCommandFrom(data) || togetherPlayCommandFrom(roomInfo) || togetherPlayCommandFrom(data.playInfo);
-      const songId = command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : (state.songId || pendingRestore?.songId || null);
+      const command = togetherPlayCommandFrom(data.commandInfo)
+        || togetherPlayCommandFrom(data.playCommand)
+        || togetherPlayCommandFrom(data.playInfo)
+        || togetherPlayCommandFrom(roomInfo.playCommand)
+        || togetherPlayCommandFrom(roomInfo.playInfo);
+      const songId = command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : (state.songId || pendingRestore?.songId || neteaseIdText(data.songId || data.currentSongId));
       let songTitle = pendingRestore?.songTitle || null;
       let songArtist = pendingRestore?.songArtist || null;
       let songCover = pendingRestore?.songCover || null;
@@ -1812,7 +1840,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         songCover,
         playStatus: command?.playStatus || pendingRestore?.playStatus || 'PAUSE',
         progressMs: command?.progressMs || pendingRestore?.progressMs || 0,
-        startedAt: Number(roomInfo.createTime || roomInfo.startTime || data.createTime) || pendingRestore?.startedAt || null,
+        startedAt: Number(state.startedAt) || pendingRestore?.startedAt || Date.now(),
       };
       if (!restorePrompted) {
         restorePrompted = true;
@@ -1825,38 +1853,48 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (roomId) state.roomId = roomId;
     if (inviterId) state.inviterId = inviterId;
     if (mergedUsers.length) state.users = mergedUsers;
-    state.inRoom = Boolean(inRoom && state.roomId);
+    state.inRoom = Boolean((inRoom || (sessionActive && extras.forceRoom)) && state.roomId);
     if (state.inRoom && !Number(state.startedAt)) state.startedAt = Date.now();
     if (!state.inRoom) {
-      state.startedAt = null;
-      state.role = null;
-      state.shareUrl = null;
+      if (!sessionActive) {
+        state.startedAt = null;
+        state.role = null;
+        state.shareUrl = null;
+      }
     } else {
       state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : (state.role || 'guest');
       state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
     }
+    if (extras.metaOnly === true) {
+      const songId = neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
+      if (songId && songId !== state.songId) {
+        state.songId = songId;
+        await applySongMeta(state.songId);
+      }
+      return;
+    }
     const command = togetherPlayCommandFrom(data)
       || togetherPlayCommandFrom(data.playCommand)
       || togetherPlayCommandFrom(data.playInfo)
-      || togetherPlayCommandFrom(roomInfo)
       || togetherPlayCommandFrom(roomInfo.playCommand)
-      || togetherPlayCommandFrom(record);
+      || togetherPlayCommandFrom(roomInfo.playInfo)
+      || togetherPlayCommandFrom(record.playCommand)
+      || togetherPlayCommandFrom(record.playInfo);
     const songId = (command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : null)
       || neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
     if (command) {
       if (!state.lastCommand || command.clientSeq >= (state.lastCommand.clientSeq || 0)) state.lastCommand = command;
-      state.playStatus = command.playStatus || state.playStatus;
-      if (command.progressMs != null) {
+      if (command.playStatus) state.playStatus = command.playStatus;
+      const type = String(command.commandType || '').toUpperCase();
+      if (command.progressMs != null && (type === 'GOTO' || type === 'SEEK' || type === 'PLAY' || type === 'PAUSE')) {
         state.progressMs = command.progressMs;
         state.progressAt = Date.now();
       }
-    } else {
-      if (data.playStatus || roomInfo.playStatus) {
-        state.playStatus = String(data.playStatus || roomInfo.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
-      }
-      const progress = data.progress ?? data.progressMs ?? roomInfo.progress ?? roomInfo.progressMs;
+    } else if (data.playStatus) {
+      state.playStatus = String(data.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
+      const progress = data.progress ?? data.progressMs;
       if (progress != null && Number.isFinite(Number(progress))) {
-        state.progressMs = Math.max(0, Math.floor(Number(progress) || 0));
+        state.progressMs = Math.max(0, Math.floor(Number(progress)));
         state.progressAt = Date.now();
       }
     }
@@ -1986,10 +2024,21 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (status.ok) {
       const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
       if (sessionActive && state.inRoom) {
-        await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId });
+        if (serverInRoom) missedInRoom = 0;
+        else missedInRoom += 1;
+        if (missedInRoom >= 4) {
+          log('INFO', 'together status lost room, ending local session');
+          sessionActive = false;
+          pendingRestore = null;
+          restorePrompted = false;
+          clearRoom();
+        } else {
+          await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId, metaOnly: !serverInRoom });
+        }
       } else if (serverInRoom && !sessionActive && !state.inRoom) {
         await applyRoomBody(status.body, { inRoom: true, forceRoom: true, activate: false });
       } else {
+        missedInRoom = 0;
         if (!serverInRoom) {
           pendingRestore = null;
           restorePrompted = false;
@@ -2029,22 +2078,24 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   const playCommand = async (commandType, extras = {}) => {
     if (!state.inRoom || !state.roomId) return { ok: false, error: 'together_not_in_room' };
     const cookie = cookieOrThrow();
-    const targetSongId = extras.targetSongId || state.songId || '0';
-    const formerSongId = extras.formerSongId || state.songId || '-1';
+    const type = String(commandType || 'PLAY').trim() || 'PLAY';
+    const targetSongId = String(extras.targetSongId || state.songId || '0');
+    const formerSongId = type.toUpperCase() === 'GOTO' ? '-1' : String(extras.formerSongId || state.songId || '-1');
     state.clientSeq += 1;
+    const progress = Math.max(0, Math.floor(Number(extras.progressMs != null ? extras.progressMs : state.progressMs) || 0));
     const sent = {
-      commandType,
-      playStatus: extras.playStatus || state.playStatus,
-      progressMs: extras.progressMs != null ? extras.progressMs : state.progressMs,
+      commandType: type,
+      playStatus: extras.playStatus || state.playStatus || 'PLAY',
+      progressMs: progress,
       formerSongId,
       targetSongId,
       clientSeq: state.clientSeq,
     };
     const result = await ncmCall('listentogether_play_command', {
       cookie,
-      roomId: state.roomId,
+      roomId: String(state.roomId),
       commandType: sent.commandType,
-      progress: sent.progressMs,
+      progress,
       playStatus: sent.playStatus,
       formerSongId: sent.formerSongId,
       targetSongId: sent.targetSongId,
@@ -2057,6 +2108,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     state.progressMs = sent.progressMs;
     state.progressAt = Date.now();
     state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
+    state.lastError = null;
     emit();
     return { ok: true, ...snapshot() };
   };
@@ -2067,12 +2119,12 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (!cookie) return;
     const result = await ncmCall('listentogether_heatbeat', {
       cookie,
-      roomId: state.roomId,
+      roomId: String(state.roomId),
       songId: state.songId || '0',
-      playStatus: state.playStatus,
-      progress: state.progressMs,
+      playStatus: state.playStatus || 'PLAY',
+      progress: Math.max(0, Math.floor(Number(state.progressMs) || 0)),
     });
-    if (result.ok) await applyRoomBody(result.body, { forceRoom: true, roomId: state.roomId });
+    if (result.ok) await applyRoomBody(result.body, { forceRoom: true, roomId: state.roomId, metaOnly: true });
     emit();
   };
 
@@ -2086,6 +2138,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     state.playlistIds = [];
     state.shareUrl = null;
     state.lastCommand = null;
+    missedInRoom = 0;
   };
 
   const create = async () => {
@@ -2095,16 +2148,31 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
       if (state.inRoom && state.roomId) return { ok: true, ...emit(true) };
-      const result = await ncmCall('listentogether_room_create', { cookie });
-      if (!result.ok) throw new Error(result.error);
+      let result = await ncmCall('listentogether_room_create', { cookie });
+      if (!result.ok) {
+        const status = await ncmCall('listentogether_status', { cookie });
+        const existingId = extractTogetherRoomId(status.body);
+        const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
+        if (status.ok && (serverInRoom || existingId)) {
+          log('INFO', `together create reused existing room ${existingId || ''}`);
+          result = status;
+        } else {
+          throw new Error(result.error);
+        }
+      }
       sessionActive = true;
       pendingRestore = null;
       restorePrompted = false;
+      missedInRoom = 0;
       state.role = 'host';
       state.inviterId = state.userId;
       state.startedAt = Date.now();
       await applyRoomBody(result.body, { inRoom: true, inviterId: state.userId, forceRoom: true });
-      if (!state.roomId) throw new Error('together_create_failed');
+      if (!state.roomId) state.roomId = extractTogetherRoomId(result.body);
+      if (!state.roomId) {
+        log('WARN', `together create missing roomId keys=${Object.keys(neteaseRecord(result.body?.data || result.body)).join(',')}`);
+        throw new Error('together_create_failed');
+      }
       await refreshRoom(cookie);
       state.lastError = null;
       log('INFO', `together room created ${state.roomId}`);
@@ -2131,10 +2199,12 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       sessionActive = true;
       pendingRestore = null;
       restorePrompted = false;
+      missedInRoom = 0;
       state.role = 'guest';
       state.inviterId = inviterId;
       state.startedAt = Date.now();
       await applyRoomBody(result.body, { inRoom: true, roomId, inviterId, forceRoom: true });
+      if (!state.roomId) state.roomId = roomId;
       await refreshRoom(cookie);
       state.invites = state.invites.filter((item) => item.roomId !== roomId);
       state.lastError = null;
@@ -2186,6 +2256,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       sessionActive = true;
       pendingRestore = null;
       restorePrompted = false;
+      missedInRoom = 0;
       if (held?.roomId) {
         state.roomId = held.roomId;
         state.inviterId = held.inviterId || state.userId;
@@ -2294,14 +2365,15 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         .filter(Boolean))];
       if (!ids.length) return { ok: true, ...snapshot() };
       state.playlistVersion += 1;
+      const list = ids.join(',');
       const result = await ncmCall('listentogether_sync_list_command', {
         cookie,
-        roomId: state.roomId,
+        roomId: String(state.roomId),
         commandType: 'REPLACE',
         userId: state.userId,
         version: state.playlistVersion,
-        randomList: ids.join(','),
-        displayList: ids.join(','),
+        randomList: list,
+        displayList: list,
       });
       if (!result.ok) throw new Error(result.error);
       state.playlistIds = ids;
