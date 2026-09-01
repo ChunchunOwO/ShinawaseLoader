@@ -2945,19 +2945,22 @@ const renderTogetherPicker = () => {
   document.querySelectorAll('.echo-streaming-together-picker').forEach((node) => node.remove());
   if (!togetherUi.pickerOpen) return;
   const snap = togetherUi.snapshot;
-  const backdrop = make('div', 'echo-streaming-together-picker');
+  const backdrop = make('div', 'settings-modal-backdrop echo-streaming-together-picker');
   backdrop.addEventListener('mousedown', (event) => {
     if (event.target === backdrop) {
       togetherUi.pickerOpen = false;
       paintTogetherChrome();
     }
   });
-  const dialog = make('section', 'echo-streaming-together-picker-dialog');
+  const dialog = make('section', 'settings-font-modal');
   dialog.setAttribute('role', 'dialog');
-  const header = make('header');
-  header.append(make('strong', '', togetherCopy.pickerTitle));
-  header.append(actionButton(copy.close, 'close', () => { togetherUi.pickerOpen = false; paintTogetherChrome(); }, { iconOnly: true, className: 'streaming-icon-button' }));
+  dialog.setAttribute('aria-modal', 'true');
+  const header = make('header', 'settings-font-modal-header');
+  header.append(make('h3', '', togetherCopy.pickerTitle));
+  header.append(actionButton(copy.close, 'close', () => { togetherUi.pickerOpen = false; paintTogetherChrome(); }, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   dialog.append(header);
+  const searchLabel = make('label', 'search-box echo-search-surface echo-streaming-together-search-wrap');
+  searchLabel.append(makeIcon('search', 15));
   const search = document.createElement('input');
   search.type = 'search';
   search.className = 'echo-streaming-together-search';
@@ -2980,11 +2983,12 @@ const renderTogetherPicker = () => {
       }).catch((error) => showChromeNotice(togetherErrorMessage(error)));
     }, 280);
   });
-  dialog.append(search);
+  searchLabel.append(search);
+  dialog.append(searchLabel);
   const friends = snap.friends || [];
   if (!friends.length) dialog.append(make('p', 'echo-streaming-together-empty', togetherCopy.emptyFriends));
   else {
-    const list = make('div', 'echo-streaming-together-friend-list');
+    const list = make('div', 'echo-streaming-together-friend-list settings-font-list');
     friends.forEach((friend) => {
       const row = make('button', 'echo-streaming-together-friend');
       row.type = 'button';
@@ -3017,45 +3021,44 @@ const renderTogetherRestore = () => {
   if (!pending?.roomId) return;
   const names = (pending.users || []).map((user) => user.nickname).filter(Boolean);
   const others = names.filter((name) => name !== togetherUi.snapshot.nickname);
-  const backdrop = make('div', 'echo-streaming-together-restore');
-  const dialog = make('section', 'echo-streaming-together-restore-dialog');
+  const backdrop = make('div', 'settings-modal-backdrop echo-streaming-together-restore');
+  const dialog = make('section', 'settings-font-modal');
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
-  dialog.append(make('strong', '', togetherCopy.restoreTitle));
+  const header = make('header', 'settings-font-modal-header');
+  header.append(make('h3', '', togetherCopy.restoreTitle));
+  dialog.append(header);
   dialog.append(make('p', '', others.length
     ? `${togetherCopy.restoreBody}\n${others.slice(0, 4).join('、')}`
     : togetherCopy.restoreBody));
   if (pending.songTitle) dialog.append(make('small', '', `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`));
   const actions = make('div', 'echo-streaming-together-restore-actions');
-  actions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'echo-streaming-together-primary' }));
-  actions.append(actionButton(togetherCopy.restoreLeave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-danger' }));
+  actions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
+  actions.append(actionButton(togetherCopy.restoreLeave, 'close', () => void togetherLeaveRoom(), { className: 'secondary-action' }));
   dialog.append(actions);
   backdrop.append(dialog);
   document.body.append(backdrop);
 };
 const renderTogetherBanner = () => {
-  document.querySelectorAll('.echo-streaming-together-banner').forEach((node) => node.remove());
+  document.querySelectorAll('.echo-streaming-together-notice').forEach((node) => node.remove());
   if (togetherUi.snapshot.pendingRestore) return;
   const invite = (togetherUi.snapshot.invites || []).find((item) => !togetherUi.snapshot.inRoom || item.roomId !== togetherUi.snapshot.roomId);
   if (!invite) return;
-  const banner = make('div', 'echo-streaming-together-banner');
-  if (invite.avatarUrl) {
-    const img = document.createElement('img');
-    img.src = invite.avatarUrl;
-    img.alt = '';
-    banner.append(img);
-  }
-  const text = make('div');
-  text.append(make('strong', '', invite.nickname || invite.inviterId), make('span', '', togetherCopy.incoming));
-  banner.append(text);
-  banner.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'echo-streaming-together-accept' }));
-  banner.append(actionButton(togetherCopy.decline, 'close', () => {
+  const bar = document.querySelector('footer.player-bar');
+  if (!bar) return;
+  const notice = make('div', 'player-download-notice echo-streaming-together-notice');
+  notice.setAttribute('role', 'status');
+  const copyBox = make('div', 'player-download-notice-copy');
+  copyBox.append(make('strong', '', invite.nickname || invite.inviterId), make('span', '', togetherCopy.incoming));
+  notice.append(copyBox);
+  notice.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'secondary-action' }));
+  notice.append(actionButton(togetherCopy.decline, 'close', () => {
     togetherUi.snapshot = { ...togetherUi.snapshot, invites: (togetherUi.snapshot.invites || []).filter((item) => item !== invite) };
     paintTogetherChrome();
-  }, { className: 'echo-streaming-together-decline' }));
-  document.body.append(banner);
+  }, { className: 'secondary-action' }));
+  bar.prepend(notice);
 };
-const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-restore, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
+const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .transport-streaming-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
 let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
 let fillSimilarSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint)); };
 const closeStreamingSheet = () => {
@@ -3083,7 +3086,7 @@ const fillTogetherSheet = (root) => {
   root.append(header);
   if (!snap.loggedIn && !neteaseConnected()) {
     root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
-    root.append(actionButton(copy.accounts, 'user', () => { closeStreamingSheet(); state.accountPageOpen = true; render(); }, { className: 'echo-streaming-together-primary' }));
+    root.append(actionButton(copy.accounts, 'user', () => { closeStreamingSheet(); state.accountPageOpen = true; render(); }, { className: 'primary-action' }));
     return;
   }
   const nowPlaying = make('div', 'echo-streaming-together-now');
@@ -3103,10 +3106,10 @@ const fillTogetherSheet = (root) => {
   nowPlaying.append(meta);
   root.append(nowPlaying);
   const actions = make('div', 'echo-streaming-together-actions');
-  actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'echo-streaming-together-primary' }));
+  actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));
   if (snap.inRoom) {
-    actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'echo-streaming-together-secondary' }));
-    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-danger' }));
+    actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'secondary-action' }));
+    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'secondary-action' }));
   }
   root.append(actions);
   const members = make('div', 'echo-streaming-together-members');
@@ -3135,64 +3138,73 @@ const fillTogetherSheet = (root) => {
   invites.forEach((invite) => {
     const row = make('div', 'echo-streaming-together-invite-row');
     row.append(make('span', '', invite.nickname || invite.inviterId));
-    row.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'echo-streaming-together-accept' }));
+    row.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'secondary-action' }));
     inbox.append(row);
   });
   root.append(inbox);
 };
-const paintStreamingDock = () => {
-  document.querySelectorAll('.echo-streaming-dock').forEach((node) => node.remove());
-  if (togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
-  const dock = make('nav', 'echo-streaming-dock');
-  dock.setAttribute('aria-label', togetherCopy.title);
-  const togetherBtn = actionButton(togetherCopy.title, 'users', () => openStreamingSheet('together'), { iconOnly: true, className: 'echo-streaming-dock-btn', title: togetherCopy.title });
-  if (togetherUi.snapshot.inRoom) togetherBtn.dataset.active = 'true';
-  const inviteCount = (togetherUi.snapshot.invites || []).length;
-  if (inviteCount) togetherBtn.dataset.badge = inviteCount > 9 ? '9+' : String(inviteCount);
-  dock.append(
-    togetherBtn,
-    actionButton(ncmCopy.comments, 'chat', () => void openNeteaseComments(), { iconOnly: true, className: 'echo-streaming-dock-btn', title: ncmCopy.comments }),
-    actionButton(ncmCopy.similar, 'spark', () => void openNeteaseSimilar(), { iconOnly: true, className: 'echo-streaming-dock-btn', title: ncmCopy.similar }),
-  );
-  document.body.append(dock);
+const mountStreamingTransportButton = (lyricsButton) => {
+  const lyrics = lyricsButton || document.querySelector('button.transport-lyrics-button');
+  if (!lyrics?.parentElement) return;
+  let button = lyrics.parentElement.querySelector(':scope > .transport-streaming-button');
+  if (!button) {
+    button = actionButton(togetherCopy.title, 'users', () => {
+      if (togetherUi.sheetOpen) closeStreamingSheet();
+      else openStreamingSheet(togetherUi.sheetTab || 'together');
+    }, { iconOnly: true, size: 18, className: 'icon-button transport-tool-button transport-streaming-button', title: togetherCopy.title, ariaLabel: togetherCopy.title });
+    button.dataset.workshopIcon = 'transport-streaming';
+    lyrics.parentElement.insertBefore(button, lyrics);
+  }
+  const active = Boolean(togetherUi.snapshot.inRoom || togetherUi.sheetOpen);
+  button.classList.toggle('is-soft-active', active);
+  button.setAttribute('aria-pressed', String(Boolean(togetherUi.sheetOpen)));
+  const invites = (togetherUi.snapshot.invites || []).length;
+  if (invites) button.dataset.badge = String(invites);
+  else delete button.dataset.badge;
 };
 const paintStreamingSheet = () => {
-  document.querySelectorAll('.echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
+  document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
   if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
-  const backdrop = make('div', 'echo-streaming-sheet-backdrop');
-  backdrop.addEventListener('mousedown', (event) => {
-    if (event.target === backdrop) closeStreamingSheet();
-  });
-  const sheet = make('aside', 'echo-streaming-sheet');
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  const head = make('header', 'echo-streaming-sheet-head');
-  const tabs = make('nav', 'echo-streaming-sheet-tabs');
+  const drawer = make('div', 'echo-streaming-drawer');
+  drawer.dataset.open = 'true';
+  const scrim = make('button', 'echo-streaming-drawer__scrim');
+  scrim.type = 'button';
+  scrim.setAttribute('aria-label', copy.close);
+  scrim.addEventListener('click', closeStreamingSheet);
+  const panel = make('aside', 'echo-streaming-drawer__panel');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  const head = make('header', 'echo-streaming-drawer__head');
+  const tabs = make('nav', 'album-detail-tabs');
+  tabs.setAttribute('aria-label', togetherCopy.title);
   [
-    { id: 'together', label: togetherCopy.title, icon: 'users' },
-    { id: 'comments', label: ncmCopy.comments, icon: 'chat' },
-    { id: 'similar', label: ncmCopy.similar, icon: 'spark' },
+    { id: 'together', label: togetherCopy.title },
+    { id: 'comments', label: ncmCopy.comments },
+    { id: 'similar', label: ncmCopy.similar },
   ].forEach((tab) => {
-    const button = actionButton(tab.label, tab.icon, () => {
+    const button = make('button', 'album-detail-tab', tab.label);
+    button.type = 'button';
+    if (togetherUi.sheetTab === tab.id) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => {
       if (tab.id === 'comments') void openNeteaseComments();
       else if (tab.id === 'similar') void openNeteaseSimilar();
       else openStreamingSheet('together');
-    }, { className: 'echo-streaming-sheet-tab', title: tab.label });
-    button.dataset.active = String(togetherUi.sheetTab === tab.id);
+    });
     tabs.append(button);
   });
-  head.append(tabs, actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'streaming-icon-button', title: copy.close }));
-  const body = make('div', 'echo-streaming-sheet-body');
+  head.append(tabs, actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
+  const body = make('div', 'echo-streaming-drawer__body');
   if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
   else if (togetherUi.sheetTab === 'similar') fillSimilarSheet(body);
   else fillTogetherSheet(body);
-  sheet.append(head, body);
-  document.body.append(backdrop, sheet);
+  panel.append(head, body);
+  drawer.append(scrim, panel);
+  document.body.append(drawer);
 };
 paintTogetherChrome = () => {
   if (packageDisposed) return;
-  paintStreamingDock();
   paintStreamingSheet();
+  mountStreamingTransportButton();
   renderTogetherRestore();
   renderTogetherBanner();
   renderTogetherPicker();
@@ -3204,9 +3216,21 @@ const onStreamingSheetKey = (event) => {
 const installTogetherChrome = () => {
   window.addEventListener('echo-native', onNativeBroadcast);
   window.addEventListener('keydown', onStreamingSheetKey);
+  mountStreamingTransportButton();
+  const extendDispose = external.extend?.observe?.('button.transport-lyrics-button', (node) => mountStreamingTransportButton(node));
+  let scanTimer = 0;
+  const observer = new MutationObserver(() => {
+    if (scanTimer || packageDisposed) return;
+    scanTimer = window.setTimeout(() => {
+      scanTimer = 0;
+      if (!packageDisposed) mountStreamingTransportButton();
+    }, 80);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
-    const elapsed = document.querySelector('.echo-streaming-sheet .echo-streaming-together-head small');
+    mountStreamingTransportButton();
+    const elapsed = document.querySelector('.echo-streaming-drawer .echo-streaming-together-head small');
     if (elapsed && togetherUi.sheetOpen && togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
       elapsed.textContent = `${togetherUi.snapshot.users?.length || 1} · ${formatTogetherClock(togetherUi.snapshot.startedAt ? Date.now() - togetherUi.snapshot.startedAt : togetherUi.snapshot.elapsedMs)}`;
     }
@@ -3231,7 +3255,10 @@ const installTogetherChrome = () => {
   void togetherInvoke('togetherStatus', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => paintTogetherChrome());
   paintTogetherChrome();
   disposeTogetherChrome = () => {
+    observer.disconnect();
+    window.clearTimeout(scanTimer);
     window.clearInterval(poll);
+    try { extendDispose?.(); } catch {}
     window.removeEventListener('echo-native', onNativeBroadcast);
     window.removeEventListener('keydown', onStreamingSheetKey);
     document.querySelectorAll(overlayCleanupSelector).forEach((node) => node.remove());
@@ -3374,7 +3401,7 @@ fillCommentSheet = (root) => {
   if (ncmUi.loading && !ncmUi.comments.length) list.append(make('p', 'echo-streaming-together-empty', copy.loading));
   else if (!ncmUi.comments.length) list.append(make('p', 'echo-streaming-together-empty', ncmCopy.emptyComments));
   ncmUi.comments.forEach((item) => list.append(renderCommentItem(item, ncmUi.commentTrack?.providerTrackId)));
-  if (ncmUi.comments.length < (ncmUi.total || 0)) list.append(actionButton(ncmCopy.loadMore, 'chevron', () => void loadNeteaseComments(ncmUi.commentTrack, ncmUi.commentPage + 1), { className: 'echo-streaming-together-secondary' }));
+  if (ncmUi.comments.length < (ncmUi.total || 0)) list.append(actionButton(ncmCopy.loadMore, 'chevron', () => void loadNeteaseComments(ncmUi.commentTrack, ncmUi.commentPage + 1), { className: 'secondary-action' }));
   root.append(list);
   const composer = make('form', 'echo-streaming-comment-composer');
   composer.addEventListener('submit', (event) => event.preventDefault());
@@ -3396,7 +3423,7 @@ fillCommentSheet = (root) => {
     ncmUi.replyTo = null;
     showChromeNotice(ncmCopy.sent);
     await loadNeteaseComments(ncmUi.commentTrack, 1);
-  }, { className: 'echo-streaming-together-primary', disabled: !neteaseConnected() }));
+  }, { className: 'primary-action', disabled: !neteaseConnected() }));
   root.append(composer);
 };
 fillSimilarSheet = (root) => {
@@ -3409,7 +3436,7 @@ fillSimilarSheet = (root) => {
     persistMemory();
     paintTogetherChrome();
     if (ncmUi.similarAutoPlay) void similarOnTrackChange(true);
-  }, { className: ncmUi.similarAutoPlay ? 'echo-streaming-together-primary' : 'echo-streaming-together-secondary', active: ncmUi.similarAutoPlay });
+  }, { className: ncmUi.similarAutoPlay ? 'primary-action' : 'secondary-action', active: ncmUi.similarAutoPlay });
   const count = document.createElement('input');
   count.type = 'number';
   count.min = '3';
@@ -3420,7 +3447,7 @@ fillSimilarSheet = (root) => {
     ncmUi.similarCount = Math.max(3, Math.min(50, Math.round(Number(count.value) || 10)));
     persistMemory();
   });
-  tools.append(auto, count, actionButton(ncmCopy.similarPlay, 'play', () => void queueSimilarTracks(true), { className: 'echo-streaming-together-primary' }), actionButton(ncmCopy.similarQueue, 'list', () => void queueSimilarTracks(false), { className: 'echo-streaming-together-secondary' }));
+  tools.append(auto, count, actionButton(ncmCopy.similarPlay, 'play', () => void queueSimilarTracks(true), { className: 'primary-action' }), actionButton(ncmCopy.similarQueue, 'list', () => void queueSimilarTracks(false), { className: 'secondary-action' }));
   root.append(tools);
   const list = make('div', 'echo-streaming-similar-list');
   (ncmUi.similarTracks || []).forEach((track) => {
