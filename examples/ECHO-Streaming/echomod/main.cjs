@@ -945,6 +945,169 @@ const qqUinFromCookie = (cookie) => {
   return match?.[1] || '0';
 };
 
+const qqGtkFromCookie = (cookie) => {
+  const skey = qqCookieValue(cookie, 'qqmusic_key', 'qm_keyst', 'music_key', 'p_skey', 'skey') || '';
+  let hash = 5381;
+  for (const char of skey) hash += (hash << 5) + char.charCodeAt(0);
+  return hash & 2147483647;
+};
+
+const qqPlaylistTitleOf = (record) => firstQqText(record, [
+  'dissname', 'diss_name', 'dirName', 'dirname', 'dir_name', 'name', 'title', 'titleName',
+]);
+
+const qqPlaylistIdOf = (record) => firstQqText(record, [
+  'dissid', 'disstid', 'diss_id', 'dissId', 'tid', 'dirid', 'dirId', 'dir_id', 'playlistId', 'id',
+]);
+
+const collectQqPlaylistRecords = (value, depth = 0) => {
+  if (depth > 8 || !value || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((item) => collectQqPlaylistRecords(item, depth + 1));
+  const record = value;
+  const title = qqPlaylistTitleOf(record);
+  const id = qqPlaylistIdOf(record);
+  const current = title && id && id !== '0' ? [record] : [];
+  return [...current, ...Object.values(record).flatMap((item) => collectQqPlaylistRecords(item, depth + 1))];
+};
+
+const mapQqAccountPlaylistRow = (record, ownership) => {
+  const providerPlaylistId = qqPlaylistIdOf(record);
+  const title = qqPlaylistTitleOf(record);
+  if (!providerPlaylistId || providerPlaylistId === '0' || !title) return null;
+  const cover = firstQqText(record, ['logo', 'imgurl', 'diss_cover', 'picurl', 'cover_url', 'coverUrl', 'pic']);
+  const liked = /我喜欢|我喜歡|^like$/iu.test(title);
+  return {
+    id: `streaming:qqmusic:playlist:${providerPlaylistId}`,
+    provider: 'qqmusic',
+    providerPlaylistId,
+    title,
+    description: firstQqText(record, ['introduction', 'desc', 'description']) || null,
+    creator: firstQqText(record, ['nickname', 'username', 'hostname', 'creator']) || null,
+    coverUrl: cover || null,
+    coverThumb: cover || null,
+    trackCount: Number(record.song_count ?? record.songCount ?? record.songnum ?? record.song_cnt ?? record.total_song_num) || null,
+    ownership: liked ? 'favorited' : ownership,
+    webUrl: `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(providerPlaylistId)}`,
+  };
+};
+
+const qqMusicu = async (cookie, req) => {
+  const uin = qqUinFromCookie(cookie);
+  const gtk = qqGtkFromCookie(cookie);
+  return probeFetchJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+    method: 'POST',
+    headers: { ...qqApiHeaders(cookie), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      comm: {
+        cv: 4747474,
+        ct: 24,
+        format: 'json',
+        inCharset: 'utf-8',
+        outCharset: 'utf-8',
+        notice: 0,
+        platform: 'yqq.json',
+        needNewCode: 1,
+        uin,
+        g_tk: gtk,
+        g_tk_new_20200303: gtk,
+      },
+      req_0: req,
+    }),
+  });
+};
+
+const fetchQqProfileAsset = async (cookie, uin, reqtype) => {
+  const gtk = String(qqGtkFromCookie(cookie));
+  const params = new URLSearchParams({
+    loginUin: uin,
+    hostUin: uin,
+    format: 'json',
+    inCharset: 'utf8',
+    outCharset: 'utf-8',
+    notice: '0',
+    platform: 'yqq.json',
+    needNewCode: '0',
+    g_tk: gtk,
+    g_tk_new_20200303: gtk,
+    ct: '20',
+    cid: '205360956',
+    userid: uin,
+    reqtype: String(reqtype),
+    sin: '0',
+    ein: '999',
+  });
+  return probeFetchJson(`https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg?${params.toString()}`, {
+    headers: qqApiHeaders(cookie),
+  });
+};
+
+const listQqAccountPlaylists = async () => {
+  const session = streamingAccountSession('qqmusic');
+  const cookie = session.cookie;
+  const uin = qqUinFromCookie(cookie);
+  if (!cookie || uin === '0') throw new Error('qq_login_required');
+  const gtk = String(qqGtkFromCookie(cookie));
+  const rows = [];
+  const push = (records, ownership) => {
+    for (const record of records || []) {
+      const mapped = mapQqAccountPlaylistRow(record, ownership);
+      if (mapped) rows.push(mapped);
+    }
+  };
+
+  try {
+    const params = new URLSearchParams({
+      hostuin: uin,
+      uin,
+      loginUin: uin,
+      format: 'json',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+      notice: '0',
+      platform: 'yqq.json',
+      needNewCode: '0',
+      g_tk: gtk,
+      g_tk_new_20200303: gtk,
+      sin: '0',
+      size: '100',
+    });
+    const data = await probeFetchJson(`https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss?${params.toString()}`, {
+      headers: qqApiHeaders(cookie),
+    });
+    push(collectQqPlaylistRecords(data), 'created');
+  } catch {}
+
+  const createdMusicu = [
+    { module: 'music.playlist.PlaylistSquare', method: 'GetPlaylistByUin', param: { uin, offset: 0, size: 100 } },
+    { module: 'music.musicasset.PlaylistPrivatelyRead', method: 'PlaylistGetLists', param: { uin: Number(uin) || uin, offset: 0, size: 100 } },
+    { module: 'playlist.PlayListManageSvr', method: 'get_playlist_by_userid', param: { uin, offset: 0, limit: 100 } },
+  ];
+  for (const req of createdMusicu) {
+    try { push(collectQqPlaylistRecords(await qqMusicu(cookie, req)), 'created'); } catch {}
+  }
+
+  try { push(collectQqPlaylistRecords(await fetchQqProfileAsset(cookie, uin, 3)), 'favorited'); } catch {}
+  try {
+    const likedData = await fetchQqProfileAsset(cookie, uin, 2);
+    const likedRecords = collectQqPlaylistRecords(likedData);
+    const liked = likedRecords.find((item) => /我喜欢|我喜歡|like/iu.test(qqPlaylistTitleOf(item) || ''));
+    if (liked) push([liked], 'favorited');
+    else if (likedRecords[0]) push([likedRecords[0]], 'favorited');
+  } catch {}
+
+  const playlists = [];
+  const seen = new Set();
+  for (const item of rows) {
+    if (seen.has(item.providerPlaylistId)) continue;
+    seen.add(item.providerPlaylistId);
+    playlists.push(item);
+  }
+  if (!playlists.length) {
+    logMod('WARN', `qq account playlists empty (${session.detail || 'session ok'})`);
+  }
+  return { playlists, authenticated: true, userId: uin };
+};
+
 const qqApiHeaders = (cookie = streamingAccountCookie('qqmusic')) => ({
   'User-Agent': defaultUserAgent,
   Referer: 'https://y.qq.com/',
@@ -1045,7 +1208,7 @@ const fetchQqPlaylistPage = async (playlistId, begin, pageSize) => {
     onlysong: '0',
     disstid: playlistId,
     format: 'json',
-    g_tk: '5381',
+    g_tk: String(qqGtkFromCookie(cookie) || 5381),
     loginUin: qqUinFromCookie(cookie),
     hostUin: '0',
     inCharset: 'utf8',
@@ -1076,7 +1239,12 @@ const fetchQqPlaylistPage = async (playlistId, begin, pageSize) => {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        comm: { ct: 24, cv: 0 },
+        comm: {
+          ct: 24,
+          cv: 0,
+          uin: qqUinFromCookie(cookie),
+          g_tk: qqGtkFromCookie(cookie),
+        },
         req_1: {
           module: 'music.srfDissInfo.aiDissInfo',
           method: 'uniform_get_Dissinfo',
@@ -2526,6 +2694,16 @@ const activate = (host) => {
       const playlist = await listQqPlaylistTracks(playlistId);
       try { host.log('INFO', `qq playlist ${playlistId}: ${playlist.tracks.length} tracks (auth=${playlist.authenticated})`); } catch {}
       return { ok: true, ...playlist };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  host.handle('qqAccountPlaylists', async () => {
+    try {
+      const result = await listQqAccountPlaylists();
+      try { host.log('INFO', `qq account playlists: ${result.playlists.length} (uin=${result.userId})`); } catch {}
+      return { ok: true, ...result };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

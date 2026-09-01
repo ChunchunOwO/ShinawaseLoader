@@ -177534,7 +177534,7 @@ var qqSongIdKeys = [
 var qqSongNameKeys = ["name", "title", "songname", "songName", "songorig", "songOrig"];
 var qqSongWrapperKeys = ["data", "songInfo", "songinfo", "song", "songData", "musicData", "track", "info"];
 var qqPlaylistTitleKeys = ["dissname", "diss_name", "dirName", "dirname", "dir_name", "name", "title", "titleName"];
-var qqPlaylistIdKeys = ["dissid", "disstid", "dissId", "dirid", "dirId", "dirID", "dir_id", "playlistId", "id", "tid"];
+var qqPlaylistIdKeys = ["dissid", "disstid", "diss_id", "dissId", "dirid", "dirId", "dirID", "dir_id", "playlistId", "id", "tid"];
 var qqArtistIdKeys = ["mid", "singerMID", "singerMid", "singermid", "singer_mid", "pmid", "singer_id", "singerid", "singerId", "id"];
 var qqArtistNameKeys = ["name", "singerName", "singername", "singer_name", "singerTitle", "singer_title", "title"];
 var unwrapQqSongRecord = (value) => {
@@ -178047,7 +178047,9 @@ var QQMusicStreamingProvider = class {
       comm: {
         ct: "19",
         cv: "1859",
-        uin: uinFromCookie2(accountCookie2())
+        uin: uinFromCookie2(accountCookie2()),
+        g_tk: qqGtkFromCookie2(accountCookie2()),
+        g_tk_new_20200303: qqGtkFromCookie2(accountCookie2())
       },
       req_1: {
         module: "music.search.SearchCgiService",
@@ -178115,7 +178117,17 @@ var QQMusicStreamingProvider = class {
       }
     }
     try {
+      results.push(...await this.fetchAccountPlaylistsFromMusicu(cookie, uin, "created"));
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
       results.push(...await this.fetchAccountPlaylistsFromProfileAsset(cookie, uin, "3", "favorited"));
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      results.push(...await this.fetchLikedSongsPlaylistEntry(cookie, uin));
     } catch (error) {
       errors.push(error);
     }
@@ -178285,7 +178297,7 @@ var QQMusicStreamingProvider = class {
       onlysong: "0",
       disstid: input.providerPlaylistId,
       format: "json",
-      g_tk: "5381",
+      g_tk: String(qqGtkFromCookie2(accountCookie2()) || 5381),
       loginUin: uinFromCookie2(accountCookie2()),
       hostUin: "0",
       inCharset: "utf8",
@@ -178347,7 +178359,9 @@ var QQMusicStreamingProvider = class {
     const body = {
       comm: {
         ct: 24,
-        cv: 0
+        cv: 0,
+        uin: uinFromCookie2(accountCookie2()),
+        g_tk: qqGtkFromCookie2(accountCookie2())
       },
       req_1: {
         module: "music.srfDissInfo.aiDissInfo",
@@ -178392,7 +178406,7 @@ var QQMusicStreamingProvider = class {
     const params = new URLSearchParams({
       songmid,
       pcachetime: String(Date.now()),
-      g_tk: "5381",
+      g_tk: String(qqGtkFromCookie2(accountCookie2()) || 5381),
       loginUin: uinFromCookie2(accountCookie2()),
       hostUin: "0",
       format: "json",
@@ -178734,6 +178748,7 @@ var QQMusicStreamingProvider = class {
     const gtk = String(qqGtkFromCookie2(cookie));
     const params = new URLSearchParams({
       hostuin: uin,
+      uin,
       loginUin: uin,
       format: "json",
       inCharset: "utf8",
@@ -178751,6 +178766,64 @@ var QQMusicStreamingProvider = class {
       timeoutMs: 12e3
     });
     return findPlaylistRecords(data).map((playlist) => mapQqAccountPlaylist(playlist, ownership)).filter((playlist) => Boolean(playlist));
+  }
+  async fetchAccountPlaylistsFromMusicu(cookie, uin, ownership) {
+    const gtk = qqGtkFromCookie2(cookie);
+    const attempts = [
+      { module: "music.playlist.PlaylistSquare", method: "GetPlaylistByUin", param: { uin, offset: 0, size: 100 } },
+      { module: "music.musicasset.PlaylistPrivatelyRead", method: "PlaylistGetLists", param: { uin: Number(uin) || uin, offset: 0, size: 100 } },
+      { module: "playlist.PlayListManageSvr", method: "get_playlist_by_userid", param: { uin, offset: 0, limit: 100 } }
+    ];
+    const results = [];
+    for (const req of attempts) {
+      try {
+        const data = await jsonFetch("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+          method: "POST",
+          headers: qqHeaders2(cookie),
+          body: {
+            comm: {
+              cv: 4747474,
+              ct: 24,
+              format: "json",
+              inCharset: "utf-8",
+              outCharset: "utf-8",
+              notice: 0,
+              platform: "yqq.json",
+              needNewCode: 1,
+              uin,
+              g_tk: gtk,
+              g_tk_new_20200303: gtk
+            },
+            req_0: req
+          },
+          timeoutMs: 12e3
+        });
+        results.push(...findPlaylistRecords(data).map((playlist) => mapQqAccountPlaylist(playlist, ownership)).filter((playlist) => Boolean(playlist)));
+      } catch {
+      }
+    }
+    return results;
+  }
+  async fetchLikedSongsPlaylistEntry(cookie, uin) {
+    let id = null;
+    let title = "\u6211\u559C\u6B22";
+    try {
+      id = await this.findLikedPlaylistId(cookie);
+    } catch {
+      id = null;
+    }
+    if (!id) {
+      try {
+        const data = await this.fetchAccountPlaylistsFromProfileAsset(cookie, uin, "2", "favorited");
+        const liked = data.find((playlist) => /\u6211\u559C\u6B22|\u6211\u559C\u6B61|like/iu.test(playlist.title || ""));
+        if (liked) return [liked];
+        if (data[0]) return data;
+      } catch {
+      }
+    }
+    if (!id) return [];
+    const mapped = mapQqAccountPlaylist({ dissid: id, dissname: title }, "favorited");
+    return mapped ? [mapped] : [];
   }
   async findLikedPlaylistId(cookie) {
     const uin = uinFromCookie2(cookie);

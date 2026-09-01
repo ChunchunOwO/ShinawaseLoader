@@ -2338,7 +2338,54 @@ const renderDailyPlaylistPanel = () => {
   panel.append(box);
   return panel;
 };
-const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) => { const stream = streamApi(); if (!stream?.listAccountPlaylists) throw new Error(chinese ? '当前窗口尚未加载歌单同步桥接，请重启 ECHO。' : 'Playlist sync is unavailable in this window. Restart ECHO.'); state.accountPlaylistProvider = provider; state.accountPanelOpen = true; state.loadingAccountPlaylists = true; state.actionError = null; render(); try { const result = await stream.listAccountPlaylists(provider); state.accountPlaylists = result.playlists || []; state.selectedAccountPlaylistIds = {}; state.actionMessage = state.accountPlaylists.length ? `已读取 ${state.accountPlaylists.length} 个歌单。` : copy.noPlaylists; } catch (error) { state.accountPlaylists = []; state.selectedAccountPlaylistIds = {}; state.actionError = error instanceof Error ? error.message : String(error); } finally { state.loadingAccountPlaylists = false; render(); } };
+const mergeAccountPlaylists = (primary, extra) => {
+  const playlists = [];
+  const seen = new Set();
+  for (const item of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(extra) ? extra : [])]) {
+    const id = String(item?.providerPlaylistId || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    playlists.push(item);
+  }
+  return playlists;
+};
+const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) => {
+  const stream = streamApi();
+  if (!stream?.listAccountPlaylists) throw new Error(chinese ? '当前窗口尚未加载歌单同步桥接，请重启 ECHO。' : 'Playlist sync is unavailable in this window. Restart ECHO.');
+  state.accountPlaylistProvider = provider;
+  state.accountPanelOpen = true;
+  state.loadingAccountPlaylists = true;
+  state.actionError = null;
+  render();
+  try {
+    let playlists = [];
+    let lastError = null;
+    try {
+      const result = await stream.listAccountPlaylists(provider);
+      playlists = result.playlists || [];
+    } catch (error) {
+      lastError = error;
+    }
+    if (provider === 'qqmusic') {
+      const extra = await invokeMain('qqAccountPlaylists', {}).catch(() => null);
+      if (extra?.ok === false && !playlists.length) throw new Error(extra.error || copy.noPlaylists);
+      playlists = mergeAccountPlaylists(playlists, extra?.playlists);
+    }
+    state.accountPlaylists = playlists;
+    state.selectedAccountPlaylistIds = {};
+    state.actionMessage = playlists.length ? `已读取 ${playlists.length} 个歌单。` : copy.noPlaylists;
+    if (!playlists.length && lastError) throw lastError;
+  } catch (error) {
+    if (!state.accountPlaylists.length) {
+      state.accountPlaylists = [];
+      state.selectedAccountPlaylistIds = {};
+      state.actionError = error instanceof Error ? error.message : String(error);
+    }
+  } finally {
+    state.loadingAccountPlaylists = false;
+    render();
+  }
+};
 const openAccountPlaylistSync = () => { const connected = state.providers.find((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected); state.accountPlaylistProvider = connected?.name || state.accountPlaylistProvider; void loadAccountPlaylists(state.accountPlaylistProvider).catch(reportError); };
 const syncAccountPlaylists = async (items) => { if (!items?.length || Object.keys(state.syncingAccountPlaylistIds).length) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); let ok = 0; let failed = 0; for (const playlist of items) { state.syncingAccountPlaylistIds[playlist.providerPlaylistId] = true; render(); try { await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist)); ok += 1; } catch { failed += 1; } finally { delete state.syncingAccountPlaylistIds[playlist.providerPlaylistId]; } } state.selectedAccountPlaylistIds = {}; await openImportedPlaylist({ playlistId: true }); state.actionMessage = copy.synced(ok, failed); render(); };
 const requestAccountPlaylistSync = (items) => { if (!items?.length) return; if (!state.accepted) { state.pendingAccountSync = items; state.noticeOpen = true; render(); return; } void syncAccountPlaylists(items).catch(reportError); };
