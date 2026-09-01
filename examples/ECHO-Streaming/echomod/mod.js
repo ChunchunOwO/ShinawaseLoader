@@ -31,9 +31,9 @@ const lyricsCopy = chinese ? {
   open: 'Lyrics', loading: 'Loading lyrics...', missing: 'No lyrics available', instrumental: 'Instrumental', source: 'Source', back: 'Back to Streaming', failed: 'Failed to load lyrics'
 };
 const togetherCopy = chinese ? {
-  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出一起听', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出一起听', restoreSong: '上次在听', needTrack: '先播放一首网易云歌曲，再邀请好友同步。',
+  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出房间', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出房间', restoreSong: '上次在听', needTrack: '先播放一首网易云歌曲，再邀请好友同步。', inRoomBar: '一起听中',
 } : {
-  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave room', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave', restoreSong: 'Last track', needTrack: 'Play a NetEase track first, then invite a friend.',
+  title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave room', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave room', restoreSong: 'Last track', needTrack: 'Play a NetEase track first, then invite a friend.', inRoomBar: 'Listening together',
 };
 
 const ncmCopy = chinese ? {
@@ -3318,6 +3318,12 @@ const togetherLeaveRoom = async () => {
     showChromeNotice(togetherErrorMessage(error));
   }
 };
+const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.roomId);
+const makeTogetherLeaveButton = (className = '') => actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
+  className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
+  title: togetherCopy.leave,
+  ariaLabel: togetherCopy.leave,
+});
 const togetherCopyShare = async () => {
   const url = togetherUi.snapshot.shareUrl;
   if (!url) return;
@@ -3440,7 +3446,7 @@ const renderTogetherRestore = () => {
   if (pending.songTitle) dialog.append(make('small', '', `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`));
   const actions = make('div', 'echo-streaming-together-restore-actions');
   actions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
-  actions.append(actionButton(togetherCopy.restoreLeave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
+  actions.append(makeTogetherLeaveButton());
   dialog.append(actions);
   backdrop.append(dialog);
   document.body.append(backdrop);
@@ -3448,20 +3454,29 @@ const renderTogetherRestore = () => {
 const renderTogetherBanner = () => {
   document.querySelectorAll('.echo-streaming-together-notice').forEach((node) => node.remove());
   if (togetherUi.snapshot.pendingRestore) return;
-  const invite = (togetherUi.snapshot.invites || []).find((item) => !togetherUi.snapshot.inRoom || item.roomId !== togetherUi.snapshot.roomId);
-  if (!invite) return;
   const bar = document.querySelector('footer.player-bar');
   if (!bar) return;
+  const snap = togetherUi.snapshot;
+  const invite = (snap.invites || []).find((item) => !snap.inRoom || item.roomId !== snap.roomId);
+  if (!togetherInSession(snap) && !invite) return;
   const notice = make('div', 'player-download-notice echo-streaming-together-notice');
   notice.setAttribute('role', 'status');
   const copyBox = make('div', 'player-download-notice-copy');
-  copyBox.append(make('strong', '', invite.nickname || invite.inviterId), make('span', '', togetherCopy.incoming));
+  if (togetherInSession(snap)) {
+    copyBox.append(make('strong', '', togetherCopy.inRoomBar), make('span', '', `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''}`));
+  } else {
+    copyBox.append(make('strong', '', invite.nickname || invite.inviterId), make('span', '', togetherCopy.incoming));
+  }
   notice.append(copyBox);
-  notice.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'secondary-action' }));
-  notice.append(actionButton(togetherCopy.decline, 'close', () => {
-    togetherUi.snapshot = { ...togetherUi.snapshot, invites: (togetherUi.snapshot.invites || []).filter((item) => item !== invite) };
-    paintTogetherChrome();
-  }, { className: 'secondary-action' }));
+  if (invite && !togetherInSession(snap)) {
+    notice.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'secondary-action' }));
+    notice.append(actionButton(togetherCopy.decline, 'close', () => {
+      togetherUi.snapshot = { ...togetherUi.snapshot, invites: (togetherUi.snapshot.invites || []).filter((item) => item !== invite) };
+      paintTogetherChrome();
+    }, { className: 'secondary-action' }));
+  } else {
+    notice.append(makeTogetherLeaveButton());
+  }
   bar.prepend(notice);
 };
 const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
@@ -3499,6 +3514,11 @@ const fillTogetherSheet = (root) => {
     root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
     return;
   }
+  if (togetherInSession(snap)) {
+    const leaveRow = make('div', 'echo-streaming-together-leave-row');
+    leaveRow.append(makeTogetherLeaveButton());
+    root.append(leaveRow);
+  }
   const nowPlaying = make('div', 'echo-streaming-together-now');
   if (snap.songCover) {
     const cover = document.createElement('img');
@@ -3517,9 +3537,9 @@ const fillTogetherSheet = (root) => {
   if (snap.inRoom && !snap.songId && snap.role === 'host') root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needTrack));
   const actions = make('div', 'echo-streaming-together-actions');
   actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));
-  if (snap.inRoom) {
+  if (togetherInSession(snap)) {
     actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'secondary-action' }));
-    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
+    actions.append(makeTogetherLeaveButton());
   }
   root.append(actions);
   const members = make('div', 'echo-streaming-together-members');
@@ -3603,11 +3623,14 @@ const paintStreamingSheet = () => {
   const existing = document.querySelector('.echo-streaming-drawer');
   const usersKey = String((snap.users || []).length);
   const songKey = String(snap.songId || '');
+  const inSession = togetherInSession(snap);
+  const hasLeave = Boolean(existing?.querySelector('.echo-streaming-together-leave'));
   if (existing
     && existing.dataset.tab === togetherUi.sheetTab
-    && existing.dataset.inRoom === String(Boolean(snap.inRoom))
+    && existing.dataset.inRoom === String(Boolean(inSession))
     && existing.dataset.users === usersKey
-    && existing.dataset.song === songKey) {
+    && existing.dataset.song === songKey
+    && (!inSession || hasLeave)) {
     const heading = existing.querySelector('.echo-streaming-together-title');
     if (heading) heading.textContent = snap.songTitle || togetherCopy.songUnknown;
     const meta = existing.querySelector('[data-together-meta]');
@@ -3620,7 +3643,7 @@ const paintStreamingSheet = () => {
   const drawer = make('div', 'echo-streaming-drawer');
   drawer.dataset.open = 'true';
   drawer.dataset.tab = togetherUi.sheetTab;
-  drawer.dataset.inRoom = String(Boolean(snap.inRoom));
+  drawer.dataset.inRoom = String(Boolean(inSession));
   drawer.dataset.users = usersKey;
   drawer.dataset.song = songKey;
   const scrim = make('button', 'echo-streaming-drawer__scrim');
@@ -3633,17 +3656,17 @@ const paintStreamingSheet = () => {
   const head = make('header', 'echo-streaming-drawer__head');
   const title = make('strong', 'echo-streaming-drawer-title', togetherUi.sheetTab === 'comments' ? ncmCopy.comments : togetherCopy.title);
   head.append(title);
-  if (togetherUi.sheetTab === 'together' && snap.inRoom) {
-    head.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave', title: togetherCopy.leave }));
+  if (togetherUi.sheetTab === 'together' && inSession) {
+    head.append(makeTogetherLeaveButton('echo-streaming-together-leave--head'));
   }
   head.append(actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   const body = make('div', 'echo-streaming-drawer__body');
   if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
   else fillTogetherSheet(body);
   panel.append(head, body);
-  if (togetherUi.sheetTab === 'together' && snap.inRoom) {
+  if (togetherUi.sheetTab === 'together' && inSession) {
     const foot = make('div', 'echo-streaming-together-foot');
-    foot.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
+    foot.append(makeTogetherLeaveButton());
     panel.append(foot);
   }
   drawer.append(scrim, panel);
