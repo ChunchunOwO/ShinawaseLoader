@@ -2345,7 +2345,7 @@ const unblockNeteaseSong = async (id) => {
       };
     }
   }
-  const v1 = await ncmCall('song_url_v1', { id, level: 'exhigh', unblock: 'true', cookie });
+  const v1 = await ncmCall('song_url_v1', { id, level: 'exhigh', cookie });
   const row = Array.isArray(v1.body?.data) ? v1.body.data[0] : neteaseRecord(v1.body?.data);
   const url = row?.url || row?.proxyUrl;
   if (url && /^https?:/iu.test(String(url))) {
