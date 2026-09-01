@@ -1654,19 +1654,30 @@ const loadQqPlaylistTracksViaMain = async (playlist, fallbackName, options = {})
   }
   return mapMainPlaylistTracks(listed, 'qqmusic', fallbackName, options);
 };
+const listLibraryPlaylists = async () => {
+  const raw = await libraryApi()?.getPlaylists?.();
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.playlists)) return raw.playlists;
+  if (Array.isArray(raw?.items)) return raw.items;
+  return [];
+};
 const findImportedLibraryPlaylist = async (playlist) => {
   const sourceId = String(playlist?.providerPlaylistId || playlist?.sourcePlaylistId || '').trim();
   const importedId = playlist?.importedPlaylistId || playlist?.playlistId;
   const provider = playlist?.provider || playlist?.sourceProvider;
+  const name = String(playlist?.title || playlist?.name || '').trim();
   try {
-    const playlists = await libraryApi()?.getPlaylists?.();
-    const items = Array.isArray(playlists) ? playlists : [];
-    if (importedId) {
+    const items = await listLibraryPlaylists();
+    if (importedId && importedId !== true) {
       const byId = items.find((item) => String(item.id) === String(importedId));
       if (byId) return byId;
     }
-    if (!sourceId) return null;
-    return items.find((item) => String(item.sourcePlaylistId || '') === sourceId && (!provider || item.sourceProvider === provider)) || null;
+    if (sourceId) {
+      const bySource = items.find((item) => String(item.sourcePlaylistId || '') === sourceId && (!provider || item.sourceProvider === provider));
+      if (bySource) return bySource;
+    }
+    if (name) return items.find((item) => String(item.name || item.title || '').trim() === name) || null;
+    return null;
   } catch {
     return null;
   }
@@ -2086,30 +2097,24 @@ const revealNativePlaylists = () => {
 const findPlaylistsNav = () => document.querySelector('button.nav-item[data-workshop-icon="nav-playlists"]')
   || [...document.querySelectorAll('button.nav-item:not([data-echo-external-sidebar]):not([data-echo-external-loader]):not([data-echo-external-mods])')]
     .find((button) => /收藏与歌单|播放列表|Playlists|歌单/iu.test(button.textContent || ''));
+const nativePlaylistLabel = (el) => String(el?.getAttribute('aria-label') || el?.querySelector('strong')?.textContent || '').trim();
 const selectNativePlaylist = (imported) => {
-  const id = imported?.playlistId ? String(imported.playlistId) : '';
   const name = String(imported?.playlistName || '').trim();
   const surface = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
-  const page = surface?.querySelector('.playlists-page') || [...document.querySelectorAll('.playlists-page')].find((node) => {
-    if (!node.isConnected) return false;
-    const host = node.closest('.page-surface, main') || node;
-    return getComputedStyle(host).display !== 'none';
-  });
-  if (!page) return false;
-  const nodes = [...page.querySelectorAll('.collection-playlist-nav-item--playlist, .playlist-list-item, button.collection-playlist-nav-item')]
+  if (!surface || !name) return false;
+  const nodes = [...surface.querySelectorAll('button.collection-playlist-nav-item--playlist, .playlist-list-item')]
     .filter((el) => !el.closest('[data-echo-streaming-daily], .echo-streaming-daily-native'));
-  const labelOf = (el) => String(el.getAttribute('aria-label') || el.querySelector('strong')?.textContent || '').trim();
-  const match = (id && nodes.find((el) => String(el.getAttribute('data-playlist-id') || el.dataset.playlistId || '') === id))
-    || (name && nodes.find((el) => labelOf(el) === name))
-    || (name && nodes.find((el) => labelOf(el).includes(name)));
+  const match = nodes.find((el) => nativePlaylistLabel(el) === name)
+    || nodes.find((el) => nativePlaylistLabel(el).includes(name));
   if (!match) return false;
+  if (match.getAttribute('data-active') === 'true') return true;
   match.click();
-  return Boolean(page.querySelector('.playlist-detail-panel, .playlist-detail-header, .playlist-track-list, .track-row'));
+  return true;
 };
 const openImportedPlaylist = async (imported) => {
   window.dispatchEvent(new Event('library:playlists-changed'));
   try { await libraryApi()?.getPlaylists?.(); } catch {}
-  if (!imported?.playlistId) return false;
+  if (!imported?.playlistId && !imported?.playlistName) return false;
   const live = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
   if (!live) {
     const nav = findPlaylistsNav();
@@ -2121,9 +2126,9 @@ const openImportedPlaylist = async (imported) => {
     revealNativePlaylists();
   }
   for (let attempt = 0; attempt < 24; attempt += 1) {
-    await sleep(120);
+    await sleep(150);
     if (selectNativePlaylist(imported)) return true;
-    if (attempt === 4 || attempt === 12) window.dispatchEvent(new Event('library:playlists-changed'));
+    if (attempt === 3 || attempt === 10) window.dispatchEvent(new Event('library:playlists-changed'));
   }
   return false;
 };
@@ -2315,31 +2320,28 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
     return imported;
   }
   const library = libraryApi();
-  if (!library?.createPlaylist || !library?.addStreamingTrackToPlaylist) throw new Error(copy.noBridge);
+  if (!library?.createPlaylist) throw new Error(copy.noBridge);
+  const addStreaming = library.addStreamingTrackToPlaylist;
+  if (typeof addStreaming !== 'function' && item.webUrl && stream?.importPlaylistFromUrl) {
+    const imported = await stream.importPlaylistFromUrl(item.webUrl);
+    rememberDailySync(item, imported);
+    return imported;
+  }
+  if (typeof addStreaming !== 'function') throw new Error(copy.noBridge);
   const listed = await loadDailyPlaylistTracksViaMain(item, item.title, { requireTracks: true });
   if (!listed?.tracks?.length) throw new Error(copy.musicNoDownloadableTracks);
-  const existingId = state.dailySyncedKeys[dailyPlaylistKey(item)]?.libraryPlaylistId;
-  let playlistId = existingId;
-  let playlistName = listed.name;
-  if (playlistId) {
-    try {
-      const playlists = await library.getPlaylists?.();
-      const found = (Array.isArray(playlists) ? playlists : []).find((entry) => String(entry.id) === String(playlistId));
-      if (!found) playlistId = null;
-      else playlistName = found.name || playlistName;
-    } catch {
-      playlistId = null;
-    }
-  }
+  const existing = await findImportedLibraryPlaylist({ ...item, importedPlaylistId: state.dailySyncedKeys[dailyPlaylistKey(item)]?.libraryPlaylistId, title: listed.name });
+  let playlistId = existing?.id || state.dailySyncedKeys[dailyPlaylistKey(item)]?.libraryPlaylistId || null;
+  let playlistName = existing?.name || listed.name;
   if (!playlistId) {
     const created = await library.createPlaylist({ name: listed.name, description: item.description || copy.dailyTitle });
-    playlistId = created?.id;
-    playlistName = created?.name || listed.name;
+    playlistId = created?.id || created?.playlistId || created?.playlist?.id;
+    playlistName = created?.name || created?.playlist?.name || listed.name;
   }
   if (!playlistId) throw new Error(copy.playlistItemsUnavailable);
   try { await library.clearPlaylist?.(playlistId); } catch {}
   for (const track of listed.tracks) {
-    try { await library.addStreamingTrackToPlaylist(playlistId, toLibraryTrack(track)); } catch {}
+    try { await addStreaming.call(library, playlistId, toLibraryTrack(track)); } catch {}
   }
   const imported = { playlistId, playlistName, importedCount: listed.tracks.length };
   rememberDailySync(item, imported);
@@ -3536,12 +3538,27 @@ const mountStreamingTransportButton = (lyricsButton) => {
   if (!visible && togetherUi.sheetOpen) closeStreamingSheet();
 };
 const paintStreamingSheet = () => {
-  document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
   if (togetherUi.sheetTab === 'similar') togetherUi.sheetTab = 'together';
-  if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
-  if (!ncmExtrasVisible()) return;
+  if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore || !ncmExtrasVisible()) {
+    document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
+    return;
+  }
+  const snap = togetherUi.snapshot;
+  const existing = document.querySelector('.echo-streaming-drawer');
+  if (existing && existing.dataset.tab === togetherUi.sheetTab && existing.dataset.inRoom === String(Boolean(snap.inRoom))) {
+    const heading = existing.querySelector('.echo-streaming-together-title');
+    if (heading) heading.textContent = snap.songTitle || togetherCopy.songUnknown;
+    const meta = existing.querySelector('[data-together-meta]');
+    if (meta) meta.textContent = togetherNowPlayingText(snap);
+    const cover = existing.querySelector('.echo-streaming-together-now img');
+    if (cover && snap.songCover && cover.src !== snap.songCover) cover.src = snap.songCover;
+    return;
+  }
+  document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
   const drawer = make('div', 'echo-streaming-drawer');
   drawer.dataset.open = 'true';
+  drawer.dataset.tab = togetherUi.sheetTab;
+  drawer.dataset.inRoom = String(Boolean(snap.inRoom));
   const scrim = make('button', 'echo-streaming-drawer__scrim');
   scrim.type = 'button';
   scrim.setAttribute('aria-label', copy.close);
@@ -3552,7 +3569,7 @@ const paintStreamingSheet = () => {
   const head = make('header', 'echo-streaming-drawer__head');
   const title = make('strong', 'echo-streaming-drawer-title', togetherUi.sheetTab === 'comments' ? ncmCopy.comments : togetherCopy.title);
   head.append(title);
-  if (togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
+  if (togetherUi.sheetTab === 'together' && snap.inRoom) {
     head.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave', title: togetherCopy.leave }));
   }
   head.append(actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
@@ -3560,7 +3577,7 @@ const paintStreamingSheet = () => {
   if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
   else fillTogetherSheet(body);
   panel.append(head, body);
-  if (togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
+  if (togetherUi.sheetTab === 'together' && snap.inRoom) {
     const foot = make('div', 'echo-streaming-together-foot');
     foot.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-leave' }));
     panel.append(foot);
@@ -3600,11 +3617,6 @@ const installTogetherChrome = () => {
     const meta = document.querySelector('.echo-streaming-drawer [data-together-meta]');
     if (meta && togetherUi.sheetOpen && togetherUi.sheetTab === 'together') {
       meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
-    }
-    togetherUi.refreshTick = (togetherUi.refreshTick || 0) + 1;
-    if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && togetherUi.refreshTick % 2 === 0 && !togetherUi.refreshBusy) {
-      togetherUi.refreshBusy = true;
-      void togetherInvoke('togetherRefresh', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => undefined).finally(() => { togetherUi.refreshBusy = false; });
     }
     if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying) {
       void (async () => {

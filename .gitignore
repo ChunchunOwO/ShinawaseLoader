@@ -1,3 +1,5 @@
+*.bak
+AGENTS.md.bak
 __pycache__/
 *.py[cod]
 *.log

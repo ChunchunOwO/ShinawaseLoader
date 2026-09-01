@@ -1985,7 +1985,9 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const status = await ncmCall('listentogether_status', { cookie });
     if (status.ok) {
       const serverInRoom = neteaseRecord(status.body?.data).inRoom === true;
-      if (serverInRoom && !sessionActive && !state.inRoom) {
+      if (sessionActive && state.inRoom) {
+        await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId });
+      } else if (serverInRoom && !sessionActive && !state.inRoom) {
         await applyRoomBody(status.body, { inRoom: true, forceRoom: true, activate: false });
       } else {
         if (!serverInRoom) {
@@ -2427,7 +2429,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (disposed) return;
     try {
       if (!(await refreshAccount())) {
-        if (state.inRoom) clearRoom();
+        if (state.inRoom && !sessionActive) clearRoom();
         emit();
         return;
       }
