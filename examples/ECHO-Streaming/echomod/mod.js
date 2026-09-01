@@ -20,9 +20,9 @@ const locale = String(config.locale || 'zh-CN');
 const chinese = locale.toLowerCase().startsWith('zh');
 const accountText = (zh, en) => chinese ? zh : en;
 const copy = chinese ? {
-  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', playlistKicker: '流媒体歌单', readingAlbum: '读取专辑', readingPlaylist: '读取歌单', playPlaylist: '播放歌单', noPlaylistTracks: '这个歌单没有可显示的歌曲。', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。', neteaseLoginRequired: '读取这个歌单需要登录（私密歌单仅登录后可见）。请先在账号页登录网易云音乐，再重试下载。', neteaseSessionExpired: '网易云登录已过期或失效：请在账号页重新登录网易云音乐，然后重试下载。', qqLoginRequired: '读取这个歌单需要登录（账号歌单仅登录后可见）。请先在账号页登录 QQ 音乐，再重试下载。', albumDownloadTitle: '下载专辑', artistDownloadTitle: '下载热门歌曲', downloadTopTracks: '下载热门歌曲', readingAlbumTracks: '正在读取专辑曲目...', musicNoDownloadableAlbum: '这张专辑没有可下载的歌曲。', musicNoDownloadableArtist: '这个艺人没有可下载的歌曲。', batchDownloadBusy: '已有批量下载正在进行，请稍候。', dailyTitle: '每日推荐歌单', dailyHint: '扫描网易云每日推荐歌曲、每日歌单、雷达、历史日推与个性化推荐，同步到本地歌单后可刷新和下载。', dailyScan: '扫描每日歌单', dailyRefresh: '刷新每日歌单', dailyRefreshing: '正在刷新每日歌单', dailyAuto: '自动刷新', dailyManual: '手动刷新', dailyAutoOn: '自动刷新已开启：每天 6:05（北京时间）以及启动后补刷。', dailyAutoOff: '自动刷新已关闭，可手动扫描或刷新。', dailyNeedLogin: '请先登录网易云音乐后再扫描每日推荐。', dailyEmpty: '没有读到每日推荐歌单。', dailyScanned: (n) => `已扫描 ${n} 个每日推荐歌单。`, dailySynced: (ok, fail) => fail ? `每日歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `每日歌单同步完成：成功 ${ok} 个。`, dailyRefreshed: (n) => `已刷新每日歌单：${n} 个。`, dailyKindSongs: '每日推荐', dailyKindResource: '每日歌单', dailyKindRadar: '雷达', dailyKindPersonalized: '推荐歌单', dailyKindHistory: '历史日推', dailyKindNewsong: '新歌推荐', dailySyncSelected: '同步选中每日歌单', dailyOpenNative: '在歌单页打开', dailyRefreshOne: '刷新',
+  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', playlistKicker: '流媒体歌单', readingAlbum: '读取专辑', readingPlaylist: '读取歌单', playPlaylist: '播放歌单', noPlaylistTracks: '这个歌单没有可显示的歌曲。', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', more: '更多', playlistPick: '从左侧选择歌单', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。', neteaseLoginRequired: '读取这个歌单需要登录（私密歌单仅登录后可见）。请先在账号页登录网易云音乐，再重试下载。', neteaseSessionExpired: '网易云登录已过期或失效：请在账号页重新登录网易云音乐，然后重试下载。', qqLoginRequired: '读取这个歌单需要登录（账号歌单仅登录后可见）。请先在账号页登录 QQ 音乐，再重试下载。', albumDownloadTitle: '下载专辑', artistDownloadTitle: '下载热门歌曲', downloadTopTracks: '下载热门歌曲', readingAlbumTracks: '正在读取专辑曲目...', musicNoDownloadableAlbum: '这张专辑没有可下载的歌曲。', musicNoDownloadableArtist: '这个艺人没有可下载的歌曲。', batchDownloadBusy: '已有批量下载正在进行，请稍候。', dailyTitle: '每日推荐歌单', dailyHint: '扫描网易云每日推荐歌曲、每日歌单、雷达、历史日推与个性化推荐，同步到本地歌单后可刷新和下载。', dailyScan: '扫描每日歌单', dailyRefresh: '刷新每日歌单', dailyRefreshing: '正在刷新每日歌单', dailyAuto: '自动刷新', dailyManual: '手动刷新', dailyAutoOn: '自动刷新已开启：每天 6:05（北京时间）以及启动后补刷。', dailyAutoOff: '自动刷新已关闭，可手动扫描或刷新。', dailyNeedLogin: '请先登录网易云音乐后再扫描每日推荐。', dailyEmpty: '没有读到每日推荐歌单。', dailyScanned: (n) => `已扫描 ${n} 个每日推荐歌单。`, dailySynced: (ok, fail) => fail ? `每日歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `每日歌单同步完成：成功 ${ok} 个。`, dailyRefreshed: (n) => `已刷新每日歌单：${n} 个。`, dailyKindSongs: '每日推荐', dailyKindResource: '每日歌单', dailyKindRadar: '雷达', dailyKindPersonalized: '推荐歌单', dailyKindHistory: '历史日推', dailyKindNewsong: '新歌推荐', dailySyncSelected: '同步选中每日歌单', dailyOpenNative: '在歌单页打开', dailyRefreshOne: '刷新',
 } : {
-  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', playlistKicker: 'Streaming Playlist', readingAlbum: 'Reading album', readingPlaylist: 'Reading playlist', playPlaylist: 'Play playlist', noPlaylistTracks: 'This playlist has no tracks to display.', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.', neteaseLoginRequired: 'Reading this playlist requires a signed-in account (private playlists are only visible after login). Connect NetEase Cloud Music on the accounts page and retry.', neteaseSessionExpired: 'The NetEase Cloud Music session has expired. Sign in again on the accounts page and retry the download.', qqLoginRequired: 'Reading this playlist requires a signed-in account. Connect QQ Music on the accounts page and retry.', albumDownloadTitle: 'Download album', artistDownloadTitle: 'Download top tracks', downloadTopTracks: 'Download top tracks', readingAlbumTracks: 'Reading album tracks...', musicNoDownloadableAlbum: 'This album has no downloadable tracks.', musicNoDownloadableArtist: 'This artist has no downloadable tracks.', batchDownloadBusy: 'A batch download is already running.', dailyTitle: 'Daily recommendation playlists', dailyHint: 'Scan NetEase daily songs, daily playlists, radar, history, and personalized lists, then sync, refresh, or download them.', dailyScan: 'Scan daily playlists', dailyRefresh: 'Refresh daily playlists', dailyRefreshing: 'Refreshing daily playlists', dailyAuto: 'Auto refresh', dailyManual: 'Manual refresh', dailyAutoOn: 'Auto refresh is on: 06:05 Beijing time each day, plus a catch-up after launch.', dailyAutoOff: 'Auto refresh is off. Scan or refresh manually.', dailyNeedLogin: 'Connect a NetEase Cloud Music account before scanning daily recommendations.', dailyEmpty: 'No daily recommendation playlists were returned.', dailyScanned: (n) => `Scanned ${n} daily recommendation playlists.`, dailySynced: (ok, fail) => fail ? `Daily playlist sync finished: ${ok} succeeded, ${fail} failed.` : `Daily playlist sync finished: ${ok} succeeded.`, dailyRefreshed: (n) => `Refreshed ${n} daily playlists.`, dailyKindSongs: 'Daily songs', dailyKindResource: 'Daily playlists', dailyKindRadar: 'Radar', dailyKindPersonalized: 'Recommended', dailyKindHistory: 'History', dailyKindNewsong: 'New songs', dailySyncSelected: 'Sync selected daily playlists', dailyOpenNative: 'Open on Playlists page', dailyRefreshOne: 'Refresh',
+  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', playlistKicker: 'Streaming Playlist', readingAlbum: 'Reading album', readingPlaylist: 'Reading playlist', playPlaylist: 'Play playlist', noPlaylistTracks: 'This playlist has no tracks to display.', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', more: 'More', playlistPick: 'Choose a playlist', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.', neteaseLoginRequired: 'Reading this playlist requires a signed-in account (private playlists are only visible after login). Connect NetEase Cloud Music on the accounts page and retry.', neteaseSessionExpired: 'The NetEase Cloud Music session has expired. Sign in again on the accounts page and retry the download.', qqLoginRequired: 'Reading this playlist requires a signed-in account. Connect QQ Music on the accounts page and retry.', albumDownloadTitle: 'Download album', artistDownloadTitle: 'Download top tracks', downloadTopTracks: 'Download top tracks', readingAlbumTracks: 'Reading album tracks...', musicNoDownloadableAlbum: 'This album has no downloadable tracks.', musicNoDownloadableArtist: 'This artist has no downloadable tracks.', batchDownloadBusy: 'A batch download is already running.', dailyTitle: 'Daily recommendation playlists', dailyHint: 'Scan NetEase daily songs, daily playlists, radar, history, and personalized lists, then sync, refresh, or download them.', dailyScan: 'Scan daily playlists', dailyRefresh: 'Refresh daily playlists', dailyRefreshing: 'Refreshing daily playlists', dailyAuto: 'Auto refresh', dailyManual: 'Manual refresh', dailyAutoOn: 'Auto refresh is on: 06:05 Beijing time each day, plus a catch-up after launch.', dailyAutoOff: 'Auto refresh is off. Scan or refresh manually.', dailyNeedLogin: 'Connect a NetEase Cloud Music account before scanning daily recommendations.', dailyEmpty: 'No daily recommendation playlists were returned.', dailyScanned: (n) => `Scanned ${n} daily recommendation playlists.`, dailySynced: (ok, fail) => fail ? `Daily playlist sync finished: ${ok} succeeded, ${fail} failed.` : `Daily playlist sync finished: ${ok} succeeded.`, dailyRefreshed: (n) => `Refreshed ${n} daily playlists.`, dailyKindSongs: 'Daily songs', dailyKindResource: 'Daily playlists', dailyKindRadar: 'Radar', dailyKindPersonalized: 'Recommended', dailyKindHistory: 'History', dailyKindNewsong: 'New songs', dailySyncSelected: 'Sync selected daily playlists', dailyOpenNative: 'Open on Playlists page', dailyRefreshOne: 'Refresh',
 };
 
 const lyricsCopy = chinese ? {
@@ -31,7 +31,7 @@ const lyricsCopy = chinese ? {
   open: 'Lyrics', loading: 'Loading lyrics...', missing: 'No lyrics available', instrumental: 'Instrumental', source: 'Source', back: 'Back to Streaming', failed: 'Failed to load lyrics'
 };
 const togetherCopy = chinese ? {
-  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '离开', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '登录后可直接邀请好友，像网易云客户端一样同步听歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出一起听', restoreSong: '上次在听',
+  title: '一起听', invite: '邀请一起听', inviteFriend: '邀请好友', accept: '接受', decline: '忽略', leave: '退出', needLogin: '请先登录网易云后再一起听', creating: '正在创建房间...', inviting: '正在邀请好友...', emptyFriends: '没有可邀请的好友。可搜索网易云用户，或先去关注。', members: '正在一起听', duration: '时长', collapse: '收纳', expand: '展开', incoming: '邀请你一起听', copied: '已复制邀请链接', idle: '邀请好友，同步听同一首歌。', host: '房主', guest: '成员', songUnknown: '暂无曲目', copyLink: '复制邀请链接', refresh: '刷新', pickerTitle: '选择好友直接邀请', playing: '播放中', paused: '已暂停', trayHint: '托盘里也可以直接点好友邀请', joined: '已加入一起听', invited: (name) => `已邀请 ${name} 一起听`, searchFriends: '搜索好友', searchPlaceholder: '搜索网易云好友 / 用户', restoreTitle: '你还在一起听中', restoreBody: '关闭软件前的一起听房间还在。要恢复同步，还是退出房间？', restore: '恢复一起听', restoreLeave: '退出一起听', restoreSong: '上次在听',
 } : {
   title: 'Listen together', invite: 'Invite to listen', inviteFriend: 'Invite friends', accept: 'Accept', decline: 'Dismiss', leave: 'Leave', needLogin: 'Sign in to NetEase Cloud Music first.', creating: 'Creating room...', inviting: 'Inviting friend...', emptyFriends: 'No friends to invite. Search a NetEase user or follow people first.', members: 'Listening together', duration: 'Duration', collapse: 'Collapse', expand: 'Expand', incoming: 'invited you to listen together', copied: 'Invite link copied', idle: 'Sign in, then invite a friend directly and sync like the official NetEase client.', host: 'Host', guest: 'Member', songUnknown: 'No track yet', copyLink: 'Copy invite link', refresh: 'Refresh', pickerTitle: 'Invite a friend directly', playing: 'Playing', paused: 'Paused', trayHint: 'Invite a friend from the tray too', joined: 'Joined listen-together', invited: (name) => `Invited ${name}`, searchFriends: 'Search friends', searchPlaceholder: 'Search NetEase friends / users', restoreTitle: 'You are still in a listen-together room', restoreBody: 'The room from last time is still open. Resume sync or leave the room?', restore: 'Resume', restoreLeave: 'Leave', restoreSong: 'Last track',
 };
@@ -70,7 +70,7 @@ const ncmUi = {
   similarOpen: false,
   similarTrack: null,
   similarTracks: [],
-  similarAutoPlay: stored.similarAutoPlay != null ? stored.similarAutoPlay === true : config.similarAutoPlay === true,
+  similarAutoPlay: stored.similarAutoPlay != null ? stored.similarAutoPlay === true : config.similarAutoPlay !== false,
   similarCount: Math.max(3, Math.min(50, Math.round(Number(stored.similarCount ?? config.similarCount) || 10))),
   similarIds: [],
   similarPlayed: 0,
@@ -102,6 +102,9 @@ state.dailyLastRefreshAt = stored.dailyLastRefreshAt || null;
 state.dailySyncedKeys = stored.dailySyncedKeys && typeof stored.dailySyncedKeys === 'object' ? stored.dailySyncedKeys : {};
 state.autoRefreshDaily = stored.autoRefreshDaily != null ? stored.autoRefreshDaily === true : config.autoRefreshDailyPlaylists !== false;
 state.autoSyncDaily = stored.autoSyncDaily != null ? stored.autoSyncDaily === true : config.autoSyncDailyPlaylists === true;
+state.dailySidebarCollapsed = stored.dailySidebarCollapsed === true;
+state.dailySectionOpen = stored.dailySectionOpen !== false;
+state.accountSectionOpen = stored.accountSectionOpen === true;
 state.accountMessages = {};
 state.accountCookies = {};
 state.accountBrowsers = {};
@@ -149,6 +152,8 @@ iconPaths.arrowRight = '<path d="M5 12h14M13 6l6 6-6 6"/>';
 iconPaths.users = '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>';
 iconPaths.chat = '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>';
 iconPaths.spark = '<path d="M12 3v4M12 17v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M3 12h4M17 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>';
+iconPaths.more = '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>';
+const playlistIdentity = (playlist) => String(playlist?.id || playlist?.providerPlaylistId || playlist?.importedPlaylistId || playlist?.key || `${playlist?.provider || ''}:${playlist?.title || playlist?.name || ''}`);
 const makeIcon = (name, size = 16) => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size)); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true'); svg.innerHTML = iconPaths[name] || ''; return svg; };
 const make = (tag, className = '', text = undefined) => { const node = document.createElement(tag); if (className) node.className = className; if (text instanceof Node) node.append(text); else if (text !== undefined) node.textContent = String(text ?? ''); return node; };
 const actionButton = (label, iconName, handler, options = {}) => { const node = make('button', options.className || '', options.iconOnly ? undefined : label); node.type = 'button'; if (iconName) node.prepend(makeIcon(iconName, options.size || 16)); node.title = options.title || label; node.setAttribute('aria-label', options.ariaLabel || label); if (options.active !== undefined) node.dataset.active = String(options.active); if (options.disabled) node.disabled = true; node.addEventListener('click', (event) => { event.stopPropagation(); try { Promise.resolve(handler(event)).catch(reportError); } catch (error) { reportError(error); } }); return node; };
@@ -298,7 +303,7 @@ const schedulePlaybackPrepare = (track) => {
 };
 const playCurrentStableKey = () => { const current = findPlaybackQueue()?.currentTrack; return current?.mediaType === 'streaming' ? String(current.stableKey || current.id || '') : ''; };
 const favoriteIdsFromSnapshot = (snapshot) => { const ids = {}; for (const items of Object.values(snapshot?.providers || {})) for (const item of items || []) ids[`${item.provider}:${item.providerTrackId}`] = true; for (const collection of snapshot?.collections || []) for (const item of collection.tracks || []) ids[`${item.provider}:${item.providerTrackId}`] = true; return ids; };
-const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
+const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, dailySidebarCollapsed: state.dailySidebarCollapsed, dailySectionOpen: state.dailySectionOpen, accountSectionOpen: state.accountSectionOpen, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
 const rememberSearch = (query) => { const value = String(query || '').trim(); if (!value) return; state.recentSearches = [value, ...state.recentSearches.filter((item) => item !== value)].slice(0, 8); };
 const providerRailState = (provider) => accountAwareProviders.has(provider?.name) && provider.accountConnected !== true ? 'signedOut' : !provider?.enabled ? 'disabled' : accountAwareProviders.has(provider?.name) ? 'signedIn' : 'available';
 const providerRailStatus = (provider) => { const rail = providerRailState(provider); return rail === 'disabled' ? copy.disabled : rail === 'signedOut' ? copy.notLoggedIn : rail === 'signedIn' ? copy.loggedIn(provider.accountDisplayName || provider.displayName) : copy.available; };
@@ -438,8 +443,27 @@ const appendTrackRow = (parent, track, options = {}) => {
 
 const appendAlbumCard = (parent, album) => { const card = make('article', 'streaming-discovery-card'); card.setAttribute('role', 'button'); card.tabIndex = 0; card.addEventListener('click', () => openAlbum(album)); card.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openAlbum(album); } }); card.addEventListener('contextmenu', (event) => { event.preventDefault(); event.stopPropagation(); openStreamMenu(event, [{ label: copy.downloadAlbum, hint: musicMenuHint([album.artist, album.title].filter(Boolean).join(' - ') || album.title || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openAlbumDownloadFromCard(album) }]); }); appendCover(card, album.coverThumb || album.coverUrl || defaultCover, album.id); const main = make('div', 'streaming-main'); const line = make('div', 'streaming-title-line'); line.append(makeIcon('disc', 15), make('strong', '', album.title || 'Untitled')); main.append(line, make('span', '', album.artist || ''), make('small', '', `${album.provider} · ${album.trackCount ? formatTrackCount(album.trackCount) : (chinese ? '曲目数未知' : 'Track count unknown')}${album.releaseDate ? ` · ${album.releaseDate}` : ''}`)); card.append(main); parent.append(card); };
 const appendArtistCard = (parent, artist) => { const card = make('article', 'streaming-discovery-card'); card.setAttribute('role', 'button'); card.tabIndex = 0; card.addEventListener('click', () => openArtist(artist)); card.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openArtist(artist); } }); appendCover(card, artist.avatarUrl || artist.coverUrl || defaultCover, artist.id, true); const main = make('div', 'streaming-main'); const line = make('div', 'streaming-title-line'); line.append(makeIcon('user', 15), make('strong', '', artist.name || artist.providerArtistId || 'Unknown Artist')); main.append(line, make('span', '', artist.provider || ''), make('small', '', `${chinese ? '艺人 ID' : 'Artist ID'} · ${artist.providerArtistId || ''}`)); card.append(main); parent.append(card); };
-const appendPlaylistCard = (parent, playlist) => { const card = make('article', 'streaming-discovery-card streaming-playlist-card'); card.setAttribute('role', 'button'); card.tabIndex = 0; card.addEventListener('click', () => openPlaylist(playlist)); card.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPlaylist(playlist); } }); appendCover(card, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id); const main = make('div', 'streaming-main'); const line = make('div', 'streaming-title-line'); line.append(makeIcon('list', 15), make('strong', '', playlist.title || 'Untitled')); main.append(line, make('span', '', playlist.creator || playlist.provider || ''), make('small', '', `${playlist.provider} · ${formatTrackCount(playlist.trackCount)}`)); card.append(main); const importing = state.importingPlaylistKey === playlist.id; card.append(actionButton(importing ? copy.adding : copy.add, 'list', () => handleImportStreamingPlaylist(playlist), { className: 'streaming-playlist-add', disabled: Boolean(state.importingPlaylistKey), title: importing ? copy.adding : copy.add })); card.addEventListener('contextmenu', (event) => openStreamMenu(event, [{ label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(playlist) }])); parent.append(card); };
-const appendAccountPlaylistRow = (parent, playlist) => { const row = make('div', 'streaming-account-playlist-row'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = state.selectedAccountPlaylistIds[playlist.providerPlaylistId] === true; checkbox.disabled = Object.keys(state.syncingAccountPlaylistIds).length > 0; checkbox.setAttribute('aria-label', `${copy.selectAll} ${playlist.title}`); checkbox.addEventListener('change', () => { state.selectedAccountPlaylistIds[playlist.providerPlaylistId] = checkbox.checked; render(); }); row.append(checkbox); appendCover(row, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id); const main = make('span', 'streaming-account-playlist-main'); main.append(make('strong', '', playlist.title || 'Untitled')); const ownership = playlist.ownership === 'created' ? copy.created : playlist.ownership === 'favorited' ? copy.favorited : copy.accountPlaylist; main.append(make('small', '', `${ownership} · ${formatTrackCount(playlist.trackCount)}${playlist.creator ? ` · ${playlist.creator}` : ''}`)); row.append(main); const syncing = state.syncingAccountPlaylistIds[playlist.providerPlaylistId] === true; row.append(actionButton(syncing ? copy.syncing : copy.add, syncing ? 'refresh' : 'list', () => requestAccountPlaylistSync([playlist]), { className: 'streaming-account-playlist-add-one', disabled: Object.keys(state.syncingAccountPlaylistIds).length > 0, title: syncing ? copy.syncing : copy.add })); row.addEventListener('click', (event) => { if (event.target.closest('input, button')) return; openPlaylist(playlist); }); row.addEventListener('contextmenu', (event) => openStreamMenu(event, [{ label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(playlist) }])); parent.append(row); };
+const appendPlaylistPickRow = (parent, playlist, meta) => {
+  const row = make('button', 'streaming-account-playlist-row');
+  row.type = 'button';
+  row.dataset.active = String(playlistIdentity(state.selectedPlaylist) === playlistIdentity(playlist));
+  appendCover(row, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id || playlistIdentity(playlist));
+  const main = make('span', 'streaming-account-playlist-main');
+  main.append(make('strong', '', playlist.title || playlist.name || 'Untitled'), make('small', '', meta || `${playlist.creator || playlist.provider || ''} · ${formatTrackCount(playlist.trackCount)}`));
+  row.append(main);
+  row.addEventListener('click', () => void openPlaylist(playlist).catch(reportError));
+  row.addEventListener('contextmenu', (event) => openStreamMenu(event, [
+    { label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || playlist.name || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(playlist) },
+  ]));
+  parent.append(row);
+};
+const appendPlaylistCard = (parent, playlist) => {
+  appendPlaylistPickRow(parent, playlist, `${playlist.creator || playlist.provider || ''} · ${formatTrackCount(playlist.trackCount)}`);
+};
+const appendAccountPlaylistRow = (parent, playlist) => {
+  const ownership = playlist.ownership === 'created' ? copy.created : playlist.ownership === 'favorited' ? copy.favorited : copy.accountPlaylist;
+  appendPlaylistPickRow(parent, playlist, `${ownership} · ${formatTrackCount(playlist.trackCount)}`);
+};
 
 const renderNoticeModal = () => { if (!state.noticeOpen) return null; const backdrop = make('div', 'settings-modal-backdrop settings-streaming-notice-backdrop'); backdrop.dataset.state = 'open'; backdrop.addEventListener('mousedown', () => cancelNotice()); const dialog = make('section', 'settings-font-modal settings-streaming-notice-modal'); dialog.dataset.state = 'open'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'settings-streaming-notice-title'); dialog.addEventListener('mousedown', (event) => event.stopPropagation()); const header = make('header', 'settings-font-modal-header'); const heading = make('div', 'settings-streaming-notice-heading'); heading.append(makeIcon('shield', 18), make('h3', '', copy.noticeTitle)); header.append(heading, actionButton(copy.close, 'close', cancelNotice, { iconOnly: true, className: 'settings-icon-button', title: copy.noticeClose })); dialog.append(header); const body = make('div', 'settings-streaming-notice-body'); body.append(make('p', '', copy.noticeBody)); const list = make('ul'); copy.noticeItems.forEach((item) => list.append(make('li', '', item))); body.append(list, make('p', '', copy.noticeAcceptance)); dialog.append(body); const label = make('label', 'settings-danger-confirm-field settings-streaming-notice-confirm'); label.append(make('span', '', copy.consentInput(copy.consentPhrase))); const input = document.createElement('input'); input.value = state.noticeConsent; input.autofocus = true; input.addEventListener('input', () => { state.noticeConsent = input.value; confirm.disabled = input.value.trim() !== copy.consentPhrase; }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && input.value.trim() === copy.consentPhrase) confirmNotice(); }); label.append(input); dialog.append(label); const actions = make('div', 'settings-streaming-notice-actions'); actions.append(actionButton(copy.noticeCancel, null, cancelNotice, { className: 'settings-action-button' })); const confirm = actionButton(copy.noticeConfirm, null, confirmNotice, { className: 'settings-danger-button', disabled: state.noticeConsent.trim() !== copy.consentPhrase }); actions.append(confirm); dialog.append(actions); backdrop.append(dialog); return backdrop; };
 const renderGate = () => { const page = make('div', 'streaming-page streaming-hub'); const empty = make('div', 'streaming-results-empty'); const gate = make('div', 'streaming-entry-notice-gate'); gate.append(make('strong', '', copy.noticeTitle), make('span', '', copy.noticeAcceptance)); gate.append(actionButton(copy.noticeTitle, null, () => { state.noticeOpen = true; render(); }, { className: 'streaming-load-more' })); empty.append(gate); page.append(empty); if (state.noticeOpen) page.append(renderNoticeModal()); return page; };
@@ -598,15 +622,44 @@ const renderAlbumDetail = () => {
   return page;
 };
 const renderArtistDetail = () => { const artist = state.selectedArtistDetail || state.selectedArtist; const name = artistName(artist); const page = make('div', 'streaming-artist-page'); page.append(actionButton(copy.back, 'arrow', () => { state.selectedArtist = null; state.selectedArtistDetail = null; state.artistError = null; render(); }, { className: 'streaming-artist-back', title: copy.back })); const hero = make('section', 'streaming-artist-hero'); const avatar = make('div', 'streaming-artist-avatar'); const src = artist?.coverUrl || artist?.avatarUrl; avatar.dataset.cover = String(Boolean(src)); if (src) { const image = document.createElement('img'); image.src = src; image.alt = ''; image.width = 512; image.height = 512; avatar.append(image); } else avatar.append(make('span', '', name.slice(0, 1).toUpperCase())); hero.append(avatar); const body = make('div', 'streaming-artist-copy'); body.append(make('span', 'streaming-artist-kicker', copy.artistKicker), make('h1', '', name)); const meta = make('div', 'streaming-artist-meta'); meta.append(make('span', '', artist?.provider || state.provider), make('span', '', formatTrackCount(state.selectedArtistDetail?.topTracks?.length || 0)), make('span', '', `${state.selectedArtistDetail?.albums?.length || 0} ${copy.albums.toLowerCase()}`)); body.append(meta, make('p', '', `${copy.streaming} catalog from ${artist?.provider || state.provider}.`)); const actions = make('div', 'streaming-artist-actions'); const top = state.selectedArtistDetail?.topTracks || []; actions.append(actionButton(state.artistLoading ? copy.readingArtist : copy.playArtist, state.artistLoading ? 'refresh' : 'play', handlePlayArtist, { className: 'streaming-artist-primary-action', disabled: state.artistLoading || !top.some((track) => track.playable), title: copy.playArtist }), actionButton(copy.addToQueue, 'list', handleQueueArtist, { className: 'streaming-artist-secondary-action', disabled: !top.some((track) => track.playable), title: copy.addToQueue }), actionButton(state.musicPlaylistDownload ? copy.downloading : copy.downloadTopTracks, state.musicPlaylistDownload ? 'refresh' : 'download', handleDownloadArtist, { className: 'streaming-artist-secondary-action', disabled: state.artistLoading || !top.some((track) => canDownloadTrackToMusic(track)) || Boolean(state.musicPlaylistDownload), title: copy.downloadTopTracks })); body.append(actions); if (state.artistError) body.append(make('p', 'streaming-artist-error', state.artistError)); hero.append(body); const stats = make('div', 'streaming-artist-stats'); [[copy.source, artist?.provider || state.provider], [copy.tracks, top.length], [copy.albums, state.selectedArtistDetail?.albums?.length || 0]].forEach(([label, value]) => { const item = make('div'); item.append(make('span', '', label), make('strong', '', value)); stats.append(item); }); hero.append(stats); page.append(hero); const trackSection = make('section', 'streaming-artist-section'); const heading = make('div', 'streaming-artist-section-heading'); const headingCopy = make('div'); headingCopy.append(make('span', '', copy.topTracks), make('h2', '', copy.songs)); heading.append(headingCopy); trackSection.append(heading); if (state.artistLoading && !top.length) trackSection.append(make('div', 'streaming-state', chinese ? '正在读取艺人...' : 'Reading artist...')); else if (!state.artistLoading && !top.length && !state.artistError) trackSection.append(make('div', 'streaming-state', chinese ? '这个艺人没有可显示的歌曲。' : 'This artist has no tracks to display.')); const list = make('div', 'streaming-artist-track-list'); top.forEach((track) => appendTrackRow(list, track)); trackSection.append(list); page.append(trackSection); const albums = state.selectedArtistDetail?.albums || []; if (albums.length) { const albumSection = make('section', 'streaming-artist-section'); const albumHeading = make('div', 'streaming-artist-section-heading'); const albumHeadingCopy = make('div'); albumHeadingCopy.append(make('span', '', copy.albums), make('h2', '', copy.discography)); albumHeading.append(albumHeadingCopy); albumSection.append(albumHeading); const albumList = make('div', 'streaming-artist-album-list'); albums.forEach((item) => appendAlbumCard(albumList, item)); albumSection.append(albumList); page.append(albumSection); } return page; };
+const renderPlaylistOverflow = (items) => {
+  const wrap = make('div', 'playlist-menu-wrap');
+  const menu = make('div', 'playlist-action-menu');
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  const toggle = actionButton(copy.more, 'more', () => {
+    menu.hidden = !menu.hidden;
+  }, { iconOnly: true, className: 'tool-button', title: copy.more, ariaLabel: copy.more });
+  items.filter(Boolean).forEach((item) => {
+    const button = make('button', 'playlist-action-menu-item');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitem');
+    if (item.icon) button.append(makeIcon(item.icon, 14));
+    button.append(make('span', '', item.label));
+    if (item.disabled) button.disabled = true;
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      menu.hidden = true;
+      void Promise.resolve(item.onSelect?.()).catch(reportError);
+    });
+    menu.append(button);
+  });
+  wrap.append(toggle, menu);
+  return wrap;
+};
 const renderPlaylistDetail = () => {
   const playlist = state.selectedPlaylistDetail || state.selectedPlaylist;
+  if (!playlist) {
+    const empty = make('div', 'playlist-detail-panel');
+    empty.append(make('div', 'playlist-empty-guide', make('p', '', copy.playlistPick)));
+    return empty;
+  }
   const tracks = state.selectedPlaylistDetail?.tracks || [];
   const coverSrc = playlist?.coverThumb || playlist?.coverUrl || defaultCover;
   const playable = tracks.filter((track) => track.playable !== false);
-  const page = make('div', 'playlists-page streaming-playlist-page');
+  const daily = Boolean(playlist?.dailyKind || isVirtualDailyPlaylist(playlist));
   const panel = make('div', 'playlist-detail-panel');
   const header = make('header', 'playlist-detail-header');
-  header.style.cssText = 'display:grid;grid-template-columns:132px minmax(0,1fr);align-content:center;gap:14px 20px;';
   header.dataset.hasArt = String(Boolean(playlist?.coverThumb || playlist?.coverUrl));
   if (playlist?.coverThumb || playlist?.coverUrl) {
     const art = make('div', 'playlist-detail-hero-art');
@@ -618,38 +671,47 @@ const renderPlaylistDetail = () => {
   appendNativeCover(cover, coverSrc, playlist?.id || playlist?.providerPlaylistId, 144);
   header.append(cover);
   const details = make('div', 'playlist-detail-copy');
-  details.append(actionButton(copy.back, 'arrow', () => {
-    state.selectedPlaylist = null;
-    state.selectedPlaylistDetail = null;
-    state.playlistError = null;
-    render();
-  }, { className: 'streaming-playlist-back', title: copy.back }));
-  details.append(make('span', '', playlist?.dailyKind ? dailyKindLabel(playlist.dailyKind) : copy.playlistKicker));
+  details.append(make('span', '', daily ? dailyKindLabel(playlist.dailyKind || playlist.kind) : copy.playlistKicker));
   details.append(make('h2', '', playlist?.title || playlist?.name || ''));
   details.append(make('p', '', playlist?.creator || playlist?.provider || ''));
   details.append(make('small', '', [playlist?.provider, formatTrackCount(tracks.length || playlist?.trackCount), formatAlbumDuration(tracks)].filter(Boolean).join(' · ')));
   header.append(details);
   const actions = make('div', 'playlist-actions playlist-detail-primary-actions');
-  actions.style.cssText = 'display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;align-self:start;gap:8px;width:auto;min-width:0;';
-  const playlistAction = (label, iconName, handler, options = {}) => {
-    const button = actionButton(label, iconName, handler, options);
-    button.style.flex = '0 0 auto';
-    button.style.width = 'auto';
-    button.style.display = 'inline-flex';
-    button.style.alignItems = 'center';
-    return button;
-  };
-  actions.append(playlistAction(state.playlistLoading ? copy.readingPlaylist : copy.playPlaylist, state.playlistLoading ? 'refresh' : 'play', handlePlayPlaylist, { className: 'primary-action', disabled: state.playlistLoading || !playable.length, title: copy.playPlaylist }));
-  actions.append(playlistAction(copy.addToQueue, 'list', handleQueuePlaylist, { className: 'secondary-action', disabled: !playable.length, title: copy.addToQueue }));
+  actions.append(actionButton(state.playlistLoading ? copy.readingPlaylist : copy.playPlaylist, state.playlistLoading ? 'refresh' : 'play', handlePlayPlaylist, { className: 'primary-action', disabled: state.playlistLoading || !playable.length, title: copy.playPlaylist }));
+  actions.append(actionButton(copy.addToQueue, 'list', handleQueuePlaylist, { className: 'secondary-action', disabled: !playable.length, title: copy.addToQueue }));
   const downloadable = tracks.filter((track) => canDownloadTrackToMusic(track)).length;
-  actions.append(playlistAction(state.musicPlaylistDownload ? copy.downloading : copy.downloadPlaylistToMusic, state.musicPlaylistDownload ? 'refresh' : 'download', () => openPlaylistDownloadDialog(state.selectedPlaylist || playlist), { className: 'secondary-action', disabled: state.playlistLoading || !downloadable || Boolean(state.musicPlaylistDownload), title: copy.downloadPlaylistToMusic }));
-  if (playlist?.dailyKind || isVirtualDailyPlaylist(playlist)) {
-    actions.append(playlistAction(state.refreshingDaily ? copy.dailyRefreshing : copy.dailyRefreshOne, 'refresh', async () => {
-      await refreshDailyPlaylists([playlist]);
-      await openPlaylist(asStreamingDailyPlaylist(playlist));
-    }, { className: 'secondary-action', disabled: state.refreshingDaily, title: copy.dailyRefresh }));
-    actions.append(playlistAction(copy.add, 'list', () => syncDailyPlaylists([playlist]), { className: 'secondary-action', title: copy.add }));
-  } else if (!state.importingPlaylistKey) actions.append(playlistAction(copy.add, 'list', () => handleImportStreamingPlaylist(state.selectedPlaylist || playlist), { className: 'secondary-action', title: copy.add }));
+  const extras = [
+    {
+      label: state.musicPlaylistDownload ? copy.downloading : copy.downloadPlaylistToMusic,
+      icon: state.musicPlaylistDownload ? 'refresh' : 'download',
+      disabled: state.playlistLoading || !downloadable || Boolean(state.musicPlaylistDownload),
+      onSelect: () => openPlaylistDownloadDialog(state.selectedPlaylist || playlist),
+    },
+  ];
+  if (daily) {
+    extras.unshift({
+      label: state.refreshingDaily ? copy.dailyRefreshing : copy.dailyRefreshOne,
+      icon: 'refresh',
+      disabled: state.refreshingDaily,
+      onSelect: async () => {
+        await refreshDailyPlaylists([playlist]);
+        await openPlaylist(asStreamingDailyPlaylist(playlist));
+      },
+    });
+    extras.push({
+      label: copy.add,
+      icon: 'list',
+      disabled: Object.keys(state.syncingDailyKeys).length > 0,
+      onSelect: () => syncDailyPlaylists([playlist]),
+    });
+  } else if (!state.importingPlaylistKey) {
+    extras.push({
+      label: copy.add,
+      icon: 'list',
+      onSelect: () => handleImportStreamingPlaylist(state.selectedPlaylist || playlist),
+    });
+  }
+  actions.append(renderPlaylistOverflow(extras));
   header.append(actions);
   panel.append(header);
   if (state.playlistError) panel.append(make('p', 'playlist-detail-error', state.playlistError));
@@ -660,11 +722,72 @@ const renderPlaylistDetail = () => {
   tracks.slice(0, state.playlistTrackLimit).forEach((track) => appendPlaylistTrackRow(list, track));
   if (tracks.length > state.playlistTrackLimit) list.append(actionButton(copy.loadMore, null, () => { state.playlistTrackLimit += albumTrackRenderStep; render(); }, { className: 'streaming-load-more' }));
   panel.append(list);
-  page.append(panel);
-  return page;
+  return panel;
 };
 
-const renderPlaylistPanel = (playlists) => { const panel = make('div', 'streaming-playlist-panel'); const form = make('form', 'streaming-playlist-import'); const copyBox = make('div', 'streaming-playlist-import-copy'); const copyTitle = make('span', '', copy.addPlaylist); copyTitle.prepend(makeIcon('link', 18)); copyBox.append(copyTitle, make('p', '', copy.playlistHint)); form.append(copyBox); const label = make('label'); label.append(makeIcon('link', 18)); const input = document.createElement('input'); input.value = state.playlistUrl; input.placeholder = copy.playlistPlaceholder; input.disabled = Boolean(state.importingPlaylistKey); input.addEventListener('input', () => { state.playlistUrl = input.value; }); label.append(input); form.append(label); form.append(actionButton(state.importingPlaylistKey ? copy.adding : copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), { disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add })); form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); }); const sync = make('section', 'streaming-account-playlist-sync'); const syncCopy = make('div', 'streaming-playlist-import-copy'); const syncTitle = make('span', '', copy.syncPlaylists); syncTitle.prepend(makeIcon('refresh', 18)); syncCopy.append(syncTitle, make('p', '', copy.syncHint)); sync.append(syncCopy); const toolbar = make('div', 'streaming-account-playlist-toolbar'); if (state.accountPanelOpen) { const tabs = make('div', 'streaming-account-provider-tabs'); ['netease', 'qqmusic'].forEach((name) => { const descriptor = state.providers.find((item) => item.name === name); const tab = actionButton(descriptor?.displayName || (name === 'netease' ? '网易云音乐' : 'QQ 音乐'), null, () => { state.accountPlaylistProvider = name; state.accountPlaylists = []; state.selectedAccountPlaylistIds = {}; void loadAccountPlaylists(name); }, { className: name === state.accountPlaylistProvider ? 'active' : '', disabled: state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 }); if (descriptor?.accountConnected) tab.append(make('small', '', ` ${copy.signedIn}`)); tabs.append(tab); }); toolbar.append(tabs); } else toolbar.append(make('span', 'streaming-account-playlist-hint', state.providers.some((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected) ? copy.preferLoggedIn : copy.needLogin)); const stale = typeof streamApi()?.listAccountPlaylists !== 'function'; toolbar.append(actionButton(stale ? copy.restart : state.loadingAccountPlaylists ? copy.reading : state.accountPanelOpen ? copy.refresh : copy.syncMine, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), { className: 'streaming-playlist-add', disabled: stale || state.loadingAccountPlaylists || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); sync.append(toolbar); if (state.accountPanelOpen) { const box = make('div', 'streaming-account-playlist-panel'); if (state.accountPlaylists.length) { const selection = make('div', 'streaming-account-playlist-selection'); const all = state.accountPlaylists.every((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true); selection.append(actionButton(all ? copy.deselectAll : copy.selectAll, all ? 'check' : 'list', () => { state.selectedAccountPlaylistIds = all ? {} : Object.fromEntries(state.accountPlaylists.map((item) => [item.providerPlaylistId, true])); render(); }, { className: 'streaming-inline-action' }), make('span', '', copy.selected(Object.values(state.selectedAccountPlaylistIds).filter(Boolean).length, state.accountPlaylists.length))); box.append(selection); const list = make('div', 'streaming-account-playlist-list'); state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item)); box.append(list); const actions = make('div', 'streaming-account-playlist-actions'); actions.append(make('span', '', state.accountPlaylistProvider), actionButton(copy.syncSelected, 'list', () => requestAccountPlaylistSync(state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId])), { className: 'streaming-playlist-add', disabled: !state.accountPlaylists.some((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId]) || Object.keys(state.syncingAccountPlaylistIds).length > 0 })); box.append(actions); } else box.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists)); sync.append(box); } panel.append(form); panel.append(renderDailyPlaylistPanel()); panel.append(sync); if (playlists.length) { const list = make('div', 'streaming-discovery-list'); playlists.forEach((item) => appendPlaylistCard(list, item)); panel.append(list); } return panel; };
+const renderPlaylistPanel = (playlists) => {
+  const page = make('div', 'playlists-page streaming-playlist-workspace');
+  const sidebar = make('aside', 'playlist-sidebar');
+  const form = make('form', 'streaming-playlist-import');
+  const label = make('label', 'search-box echo-search-surface');
+  label.append(makeIcon('link', 16));
+  const input = document.createElement('input');
+  input.value = state.playlistUrl;
+  input.placeholder = copy.playlistPlaceholder;
+  input.disabled = Boolean(state.importingPlaylistKey);
+  input.addEventListener('input', () => { state.playlistUrl = input.value; });
+  label.append(input);
+  form.append(label);
+  form.append(actionButton(copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), {
+    iconOnly: true, className: 'tool-button', disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add,
+  }));
+  form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); });
+  sidebar.append(form);
+  const daily = renderDailyPlaylistPanel();
+  if (daily) sidebar.append(daily);
+  const stale = typeof streamApi()?.listAccountPlaylists !== 'function';
+  const accountTools = [
+    actionButton(copy.refresh, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), {
+      iconOnly: true, className: 'tool-button', disabled: stale || state.loadingAccountPlaylists, title: copy.syncMine,
+    }),
+  ];
+  sidebar.append(renderFoldSection(copy.syncPlaylists, state.accountSectionOpen, () => {
+    state.accountSectionOpen = !state.accountSectionOpen;
+    persistMemory();
+    if (state.accountSectionOpen && !state.accountPanelOpen) openAccountPlaylistSync();
+    render();
+  }, accountTools, (body) => {
+    const tabs = make('nav', 'album-detail-tabs streaming-account-provider-tabs');
+    ['netease', 'qqmusic'].forEach((name) => {
+      const descriptor = state.providers.find((item) => item.name === name);
+      const tab = make('button', 'album-detail-tab', descriptor?.displayName || name);
+      tab.type = 'button';
+      if (name === state.accountPlaylistProvider) tab.setAttribute('aria-current', 'page');
+      tab.disabled = state.loadingAccountPlaylists;
+      tab.addEventListener('click', () => {
+        state.accountPlaylistProvider = name;
+        state.accountPlaylists = [];
+        void loadAccountPlaylists(name);
+      });
+      tabs.append(tab);
+    });
+    body.append(tabs);
+    if (!state.accountPlaylists.length) {
+      body.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists));
+      return;
+    }
+    const list = make('div', 'streaming-account-playlist-list');
+    state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item));
+    body.append(list);
+  }));
+  if (playlists.length) {
+    const list = make('div', 'streaming-account-playlist-list');
+    playlists.forEach((item) => appendPlaylistCard(list, item));
+    sidebar.append(list);
+  }
+  page.append(sidebar, renderPlaylistDetail());
+  return page;
+};
 
 const resetSearchInput = () => {
   liveSearchInput = null;
@@ -794,27 +917,35 @@ const renderMain = () => {
   workspace.append(command);
 
   const toolbar = make('section', 'streaming-toolbar');
-  const resultTabs = make('nav', 'streaming-result-tabs');
+  const resultTabs = make('nav', 'album-detail-tabs streaming-result-tabs');
   resultTabs.setAttribute('aria-label', copy.tabs);
   ['track', 'album', 'artist', 'playlist'].forEach((tabName) => {
-    const tab = actionButton(copy[tabName], null, () => { state.activeTab = tabName; state.qualityMenuOpen = false; void runSearch(1, 'replace'); }, {});
-    tab.dataset.active = String(tabName === state.activeTab);
+    const tab = make('button', 'album-detail-tab', copy[tabName]);
+    tab.type = 'button';
+    if (tabName === state.activeTab) tab.setAttribute('aria-current', 'page');
+    tab.addEventListener('click', () => { state.activeTab = tabName; state.qualityMenuOpen = false; void runSearch(1, 'replace'); });
     resultTabs.append(tab);
   });
   toolbar.append(resultTabs);
-  const qualityBox = make('div', 'streaming-quality-select');
-  const qualityButton = actionButton(copy.quality, 'chevron', () => { state.qualityMenuOpen = !state.qualityMenuOpen; render(); }, { title: copy.quality });
-  qualityButton.replaceChildren(make('span', '', copy.quality), make('strong', '', copy[state.quality] || state.quality), makeIcon('chevron', 15));
+  const qualityBox = make('div', 'sort-select streaming-quality-select');
+  const qualityButton = make('button', 'sort-button');
+  qualityButton.type = 'button';
+  qualityButton.title = copy.quality;
+  qualityButton.setAttribute('aria-haspopup', 'listbox');
+  qualityButton.setAttribute('aria-expanded', String(state.qualityMenuOpen));
+  qualityButton.append(make('span', 'sort-button-label', copy[state.quality] || state.quality), makeIcon('chevron', 15));
+  qualityButton.addEventListener('click', () => { state.qualityMenuOpen = !state.qualityMenuOpen; render(); });
   qualityBox.append(qualityButton);
   if (state.qualityMenuOpen) {
-    const menu = make('div', 'streaming-quality-menu');
+    const menu = make('div', 'sort-menu streaming-quality-menu');
     menu.setAttribute('role', 'listbox');
+    menu.dataset.state = 'open';
     qualities.forEach((quality) => {
-      const option = actionButton(copy[quality], state.quality === quality ? 'check' : null, () => handleQualityChange(quality), {});
+      const option = make('button', 'sort-option', copy[quality]);
+      option.type = 'button';
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', String(state.quality === quality));
-      option.replaceChildren(make('span', '', copy[quality]));
-      option.append(make('small', '', copy[`${quality}Description`]));
+      option.addEventListener('click', () => handleQualityChange(quality));
       menu.append(option);
     });
     qualityBox.append(menu);
@@ -869,7 +1000,7 @@ const renderMain = () => {
   return page;
 };
 const renderAccountEntry = () => {
-  if (!pageRoot || state.selectedLyricsTrack || state.selectedAlbum || state.selectedArtist || state.selectedPlaylist) return;
+  if (!pageRoot || state.selectedLyricsTrack || state.selectedAlbum || state.selectedArtist) return;
   const heading = pageRoot.querySelector('.streaming-source-rail-heading');
   if (!heading || heading.querySelector('[data-echo-account-entry]')) return;
   const button = actionButton(copy.accounts, 'user', openAccountPage, { className: 'settings-action-button streaming-account-toggle' });
@@ -885,7 +1016,7 @@ const render = () => {
   persistMemory();
   const search = liveSearchInput && pageRoot.contains(liveSearchInput) ? liveSearchInput : pageRoot.querySelector?.('.streaming-search-box input');
   const keepSearch = Boolean(search && document.activeElement === search);
-  pageRoot.replaceChildren(state.ready ? (state.accountPageOpen ? renderAccountView() : state.selectedAlbum ? renderAlbumDetail() : state.selectedArtist ? renderArtistDetail() : state.selectedPlaylist ? renderPlaylistDetail() : state.accepted ? renderMain() : renderGate()) : make('div', 'streaming-page streaming-hub', make('div', 'streaming-results-empty', copy.loading)));
+  pageRoot.replaceChildren(state.ready ? (state.accountPageOpen ? renderAccountView() : state.selectedAlbum ? renderAlbumDetail() : state.selectedArtist ? renderArtistDetail() : state.accepted ? renderMain() : renderGate()) : make('div', 'streaming-page streaming-hub', make('div', 'streaming-results-empty', copy.loading)));
   if (!state.accountPageOpen) renderAccountEntry();
   attachLyricsActions();
   attachNeteaseTrackActions();
@@ -1971,7 +2102,7 @@ const selectNativePlaylist = (imported) => {
 const openImportedPlaylist = async (imported) => {
   window.dispatchEvent(new Event('library:playlists-changed'));
   try { await libraryApi()?.getPlaylists?.(); } catch {}
-  if (!imported?.playlistId) return;
+  if (!imported?.playlistId) return false;
   const nav = findPlaylistsNav();
   if (nav) nav.click();
   else {
@@ -1981,8 +2112,9 @@ const openImportedPlaylist = async (imported) => {
   revealNativePlaylists();
   for (let attempt = 0; attempt < 8; attempt += 1) {
     await sleep(80);
-    if (selectNativePlaylist(imported)) return;
+    if (selectNativePlaylist(imported)) return true;
   }
+  return false;
 };
 const handleImportPlaylist = async () => { const url = state.playlistUrl.trim(); if (!url) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); state.importingPlaylistKey = '__url__'; render(); try { const imported = await stream.importPlaylistFromUrl(url); state.playlistUrl = ''; state.actionMessage = copy.imported(imported.playlistName, imported.importedCount); state.actionError = null; await openPlaylist({ title: imported.playlistName, name: imported.playlistName, importedPlaylistId: imported.playlistId, playlistId: imported.playlistId, trackCount: imported.importedCount }); } finally { state.importingPlaylistKey = null; render(); } };
 const handleImportStreamingPlaylist = async (playlist) => {
@@ -2020,6 +2152,7 @@ const neteaseConnected = () => {
   if (status) return status.connected === true;
   return Boolean(state.providers.find((item) => item.name === 'netease' && item.accountConnected));
 };
+const ncmExtrasVisible = () => neteaseConnected() || togetherUi.snapshot.loggedIn === true || togetherUi.snapshot.inRoom === true;
 const beijingStamp = (value = new Date()) => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(value);
   const pick = (type) => parts.find((item) => item.type === type)?.value || '';
@@ -2274,69 +2407,62 @@ const toggleAutoRefreshDaily = () => {
   if (state.autoRefreshDaily) void runAutoDailyRefresh();
 };
 const appendDailyPlaylistRow = (parent, playlist) => {
-  const key = dailyPlaylistKey(playlist);
-  const row = make('div', 'streaming-account-playlist-row streaming-daily-playlist-row');
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = state.selectedDailyPlaylistKeys[key] === true;
-  checkbox.disabled = Object.keys(state.syncingDailyKeys).length > 0 || state.refreshingDaily;
-  checkbox.setAttribute('aria-label', `${copy.selectAll} ${playlist.title}`);
-  checkbox.addEventListener('change', () => { state.selectedDailyPlaylistKeys[key] = checkbox.checked; render(); });
-  row.append(checkbox);
-  appendCover(row, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id || key);
+  const mapped = asStreamingDailyPlaylist(playlist);
+  const row = make('button', 'streaming-account-playlist-row streaming-daily-playlist-row');
+  row.type = 'button';
+  row.dataset.active = String(playlistIdentity(state.selectedPlaylist) === playlistIdentity(mapped));
+  appendCover(row, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id || dailyPlaylistKey(playlist));
   const main = make('span', 'streaming-account-playlist-main');
-  main.append(make('strong', '', playlist.title || 'Untitled'));
-  const synced = Boolean(state.dailySyncedKeys[key]);
-  main.append(make('small', '', `${dailyKindLabel(playlist.kind)}${synced ? ` · ${copy.signedIn}` : ''} · ${formatTrackCount(playlist.trackCount)}${playlist.creator ? ` · ${playlist.creator}` : ''}`));
+  main.append(make('strong', '', playlist.title || 'Untitled'), make('small', '', `${dailyKindLabel(playlist.kind)} · ${formatTrackCount(playlist.trackCount)}`));
   row.append(main);
-  const syncing = state.syncingDailyKeys[key] === true;
-  row.append(actionButton(copy.dailyRefreshOne, 'refresh', () => refreshDailyPlaylists([playlist]), { className: 'streaming-account-playlist-add-one', disabled: state.refreshingDaily || Object.keys(state.syncingDailyKeys).length > 0, title: copy.dailyRefreshOne }));
-  row.append(actionButton(syncing ? copy.syncing : copy.add, syncing ? 'refresh' : 'list', () => syncDailyPlaylists([playlist]), { className: 'streaming-account-playlist-add-one', disabled: Object.keys(state.syncingDailyKeys).length > 0, title: syncing ? copy.syncing : copy.add }));
-  row.addEventListener('click', (event) => {
-    if (event.target.closest('input, button')) return;
-    void openPlaylist(asStreamingDailyPlaylist(playlist)).catch(reportError);
-  });
+  row.addEventListener('click', () => void openPlaylist(mapped).catch(reportError));
   row.addEventListener('contextmenu', (event) => openStreamMenu(event, [
     { label: copy.dailyRefreshOne, icon: 'refresh', disabled: state.refreshingDaily, onSelect: () => refreshDailyPlaylists([playlist]) },
     { label: copy.add, icon: 'list', disabled: Object.keys(state.syncingDailyKeys).length > 0, onSelect: () => syncDailyPlaylists([playlist]) },
     { label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(asStreamingDailyPlaylist(playlist)) },
-    { label: copy.dailyOpenNative, icon: 'arrow', onSelect: () => syncDailyPlaylists([playlist], { openNative: true }) },
   ]));
   parent.append(row);
 };
+const renderFoldSection = (title, open, onToggle, tools, fill) => {
+  const section = make('section', 'streaming-fold');
+  section.dataset.open = String(open);
+  const head = make('div', 'streaming-fold-head');
+  const toggle = actionButton(open ? togetherCopy.collapse : togetherCopy.expand, 'chevron', onToggle, {
+    iconOnly: true, className: 'tool-button streaming-fold-toggle', title: open ? togetherCopy.collapse : togetherCopy.expand,
+  });
+  toggle.dataset.open = String(open);
+  const label = make('button', 'streaming-fold-title', title);
+  label.type = 'button';
+  label.addEventListener('click', onToggle);
+  head.append(toggle, label);
+  (tools || []).forEach((node) => head.append(node));
+  section.append(head);
+  if (open) {
+    const body = make('div', 'streaming-fold-body');
+    fill(body);
+    section.append(body);
+  }
+  return section;
+};
 const renderDailyPlaylistPanel = () => {
-  const panel = make('section', 'streaming-account-playlist-sync streaming-daily-playlist-sync');
-  const copyBox = make('div', 'streaming-playlist-import-copy');
-  const title = make('span', '', copy.dailyTitle);
-  title.prepend(makeIcon('radio', 18));
-  copyBox.append(title, make('p', '', copy.dailyHint));
-  panel.append(copyBox);
-  const toolbar = make('div', 'streaming-account-playlist-toolbar');
-  toolbar.append(actionButton(state.loadingDailyPlaylists ? copy.reading : copy.dailyScan, 'search', () => loadDailyPlaylists(), { className: 'streaming-playlist-add', disabled: state.loadingDailyPlaylists || state.refreshingDaily, title: copy.dailyScan }));
-  toolbar.append(actionButton(state.refreshingDaily ? copy.dailyRefreshing : copy.dailyRefresh, 'refresh', () => refreshDailyPlaylists(), { className: 'streaming-playlist-add', disabled: state.loadingDailyPlaylists || state.refreshingDaily, title: copy.dailyRefresh }));
-  toolbar.append(actionButton(state.autoRefreshDaily ? copy.dailyAuto : copy.dailyManual, 'check', toggleAutoRefreshDaily, { className: state.autoRefreshDaily ? 'active' : '', title: state.autoRefreshDaily ? copy.dailyAutoOn : copy.dailyAutoOff }));
-  panel.append(toolbar);
-  const box = make('div', 'streaming-account-playlist-panel');
-  if (state.dailyPlaylists.length) {
-    const selection = make('div', 'streaming-account-playlist-selection');
-    const all = state.dailyPlaylists.every((item) => state.selectedDailyPlaylistKeys[dailyPlaylistKey(item)] === true);
-    selection.append(actionButton(all ? copy.deselectAll : copy.selectAll, all ? 'check' : 'list', () => {
-      state.selectedDailyPlaylistKeys = all ? {} : Object.fromEntries(state.dailyPlaylists.map((item) => [dailyPlaylistKey(item), true]));
-      render();
-    }, { className: 'streaming-inline-action' }), make('span', '', copy.selected(Object.values(state.selectedDailyPlaylistKeys).filter(Boolean).length, state.dailyPlaylists.length)));
-    box.append(selection);
+  if (!neteaseConnected()) return null;
+  return renderFoldSection(copy.dailyTitle, state.dailySectionOpen, () => {
+    state.dailySectionOpen = !state.dailySectionOpen;
+    persistMemory();
+    render();
+  }, [
+    actionButton(copy.dailyScan, 'refresh', () => loadDailyPlaylists(), {
+      iconOnly: true, className: 'tool-button', title: copy.dailyScan, disabled: state.loadingDailyPlaylists || state.refreshingDaily,
+    }),
+  ], (body) => {
+    if (!state.dailyPlaylists.length) {
+      body.append(make('div', 'streaming-results-empty', state.loadingDailyPlaylists ? copy.loading : copy.dailyEmpty));
+      return;
+    }
     const list = make('div', 'streaming-account-playlist-list');
     state.dailyPlaylists.forEach((item) => appendDailyPlaylistRow(list, item));
-    box.append(list);
-    const actions = make('div', 'streaming-account-playlist-actions');
-    actions.append(make('span', '', state.autoRefreshDaily ? copy.dailyAutoOn : copy.dailyAutoOff));
-    actions.append(actionButton(copy.dailySyncSelected, 'list', () => syncDailyPlaylists(state.dailyPlaylists.filter((item) => state.selectedDailyPlaylistKeys[dailyPlaylistKey(item)])), { className: 'streaming-playlist-add', disabled: !state.dailyPlaylists.some((item) => state.selectedDailyPlaylistKeys[dailyPlaylistKey(item)]) || Object.keys(state.syncingDailyKeys).length > 0 }));
-    box.append(actions);
-  } else {
-    box.append(make('div', 'streaming-results-empty', state.loadingDailyPlaylists ? copy.loading : (neteaseConnected() ? copy.dailyEmpty : copy.dailyNeedLogin)));
-  }
-  panel.append(box);
-  return panel;
+    body.append(list);
+  });
 };
 const mergeAccountPlaylists = (primary, extra) => {
   const playlists = [];
@@ -2447,7 +2573,7 @@ const handleQualityChange = async (quality) => { state.quality = quality; state.
 const confirmNotice = async () => { if (state.noticeConsent.trim() !== copy.consentPhrase) return; state.noticeOpen = false; state.noticeConsent = ''; state.accepted = true; try { await appApi()?.setSettings?.({ streamingPlaylistImportNoticeAccepted: true }); } catch {} render(); await Promise.all([loadProviders().catch((error) => { state.error = error.message; }), loadFavorites(), loadJobs()]); render(); if (state.pendingAccountSync) { const items = state.pendingAccountSync; state.pendingAccountSync = null; await syncAccountPlaylists(items); } if (state.query) await runSearch(1, 'replace'); };
 const cancelNotice = () => { state.noticeOpen = false; state.noticeConsent = ''; state.pendingAccountSync = null; render(); };
 const loadInitial = async () => { let settings = {}; try { settings = await appApi()?.getSettings?.() || {}; } catch {} state.downloadEnabled = settings.downloadsFeatureUnlocked === true; state.accepted = config.requireConsent === false || settings.streamingPlaylistImportNoticeAccepted === true; state.ready = true; render(); if (!state.accepted) { state.noticeOpen = false; return; } try { await loadProviders(); await Promise.all([loadFavorites(), loadJobs(), loadAccountStatuses().catch(() => undefined)]); bindAccountStatuses(); } catch (error) { state.accountErrors.__global = error instanceof Error ? error.message : String(error); } render(); if (state.query && !state.result) await runSearch(1, 'replace'); if (neteaseConnected()) { if (shouldAutoRefreshDaily()) void runAutoDailyRefresh(); else if (!state.dailyPlaylists.length) void loadDailyPlaylists().catch(() => undefined); paintNativeDailyPanel(); } };
-const bindAccountStatuses = () => { try { accountUnsubscribe?.(); } catch {} const api = accountApi(); if (!api?.onStatusesChanged) return; accountUnsubscribe = api.onStatusesChanged((statuses) => { if (Array.isArray(statuses)) state.accountStatuses = statuses; void loadProviders(true).catch(() => undefined); refreshAccountPage(); if (neteaseConnected() && shouldAutoRefreshDaily()) void runAutoDailyRefresh(); paintNativeDailyPanel(); void togetherInvoke('togetherRefresh', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => undefined); }); };
+const bindAccountStatuses = () => { try { accountUnsubscribe?.(); } catch {} const api = accountApi(); if (!api?.onStatusesChanged) return; accountUnsubscribe = api.onStatusesChanged((statuses) => { if (Array.isArray(statuses)) state.accountStatuses = statuses; void loadProviders(true).catch(() => undefined); refreshAccountPage(); if (neteaseConnected() && shouldAutoRefreshDaily()) void runAutoDailyRefresh(); paintNativeDailyPanel(); paintTogetherChrome(); void togetherInvoke('togetherRefresh', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => paintTogetherChrome()); }); };
 const installNativePlaylistImport = () => {
   const marker = 'data-echo-streaming-playlist-import';
   const log = (message, extra) => {
@@ -2543,24 +2669,28 @@ const installNativePlaylistImport = () => {
     input.focus();
   };
   const dailyMarker = 'data-echo-streaming-daily';
+  const dailyDetailMarker = 'data-echo-streaming-daily-detail';
   const dailyStyleId = 'echo-streaming-daily-native-style';
+  const refreshIcon = (size) => lucideSvg(size, '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>');
+  const chevronIcon = (size) => lucideSvg(size, '<path d="m6 9 6 6 6-6"/>');
   const ensureDailyStyle = () => {
     if (document.getElementById(dailyStyleId)) return;
     const style = document.createElement('style');
     style.id = dailyStyleId;
     style.textContent = `
-      .echo-streaming-daily-native { display: grid; gap: 8px; margin: 0 10px 10px; padding: 10px; border: 1px solid var(--theme-panel-border, rgba(0,0,0,.08)); border-radius: 10px; background: var(--theme-panel-bg, transparent); }
-      .echo-streaming-daily-native header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .echo-streaming-daily-native header strong { font-size: 13px; }
-      .echo-streaming-daily-native header small { display: block; color: var(--theme-muted-text, #6c7179); font-size: 11px; font-weight: 500; }
-      .echo-streaming-daily-native-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-      .echo-streaming-daily-native-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
-      .echo-streaming-daily-native-row { display: grid; grid-template-columns: 36px minmax(0,1fr) auto auto auto; align-items: center; gap: 8px; min-height: 44px; }
-      .echo-streaming-daily-native-row img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; }
-      .echo-streaming-daily-native-row span { display: grid; min-width: 0; }
-      .echo-streaming-daily-native-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-      .echo-streaming-daily-native-row small { color: var(--theme-muted-text, #6c7179); font-size: 11px; }
-      .echo-streaming-daily-native-empty { color: var(--theme-muted-text, #6c7179); font-size: 12px; }
+      .echo-streaming-daily-native { display: grid; gap: 2px; margin: 6px 8px 10px; }
+      .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-native-list { display: none; }
+      .echo-streaming-daily-native-head { display: grid; grid-template-columns: 28px minmax(0,1fr) 34px; align-items: center; gap: 4px; min-height: 34px; }
+      .echo-streaming-daily-native-head strong { overflow: hidden; font-size: 12px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+      .echo-streaming-daily-toggle { display: grid; width: 28px; height: 28px; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
+      .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-toggle { transform: rotate(-90deg); }
+      .echo-streaming-daily-native-list { display: grid; gap: 1px; max-height: 42vh; overflow: auto; }
+      .echo-streaming-daily-item { display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      .echo-streaming-daily-item:hover { background: var(--theme-list-row-bg-hover, rgba(0,0,0,.05)); }
+      .echo-streaming-daily-item img { width: 32px; height: 32px; object-fit: cover; border-radius: 7px; }
+      .echo-streaming-daily-item span { display: grid; min-width: 0; }
+      .echo-streaming-daily-item strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+      .echo-streaming-daily-item small { overflow: hidden; color: var(--theme-muted-text, #6c7179); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
       .playlist-home-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) max-content 40px 40px; }
       .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) 40px 40px; }
       .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 34px 34px; }
@@ -2574,12 +2704,13 @@ const installNativePlaylistImport = () => {
     const header = findHeader();
     return header?.parentElement || null;
   };
-  const nativeButton = (label, title, handler, extraClass) => {
+  const nativeIconButton = (svg, title, handler) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = extraClass || 'tool-button';
-    button.textContent = label;
-    button.title = title || label;
+    button.className = 'tool-button';
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.innerHTML = svg;
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -2590,44 +2721,43 @@ const installNativePlaylistImport = () => {
   const renderNativeDaily = (host) => {
     host.replaceChildren();
     ensureDailyStyle();
-    const header = document.createElement('header');
-    const copyBox = document.createElement('div');
+    host.dataset.collapsed = String(state.dailySidebarCollapsed === true);
+    const header = document.createElement('div');
+    header.className = 'echo-streaming-daily-native-head';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'echo-streaming-daily-toggle';
+    toggle.title = state.dailySidebarCollapsed ? togetherCopy.expand : togetherCopy.collapse;
+    toggle.setAttribute('aria-label', toggle.title);
+    toggle.innerHTML = chevronIcon(14);
+    const fold = () => {
+      state.dailySidebarCollapsed = !state.dailySidebarCollapsed;
+      persistMemory();
+      paintNativeDailyPanel();
+    };
+    toggle.addEventListener('click', fold);
     const title = document.createElement('strong');
     title.textContent = copy.dailyTitle;
-    const hint = document.createElement('small');
-    hint.textContent = state.autoRefreshDaily ? copy.dailyAutoOn : copy.dailyAutoOff;
-    copyBox.append(title, hint);
-    const actions = document.createElement('div');
-    actions.className = 'echo-streaming-daily-native-actions';
-    actions.append(
-      nativeButton(state.loadingDailyPlaylists ? copy.reading : copy.dailyScan, copy.dailyScan, () => loadDailyPlaylists()),
-      nativeButton(state.refreshingDaily ? copy.dailyRefreshing : copy.dailyRefresh, copy.dailyRefresh, () => refreshDailyPlaylists()),
-      nativeButton(state.autoRefreshDaily ? copy.dailyAuto : copy.dailyManual, state.autoRefreshDaily ? copy.dailyAutoOn : copy.dailyAutoOff, toggleAutoRefreshDaily),
-    );
-    header.append(copyBox, actions);
+    title.style.cursor = 'pointer';
+    title.addEventListener('click', fold);
+    header.append(toggle, title, nativeIconButton(refreshIcon(15), copy.dailyScan, () => loadDailyPlaylists()));
     host.append(header);
-    if (state.actionMessage) {
-      const status = document.createElement('small');
-      status.textContent = state.actionMessage;
-      host.append(status);
-    }
-    if (state.actionError) {
-      const error = document.createElement('small');
-      error.textContent = state.actionError;
-      host.append(error);
-    }
-    if (!state.dailyPlaylists.length) {
-      const empty = document.createElement('div');
-      empty.className = 'echo-streaming-daily-native-empty';
-      empty.textContent = state.loadingDailyPlaylists ? copy.loading : (neteaseConnected() ? copy.dailyEmpty : copy.dailyNeedLogin);
-      host.append(empty);
-      return;
-    }
+    if (state.dailySidebarCollapsed) return;
     const list = document.createElement('div');
     list.className = 'echo-streaming-daily-native-list';
+    if (!state.dailyPlaylists.length) {
+      const empty = document.createElement('small');
+      empty.textContent = state.loadingDailyPlaylists ? copy.loading : copy.dailyEmpty;
+      empty.style.padding = '6px 8px';
+      empty.style.color = 'var(--theme-muted-text, #6c7179)';
+      list.append(empty);
+      host.append(list);
+      return;
+    }
     state.dailyPlaylists.forEach((playlist) => {
-      const row = document.createElement('div');
-      row.className = 'echo-streaming-daily-native-row';
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'echo-streaming-daily-item';
       const image = document.createElement('img');
       image.src = playlist.coverThumb || playlist.coverUrl || defaultCover;
       image.alt = '';
@@ -2637,45 +2767,74 @@ const installNativePlaylistImport = () => {
       const meta = document.createElement('small');
       meta.textContent = `${dailyKindLabel(playlist.kind)} · ${formatTrackCount(playlist.trackCount)}`;
       main.append(name, meta);
-      main.style.cursor = 'pointer';
-      main.addEventListener('click', () => {
-        void syncDailyPlaylists([playlist], { openNative: true }).catch((error) => showChromeNotice(error instanceof Error ? error.message : String(error)));
-      });
       row.append(image, main);
-      row.append(nativeButton(copy.dailyRefreshOne, copy.dailyRefreshOne, () => refreshDailyPlaylists([playlist])));
-      row.append(nativeButton(copy.add, copy.add, () => syncDailyPlaylists([playlist]), 'secondary-action'));
-      row.append(nativeButton(copy.download, copy.downloadPlaylistToMusic, () => openPlaylistDownloadDialog(asStreamingDailyPlaylist(playlist))));
-      row.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        openStreamMenu(event, [
-          { label: copy.dailyRefreshOne, icon: 'refresh', onSelect: () => refreshDailyPlaylists([playlist]) },
-          { label: copy.add, icon: 'list', onSelect: () => syncDailyPlaylists([playlist]) },
-          { label: copy.downloadPlaylistToMusic, icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(asStreamingDailyPlaylist(playlist)) },
-        ]);
+      row.addEventListener('click', () => {
+        void (async () => {
+          const synced = state.dailySyncedKeys[dailyPlaylistKey(playlist)];
+          if (synced?.libraryPlaylistId) {
+            const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
+            if (opened) return;
+          }
+          await syncDailyPlaylists([playlist], { openNative: true });
+        })().catch((error) => showChromeNotice(error instanceof Error ? error.message : String(error)));
       });
       list.append(row);
     });
     host.append(list);
   };
   const mountDaily = () => {
+    if (!neteaseConnected()) {
+      document.querySelectorAll(`[${dailyMarker}]`).forEach((node) => node.remove());
+      return false;
+    }
     const sidebar = findSidebar();
     if (!sidebar) return false;
     let host = sidebar.querySelector(`[${dailyMarker}]`);
-    if (host) return true;
-    host = document.createElement('section');
-    host.className = 'echo-streaming-daily-native';
-    host.setAttribute(dailyMarker, 'true');
-    const header = findHeader();
-    if (header?.nextSibling) sidebar.insertBefore(host, header.nextSibling);
-    else sidebar.append(host);
+    if (!host) {
+      host = document.createElement('section');
+      host.className = 'echo-streaming-daily-native';
+      host.setAttribute(dailyMarker, 'true');
+      const header = findHeader();
+      if (header?.nextSibling) sidebar.insertBefore(host, header.nextSibling);
+      else sidebar.append(host);
+    }
     renderNativeDaily(host);
     return true;
+  };
+  const mountDailyDetail = () => {
+    const surface = livePlaylistsSurface();
+    const actions = surface?.querySelector('.playlist-detail-header .playlist-actions, .playlist-detail-primary-actions');
+    const title = surface?.querySelector('.playlist-detail-copy h2')?.textContent?.trim() || '';
+    const stale = document.querySelectorAll(`[${dailyDetailMarker}]`);
+    if (!surface || !isNativeChrome(surface) || !neteaseConnected() || !actions || !title) {
+      stale.forEach((node) => node.remove());
+      return;
+    }
+    const match = state.dailyPlaylists.find((item) => item.title === title)
+      || Object.values(state.dailySyncedKeys || {}).find((item) => item.title === title);
+    if (!match) {
+      stale.forEach((node) => node.remove());
+      return;
+    }
+    const key = dailyPlaylistKey(match);
+    const existing = actions.querySelector(`[${dailyDetailMarker}]`);
+    if (existing?.dataset.dailyKey === key) return;
+    existing?.remove();
+    stale.forEach((node) => {
+      if (node !== existing) node.remove();
+    });
+    const playlist = state.dailyPlaylists.find((item) => dailyPlaylistKey(item) === key) || match;
+    const refresh = nativeIconButton(refreshIcon(15), copy.dailyRefreshOne, () => refreshDailyPlaylists([playlist]));
+    refresh.setAttribute(dailyDetailMarker, 'true');
+    refresh.dataset.dailyKey = key;
+    actions.append(refresh);
   };
   paintNativeDailyPanel = () => {
     for (const host of document.querySelectorAll(`[${dailyMarker}]`)) {
       if (!isLivePage(host)) continue;
       renderNativeDaily(host);
     }
+    mountDailyDetail();
   };
   const mount = () => {
     for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}]`)) {
@@ -2707,6 +2866,7 @@ const installNativePlaylistImport = () => {
       }
     }
     mountDaily();
+    mountDailyDetail();
     return true;
   };
   let mountTimer = 0;
@@ -2741,7 +2901,7 @@ const installNativePlaylistImport = () => {
     window.clearTimeout(mountTimer);
     window.clearInterval(poll);
     paintNativeDailyPanel = () => {};
-    for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}]`)) node.remove();
+    for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}], [${dailyDetailMarker}]`)) node.remove();
     document.getElementById(dailyStyleId)?.remove();
   };
 };
@@ -3105,7 +3265,7 @@ const renderTogetherBanner = () => {
   }, { className: 'secondary-action' }));
   bar.prepend(notice);
 };
-const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .transport-streaming-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
+const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
 let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
 let fillSimilarSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint)); };
 const closeStreamingSheet = () => {
@@ -3125,15 +3285,8 @@ const openStreamingSheet = (tab) => {
 };
 const fillTogetherSheet = (root) => {
   const snap = togetherUi.snapshot;
-  const header = make('header', 'echo-streaming-together-head');
-  const heading = make('div');
-  heading.append(make('strong', '', togetherCopy.title));
-  heading.append(make('small', '', snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.elapsedMs)}` : togetherCopy.idle));
-  header.append(heading);
-  root.append(header);
-  if (!snap.loggedIn && !neteaseConnected()) {
+  if (!ncmExtrasVisible()) {
     root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
-    root.append(actionButton(copy.accounts, 'user', () => { closeStreamingSheet(); state.accountPageOpen = true; render(); }, { className: 'primary-action' }));
     return;
   }
   const nowPlaying = make('div', 'echo-streaming-together-now');
@@ -3147,8 +3300,9 @@ const fillTogetherSheet = (root) => {
   meta.append(make('strong', '', snap.songTitle || togetherCopy.songUnknown));
   meta.append(make('small', '', [
     snap.songArtist || '',
-    snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused,
-    snap.songDurationMs ? `${formatTogetherClock(snap.progressMs)} / ${formatTogetherClock(snap.songDurationMs)}` : formatTogetherClock(snap.progressMs),
+    snap.inRoom ? (snap.playStatus === 'PLAY' ? togetherCopy.playing : togetherCopy.paused) : togetherCopy.idle,
+    snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.elapsedMs)}` : '',
+    snap.songDurationMs ? `${formatTogetherClock(snap.progressMs)} / ${formatTogetherClock(snap.songDurationMs)}` : '',
   ].filter(Boolean).join(' · ')));
   nowPlaying.append(meta);
   root.append(nowPlaying);
@@ -3156,7 +3310,7 @@ const fillTogetherSheet = (root) => {
   actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));
   if (snap.inRoom) {
     actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'secondary-action' }));
-    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'secondary-action' }));
+    actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'settings-danger-button', title: togetherCopy.leave }));
   }
   root.append(actions);
   const members = make('div', 'echo-streaming-together-members');
@@ -3192,26 +3346,49 @@ const fillTogetherSheet = (root) => {
 };
 const mountStreamingTransportButton = (lyricsButton) => {
   const lyrics = lyricsButton || document.querySelector('button.transport-lyrics-button');
-  if (!lyrics?.parentElement) return;
-  let button = lyrics.parentElement.querySelector(':scope > .transport-streaming-button');
-  if (!button) {
-    button = actionButton(togetherCopy.title, 'users', () => {
-      if (togetherUi.sheetOpen) closeStreamingSheet();
-      else openStreamingSheet(togetherUi.sheetTab || 'together');
-    }, { iconOnly: true, size: 18, className: 'icon-button transport-tool-button transport-streaming-button', title: togetherCopy.title, ariaLabel: togetherCopy.title });
-    button.dataset.workshopIcon = 'transport-streaming';
-    lyrics.parentElement.insertBefore(button, lyrics);
+  const host = lyrics?.parentElement;
+  if (!host) return;
+  const visible = ncmExtrasVisible();
+  const ensure = (className, title, icon, onClick) => {
+    let button = host.querySelector(`:scope > .${className}`);
+    if (!visible) {
+      button?.remove();
+      return null;
+    }
+    if (!button) {
+      button = actionButton(title, icon, onClick, {
+        iconOnly: true, size: 18, className: `icon-button transport-tool-button ${className}`, title, ariaLabel: title,
+      });
+      host.insertBefore(button, lyrics);
+    }
+    return button;
+  };
+  const together = ensure('transport-streaming-button', togetherCopy.title, 'users', () => {
+    if (togetherUi.sheetOpen && togetherUi.sheetTab === 'together') closeStreamingSheet();
+    else openStreamingSheet('together');
+  });
+  if (together) {
+    together.classList.toggle('is-soft-active', Boolean(togetherUi.snapshot.inRoom || (togetherUi.sheetOpen && togetherUi.sheetTab === 'together')));
+    together.setAttribute('aria-pressed', String(togetherUi.sheetOpen && togetherUi.sheetTab === 'together'));
+    const invites = (togetherUi.snapshot.invites || []).length;
+    if (invites) together.dataset.badge = String(invites);
+    else delete together.dataset.badge;
   }
-  const active = Boolean(togetherUi.snapshot.inRoom || togetherUi.sheetOpen);
-  button.classList.toggle('is-soft-active', active);
-  button.setAttribute('aria-pressed', String(Boolean(togetherUi.sheetOpen)));
-  const invites = (togetherUi.snapshot.invites || []).length;
-  if (invites) button.dataset.badge = String(invites);
-  else delete button.dataset.badge;
+  const comments = ensure('transport-comment-button', ncmCopy.comments, 'chat', () => {
+    if (togetherUi.sheetOpen && togetherUi.sheetTab === 'comments') closeStreamingSheet();
+    else void openNeteaseComments();
+  });
+  if (comments) {
+    comments.classList.toggle('is-soft-active', Boolean(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
+    comments.setAttribute('aria-pressed', String(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
+  }
+  if (!visible && togetherUi.sheetOpen) closeStreamingSheet();
 };
 const paintStreamingSheet = () => {
   document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
+  if (togetherUi.sheetTab === 'similar') togetherUi.sheetTab = 'together';
   if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
+  if (!ncmExtrasVisible()) return;
   const drawer = make('div', 'echo-streaming-drawer');
   drawer.dataset.open = 'true';
   const scrim = make('button', 'echo-streaming-drawer__scrim');
@@ -3222,27 +3399,14 @@ const paintStreamingSheet = () => {
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
   const head = make('header', 'echo-streaming-drawer__head');
-  const tabs = make('nav', 'album-detail-tabs');
-  tabs.setAttribute('aria-label', togetherCopy.title);
-  [
-    { id: 'together', label: togetherCopy.title },
-    { id: 'comments', label: ncmCopy.comments },
-    { id: 'similar', label: ncmCopy.similar },
-  ].forEach((tab) => {
-    const button = make('button', 'album-detail-tab', tab.label);
-    button.type = 'button';
-    if (togetherUi.sheetTab === tab.id) button.setAttribute('aria-current', 'page');
-    button.addEventListener('click', () => {
-      if (tab.id === 'comments') void openNeteaseComments();
-      else if (tab.id === 'similar') void openNeteaseSimilar();
-      else openStreamingSheet('together');
-    });
-    tabs.append(button);
-  });
-  head.append(tabs, actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
+  const title = make('strong', 'echo-streaming-drawer-title', togetherUi.sheetTab === 'comments' ? ncmCopy.comments : togetherCopy.title);
+  head.append(title);
+  if (togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
+    head.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'settings-danger-button', title: togetherCopy.leave }));
+  }
+  head.append(actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   const body = make('div', 'echo-streaming-drawer__body');
   if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
-  else if (togetherUi.sheetTab === 'similar') fillSimilarSheet(body);
   else fillTogetherSheet(body);
   panel.append(head, body);
   drawer.append(scrim, panel);
@@ -3277,7 +3441,7 @@ const installTogetherChrome = () => {
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
     mountStreamingTransportButton();
-    const elapsed = document.querySelector('.echo-streaming-drawer .echo-streaming-together-head small');
+    const elapsed = document.querySelector('.echo-streaming-drawer .echo-streaming-together-now small');
     if (elapsed && togetherUi.sheetOpen && togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
       elapsed.textContent = `${togetherUi.snapshot.users?.length || 1} · ${formatTogetherClock(togetherUi.snapshot.startedAt ? Date.now() - togetherUi.snapshot.startedAt : togetherUi.snapshot.elapsedMs)}`;
     }
@@ -3341,6 +3505,7 @@ const loadNeteaseComments = async (track, page = 1) => {
   }
 };
 const openNeteaseComments = async (track) => {
+  if (!ncmExtrasVisible()) return;
   const target = neteaseTrackOf(track);
   if (!target) {
     showChromeNotice(ncmCopy.emptyComments);
@@ -3352,14 +3517,15 @@ const openNeteaseComments = async (track) => {
   await loadNeteaseComments(target, 1);
 };
 const openNeteaseSimilar = async (track) => {
+  if (!ncmExtrasVisible()) return;
   const target = neteaseTrackOf(track);
   if (!target) return;
   ncmUi.similarTrack = target;
-  openStreamingSheet('similar');
   const result = await invokeMain('neteaseSimilar', { id: target.providerTrackId, limit: ncmUi.similarCount });
   ncmUi.similarTracks = result.tracks || [];
   ncmUi.similarSeed = String(target.providerTrackId);
-  paintTogetherChrome();
+  await queueSimilarTracks(false);
+  document.querySelector('button.transport-queue-button')?.click();
 };
 const queueSimilarTracks = async (playFirst = false) => {
   const tracks = ncmUi.similarTracks || [];
@@ -3374,6 +3540,7 @@ const queueSimilarTracks = async (playFirst = false) => {
   showChromeNotice(ncmCopy.similarDone(tracks.length));
 };
 const similarOnTrackChange = async (force = false) => {
+  if (!ncmExtrasVisible()) return;
   const current = findPlaybackQueue()?.currentTrack;
   const id = current?.provider === 'netease' ? String(current.providerTrackId || '') : '';
   if (!id) return;
@@ -3392,8 +3559,6 @@ const similarOnTrackChange = async (force = false) => {
   ncmUi.similarIds = tracks.map((item) => String(item.providerTrackId));
   ncmUi.similarPlayed = 0;
   for (const track of tracks) await appendViaQueue(track, sourceFor('netease', ncmCopy.similar)).catch(() => undefined);
-  showChromeNotice(ncmCopy.similarDone(tracks.length));
-  if (ncmUi.similarOpen) paintNeteaseExtras();
 };
 const unblockNeteaseTrack = async (track) => {
   const target = neteaseTrackOf(track);
@@ -3436,9 +3601,14 @@ const renderCommentItem = (item, songId) => {
   return row;
 };
 fillCommentSheet = (root) => {
-  const title = make('header', 'echo-streaming-together-head');
-  title.append(make('div', undefined, make('strong', '', ncmUi.commentTrack?.title || ncmCopy.comments)));
-  root.append(title);
+  if (ncmUi.commentTrack?.title) {
+    const title = make('header', 'echo-streaming-together-head');
+    const heading = make('div');
+    heading.append(make('strong', '', ncmUi.commentTrack.title));
+    if (ncmUi.commentTrack.artist) heading.append(make('small', '', ncmUi.commentTrack.artist));
+    title.append(heading);
+    root.append(title);
+  }
   const list = make('div', 'echo-streaming-comment-list');
   if (ncmUi.hot.length) {
     list.append(make('h3', '', ncmCopy.hot));
@@ -3474,39 +3644,7 @@ fillCommentSheet = (root) => {
   root.append(composer);
 };
 fillSimilarSheet = (root) => {
-  const title = make('header', 'echo-streaming-together-head');
-  title.append(make('div', undefined, make('strong', '', ncmUi.similarTrack?.title ? `${ncmCopy.similar} · ${ncmUi.similarTrack.title}` : ncmCopy.similar)));
-  root.append(title, make('p', 'echo-streaming-together-empty', ncmCopy.similarHint));
-  const tools = make('div', 'echo-streaming-together-actions');
-  const auto = actionButton(ncmCopy.similarAuto, 'radio', () => {
-    ncmUi.similarAutoPlay = !ncmUi.similarAutoPlay;
-    persistMemory();
-    paintTogetherChrome();
-    if (ncmUi.similarAutoPlay) void similarOnTrackChange(true);
-  }, { className: ncmUi.similarAutoPlay ? 'primary-action' : 'secondary-action', active: ncmUi.similarAutoPlay });
-  const count = document.createElement('input');
-  count.type = 'number';
-  count.min = '3';
-  count.max = '50';
-  count.value = String(ncmUi.similarCount);
-  count.title = ncmCopy.similarCount;
-  count.addEventListener('change', () => {
-    ncmUi.similarCount = Math.max(3, Math.min(50, Math.round(Number(count.value) || 10)));
-    persistMemory();
-  });
-  tools.append(auto, count, actionButton(ncmCopy.similarPlay, 'play', () => void queueSimilarTracks(true), { className: 'primary-action' }), actionButton(ncmCopy.similarQueue, 'list', () => void queueSimilarTracks(false), { className: 'secondary-action' }));
-  root.append(tools);
-  const list = make('div', 'echo-streaming-similar-list');
-  (ncmUi.similarTracks || []).forEach((track) => {
-    const row = make('button', 'echo-streaming-together-friend');
-    row.type = 'button';
-    const copyBox = make('span');
-    copyBox.append(make('strong', '', track.title || track.providerTrackId), make('small', '', track.artist || ''));
-    row.append(copyBox);
-    row.addEventListener('click', () => void playViaQueue(track, { source: sourceFor('netease', ncmCopy.similar) }));
-    list.append(row);
-  });
-  root.append(list);
+  root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint));
 };
 const paintNeteaseExtras = () => paintTogetherChrome();
 const attachNeteaseTrackActions = () => {};

@@ -71,7 +71,7 @@
       "type": "boolean",
       "title": "相似歌曲自动播放 / Auto-play similar tracks",
       "description": "Queue similar NetEase tracks and, after the batch finishes, recommend again from the last played song.",
-      "default": false
+      "default": true
     },
     "similarCount": {
       "type": "integer",

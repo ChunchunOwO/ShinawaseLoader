@@ -10,6 +10,6 @@
   "autoRefreshDailyPlaylists": true,
   "autoSyncDailyPlaylists": false,
   "autoUnblock": true,
-  "similarAutoPlay": false,
+  "similarAutoPlay": true,
   "similarCount": 10
 }
