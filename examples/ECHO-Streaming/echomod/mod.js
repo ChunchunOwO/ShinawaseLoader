@@ -746,8 +746,6 @@ const renderPlaylistPanel = (playlists) => {
   }));
   form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); });
   sidebar.append(form);
-  const daily = renderDailyPlaylistPanel();
-  if (daily) sidebar.append(daily);
   const stale = typeof streamApi()?.listAccountPlaylists !== 'function';
   const accountTools = [
     actionButton(copy.refresh, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), {
@@ -783,6 +781,8 @@ const renderPlaylistPanel = (playlists) => {
     state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item));
     body.append(list);
   }));
+  const daily = renderDailyPlaylistPanel();
+  if (daily) sidebar.append(daily);
   if (playlists.length) {
     const list = make('div', 'streaming-account-playlist-list');
     playlists.forEach((item) => appendPlaylistCard(list, item));
@@ -2732,7 +2732,7 @@ const installNativePlaylistImport = () => {
     const style = document.createElement('style');
     style.id = dailyStyleId;
     style.textContent = `
-      .echo-streaming-daily-native { display: grid; gap: 4px; margin: 6px 8px 10px; max-height: min(46vh, 360px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
+      .echo-streaming-daily-native { display: grid; gap: 4px; margin: 10px 8px 12px; padding-top: 8px; border-top: 1px solid var(--playlist-border, var(--theme-panel-border, rgba(0,0,0,.08))); max-height: min(46vh, 360px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
       .echo-streaming-daily-native[data-collapsed="true"] .echo-streaming-daily-modules { display: none; }
       .echo-streaming-daily-native-head { display: grid; grid-template-columns: 28px minmax(0,1fr) 34px; align-items: center; gap: 4px; min-height: 34px; }
       .echo-streaming-daily-native-head strong { overflow: hidden; font-size: 12px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -2898,10 +2898,8 @@ const installNativePlaylistImport = () => {
       host = document.createElement('section');
       host.className = 'echo-streaming-daily-native';
       host.setAttribute(dailyMarker, 'true');
-      const header = sidebar.querySelector(':scope > header, :scope > .collection-playlist-sidebar-header, :scope > .playlist-sidebar-header, :scope > .playlist-home-header');
-      if (header?.nextSibling) sidebar.insertBefore(host, header.nextSibling);
-      else sidebar.append(host);
     }
+    if (host.parentElement !== sidebar || sidebar.lastElementChild !== host) sidebar.append(host);
     bindNativeDailyHost(host);
     if (host.dataset.signature !== dailySignature()) renderNativeDaily(host);
     else host.dataset.collapsed = String(state.dailySidebarCollapsed === true);
