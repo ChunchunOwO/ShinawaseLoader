@@ -1617,6 +1617,7 @@ const togetherUnwrapJson = (input) => {
 };
 
 const togetherPlayCommandFrom = (value) => {
+  if (typeof value === 'string') return togetherPlayCommandFrom(togetherUnwrapJson(value));
   const row = neteaseRecord(value);
   const candidate = row.commandInfo || row.playCommand || row.playInfo || row.command
     || (row.commandType ? row : null);
@@ -1667,10 +1668,11 @@ const togetherServerRoom = (body) => {
     roomInfo.creatorId || roomInfo.inviterId || roomInfo.ownerId || roomInfo.hostId
     || data.creatorId || data.inviterId || data.ownerId
   );
+  const hasFlag = data.inRoom != null || roomInfo.inRoom != null || record.inRoom != null;
   const flagged = togetherFlagTrue(data.inRoom) || togetherFlagTrue(roomInfo.inRoom) || togetherFlagTrue(record.inRoom);
   const hasPeople = togetherUsersFrom(roomInfo).length + togetherUsersFrom(data).length > 0;
   return {
-    inRoom: flagged || Boolean(roomId && (hasPeople || roomInfo.roomId || data.roomInfo)),
+    inRoom: hasFlag ? flagged : Boolean(roomId && hasPeople),
     roomId,
     inviterId,
   };
@@ -1711,6 +1713,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   let pendingRestore = null;
   let restorePrompted = false;
   let missedInRoom = 0;
+  let lastEndedRoomId = null;
+  let lastEndedAt = 0;
   let statusTimer = 0;
   let heartbeatTimer = 0;
   let tray = null;
@@ -1841,7 +1845,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       || Boolean(sessionActive && state.roomId)
       || Boolean(roomId && (mergedUsers.length || extras.forceRoom));
     if (extras.activate === false && roomId) {
-      const command = togetherPlayCommandFrom(data.commandInfo)
+      const command = togetherPlayCommandFrom(data)
+        || togetherPlayCommandFrom(data.commandInfo)
         || togetherPlayCommandFrom(data.playCommand)
         || togetherPlayCommandFrom(data.playInfo)
         || togetherPlayCommandFrom(roomInfo.playCommand)
@@ -1889,6 +1894,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         state.startedAt = null;
         state.role = null;
         state.shareUrl = null;
+        state.roomId = null;
       }
     } else {
       state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : (state.role || 'guest');
@@ -1932,9 +1938,13 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       state.songId = songId;
       if (changed || !state.songTitle) await applySongMeta(state.songId);
     }
-    const playlist = neteaseRecord(neteaseRecord(data.playlist).displayList || neteaseRecord(data.playlist));
-    const ids = Array.isArray(playlist.result) ? playlist.result : Array.isArray(data.displayList) ? data.displayList : [];
-    const playlistIds = ids.map((id) => neteaseIdText(id?.id ?? id)).filter(Boolean);
+    const playlist = neteaseRecord(data.playlist);
+    const display = playlist.displayList ?? data.displayList ?? playlist.randomList ?? data.randomList;
+    const idList = typeof display === 'string' ? display.split(',')
+      : Array.isArray(display) ? display
+        : Array.isArray(neteaseRecord(display).result) ? neteaseRecord(display).result
+          : [];
+    const playlistIds = idList.map((id) => neteaseIdText(id?.id ?? id)).filter(Boolean);
     if (playlistIds.length) state.playlistIds = playlistIds;
   };
 
@@ -2052,7 +2062,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const status = await ncmCall('listentogether_status', { cookie });
     if (status.ok) {
       const server = togetherServerRoom(status.body);
-      const serverInRoom = Boolean(server.inRoom || server.roomId);
+      const serverInRoom = server.inRoom === true;
+      const endedSame = Boolean(server.roomId && server.roomId === lastEndedRoomId && Date.now() - lastEndedAt < 120000);
       if (sessionActive && state.inRoom) {
         if (serverInRoom) missedInRoom = 0;
         else missedInRoom += 1;
@@ -2065,7 +2076,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         } else {
           await applyRoomBody(status.body, { inRoom: true, forceRoom: true, roomId: state.roomId || server.roomId, metaOnly: !serverInRoom });
         }
-      } else if (serverInRoom && !sessionActive && !state.inRoom) {
+      } else if (serverInRoom && !sessionActive && !state.inRoom && !endedSame) {
         await applyRoomBody(status.body, {
           inRoom: true,
           forceRoom: true,
@@ -2196,10 +2207,16 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
       if (state.inRoom && state.roomId && sessionActive) return { ok: true, ...emit(true) };
+      const holdLeftover = () => {
+        restorePrompted = true;
+        try { broadcast('together-restore-prompt', snapshot()); } catch {}
+        return { ok: true, pendingRestore, ...emit(true) };
+      };
+      if (pendingRestore?.roomId) return holdLeftover();
       const status = await ncmCall('listentogether_status', { cookie });
       if (status.ok) {
         const server = togetherServerRoom(status.body);
-        if (server.roomId || server.inRoom) {
+        if (server.inRoom) {
           log('INFO', `together found existing room ${server.roomId || ''} before create`);
           await applyRoomBody(status.body, {
             inRoom: true,
@@ -2208,14 +2225,15 @@ const createTogetherService = ({ log, broadcast, electron }) => {
             roomId: server.roomId,
             inviterId: server.inviterId,
           });
+          if (pendingRestore?.roomId) return holdLeftover();
+          throw new Error('together_already_in_room');
         }
       }
-      if (pendingRestore?.roomId) return restore();
       const result = await ncmCall('listentogether_room_create', { cookie });
       if (!result.ok) {
         const retry = await ncmCall('listentogether_status', { cookie });
         const server = togetherServerRoom(retry.body);
-        if (retry.ok && (server.inRoom || server.roomId)) {
+        if (retry.ok && server.inRoom) {
           await applyRoomBody(retry.body, {
             inRoom: true,
             forceRoom: true,
@@ -2223,7 +2241,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
             roomId: server.roomId,
             inviterId: server.inviterId,
           });
-          if (pendingRestore?.roomId) return restore();
+          if (pendingRestore?.roomId) return holdLeftover();
+          throw new Error('together_already_in_room');
         }
         throw new Error(result.error);
       }
@@ -2292,19 +2311,12 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const cookie = streamingAccountCookie('netease');
       const roomId = state.roomId || pendingRestore?.roomId;
       const isHost = Boolean(state.userId && (state.inviterId || pendingRestore?.inviterId) && state.userId === (state.inviterId || pendingRestore?.inviterId));
-      if (cookie && roomId) {
-        if (!isHost) {
-          let left = false;
-          for (const path of ['/api/listen/together/play/leave', '/api/listen/together/room/leave', '/api/listen/together/end']) {
-            const result = await ncmBatchPath(cookie, path, { roomId: String(roomId) });
-            if (result.ok) { left = true; break; }
-          }
-          if (!left) await ncmCall('listentogether_end', { cookie, roomId }).catch(() => undefined);
-        } else {
-          await ncmCall('listentogether_end', { cookie, roomId });
-        }
+      if (cookie && roomId && isHost) {
+        await ncmCall('listentogether_end', { cookie, roomId });
       }
-      log('INFO', `together left room ${roomId || ''}`);
+      log('INFO', `together left room ${roomId || ''} as ${isHost ? 'host' : 'guest'}`);
+      lastEndedRoomId = roomId || lastEndedRoomId;
+      lastEndedAt = Date.now();
       pendingRestore = null;
       restorePrompted = false;
       sessionActive = false;
@@ -2312,6 +2324,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       state.lastError = null;
       return { ok: true, ...emit(true) };
     } catch (error) {
+      lastEndedRoomId = state.roomId || pendingRestore?.roomId || lastEndedRoomId;
+      lastEndedAt = Date.now();
       pendingRestore = null;
       restorePrompted = false;
       sessionActive = false;
@@ -2368,6 +2382,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       return { ok: true, restored: true, ...emit(true) };
     } catch (error) {
       sessionActive = false;
+      clearRoom();
       pendingRestore = held || pendingRestore;
       restorePrompted = Boolean(pendingRestore?.roomId);
       return fail(error);
@@ -2384,12 +2399,14 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
       if (pendingRestore?.roomId) {
-        const restored = await restore();
-        if (!restored.ok) return restored;
+        restorePrompted = true;
+        try { broadcast('together-restore-prompt', snapshot()); } catch {}
+        return { ok: true, pendingRestore, ...emit(true) };
       }
       if (!state.inRoom || !state.roomId) {
         const created = await create();
         if (!created.ok) return created;
+        if (created.pendingRestore || pendingRestore) return created;
       }
       const userIds = [...new Set((Array.isArray(payload?.userIds) ? payload.userIds : [payload?.userId])
         .map((id) => neteaseIdText(id))

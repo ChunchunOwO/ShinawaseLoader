@@ -3034,8 +3034,7 @@ const formatTogetherClock = (ms) => {
 const togetherErrorMessage = (error) => {
   const message = error instanceof Error ? error.message : String(error || '');
   if (/netease_login_required/iu.test(message)) return togetherCopy.needLogin;
-  if (/together_restore_pending/iu.test(message)) return togetherCopy.restoreTitle;
-  if (/together_restore_failed/iu.test(message)) return togetherCopy.restoreTitle;
+  if (/together_restore_pending|together_already_in_room|together_restore_failed/iu.test(message)) return togetherCopy.restoreTitle;
   return message;
 };
 const togetherTrackFromId = (songId, meta = {}) => {
@@ -3203,10 +3202,9 @@ const togetherDisplayedProgress = () => {
 const syncTogetherPlayback = async (snapshot, previous) => {
   if (!snapshot?.inRoom || snapshot.pendingRestore || togetherUi.applying) return;
   const joined = Boolean(snapshot.inRoom && !previous?.inRoom);
-  const membersChanged = (snapshot.users?.length || 0) !== togetherUi.lastMemberCount;
   togetherUi.lastMemberCount = snapshot.users?.length || 0;
   if (snapshot.role === 'host') {
-    if (joined || membersChanged || !snapshot.songId) await togetherReportLocal('GOTO');
+    if (joined || !snapshot.songId) await togetherReportLocal('GOTO');
     return;
   }
   const songId = String(snapshot.songId || snapshot.lastCommand?.targetSongId || '').trim();
@@ -3252,12 +3250,15 @@ applyTogetherSnapshot = (snapshot) => {
   void syncTogetherPlayback(togetherUi.snapshot, previous);
 };
 const togetherReportLocal = async (commandType) => {
-  if (togetherUi.applying || !togetherUi.snapshot.inRoom) return;
+  if (togetherUi.applying || !togetherUi.snapshot.inRoom || togetherUi.snapshot.role !== 'host') return;
   const status = await playbackApi()?.getStatus?.().catch(() => null);
   const current = togetherCurrentNetease(status);
   if (!current) return;
   const playing = status?.state === 'playing' || status?.state === 'loading';
-  const progressMs = Number(status?.positionMs) || 0;
+  const progressMs = status
+    ? (Number(status.positionMs) || 0)
+    : (Number(togetherUi.snapshot.progressMs) || togetherUi.expectedMs || 0);
+  if (!status && String(commandType || '').toUpperCase() === 'GOTO') return;
   const playStatus = playing ? 'PLAY' : 'PAUSE';
   const key = `${current.songId}:${playStatus}:${commandType || ''}:${Math.floor(progressMs / 800)}`;
   if (!commandType && key === togetherUi.lastReportKey) return;
@@ -3291,7 +3292,11 @@ togetherInviteFlow = async () => {
       showChromeNotice(togetherCopy.creating);
       const created = await togetherInvoke('togetherCreate', {});
       applyTogetherSnapshot(created);
-      await togetherReportLocal('GOTO');
+      if (created?.pendingRestore || togetherUi.snapshot.pendingRestore) {
+        paintTogetherChrome();
+        return;
+      }
+      if (togetherUi.snapshot.role === 'host') await togetherReportLocal('GOTO');
     }
     togetherUi.pickerOpen = true;
     paintTogetherChrome();
@@ -3320,7 +3325,7 @@ const togetherLeaveRoom = async () => {
     showChromeNotice(togetherErrorMessage(error));
   }
 };
-const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.roomId);
+const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.pendingRestore);
 const makeTogetherLeaveButton = (className = '') => actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
   className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
   title: togetherCopy.leave,
