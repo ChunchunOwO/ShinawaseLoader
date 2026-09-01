@@ -44,7 +44,8 @@ const ncmCopy = chinese ? {
 const stored = (() => { try { return external.settings?.get?.() || {}; } catch { return {}; } })();
 const togetherUi = {
   snapshot: { loggedIn: false, inRoom: false, users: [], invites: [], friends: [], playlistIds: [] },
-  railCollapsed: stored.togetherRailCollapsed === true,
+  sheetOpen: false,
+  sheetTab: 'together',
   pickerOpen: false,
   applying: false,
   lastAppliedSeq: 0,
@@ -297,7 +298,7 @@ const schedulePlaybackPrepare = (track) => {
 };
 const playCurrentStableKey = () => { const current = findPlaybackQueue()?.currentTrack; return current?.mediaType === 'streaming' ? String(current.stableKey || current.id || '') : ''; };
 const favoriteIdsFromSnapshot = (snapshot) => { const ids = {}; for (const items of Object.values(snapshot?.providers || {})) for (const item of items || []) ids[`${item.provider}:${item.providerTrackId}`] = true; for (const collection of snapshot?.collections || []) for (const item of collection.tracks || []) ids[`${item.provider}:${item.providerTrackId}`] = true; return ids; };
-const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, togetherRailCollapsed: togetherUi.railCollapsed, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
+const persistMemory = () => { try { external.settings?.set?.({ provider: state.provider, quality: state.quality, downloadQuality: state.downloadQuality, activeTab: state.activeTab, input: state.input, query: state.query, resultKey: state.result ? `${state.provider}:${state.activeTab}:${state.query.trim().toLocaleLowerCase()}` : null, result: state.result, failedCoverUrls: state.failedCoverUrls, scrollTop: state.scrollTop, recentSearches: state.recentSearches, dailyPlaylists: state.dailyPlaylists, dailyLastRefreshAt: state.dailyLastRefreshAt, dailySyncedKeys: state.dailySyncedKeys, autoRefreshDaily: state.autoRefreshDaily, autoSyncDaily: state.autoSyncDaily, similarAutoPlay: ncmUi.similarAutoPlay, similarCount: ncmUi.similarCount }); } catch {} };
 const rememberSearch = (query) => { const value = String(query || '').trim(); if (!value) return; state.recentSearches = [value, ...state.recentSearches.filter((item) => item !== value)].slice(0, 8); };
 const providerRailState = (provider) => accountAwareProviders.has(provider?.name) && provider.accountConnected !== true ? 'signedOut' : !provider?.enabled ? 'disabled' : accountAwareProviders.has(provider?.name) ? 'signedIn' : 'available';
 const providerRailStatus = (provider) => { const rail = providerRailState(provider); return rail === 'disabled' ? copy.disabled : rail === 'signedOut' ? copy.notLoggedIn : rail === 'signedIn' ? copy.loggedIn(provider.accountDisplayName || provider.displayName) : copy.available; };
@@ -819,9 +820,6 @@ const renderMain = () => {
     qualityBox.append(menu);
   }
   toolbar.append(qualityBox);
-  toolbar.append(actionButton(togetherUi.snapshot.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'streaming-together-hero-btn', title: togetherCopy.invite, disabled: Boolean(togetherUi.snapshot.busy) }));
-  toolbar.append(actionButton(ncmCopy.similar, 'spark', () => void openNeteaseSimilar(), { className: 'streaming-together-hero-btn', title: ncmCopy.similar }));
-  toolbar.append(actionButton(ncmCopy.comments, 'chat', () => void openNeteaseComments(), { className: 'streaming-together-hero-btn', title: ncmCopy.comments }));
   workspace.append(toolbar);
 
   const stateStack = make('div', 'streaming-state-stack');
@@ -1925,7 +1923,8 @@ const onNativeBroadcast = (event) => {
     return;
   }
   if (detail.name === 'together-toggle-rail') {
-    togetherUi.railCollapsed = !togetherUi.railCollapsed;
+    togetherUi.sheetOpen = !togetherUi.sheetOpen;
+    togetherUi.sheetTab = 'together';
     persistMemory();
     paintTogetherChrome();
     return;
@@ -2829,8 +2828,9 @@ const applyTogetherRemoteCommand = async (command, snapshot) => {
 applyTogetherSnapshot = (snapshot) => {
   const previous = togetherUi.snapshot;
   togetherUi.snapshot = snapshot && typeof snapshot === 'object' ? snapshot : togetherUi.snapshot;
-  if (togetherUi.snapshot.inRoom && !togetherUi.wasInRoom) {
-    togetherUi.railCollapsed = false;
+  if (togetherUi.snapshot.inRoom && !togetherUi.wasInRoom && !togetherUi.snapshot.pendingRestore) {
+    togetherUi.sheetOpen = true;
+    togetherUi.sheetTab = 'together';
     persistMemory();
   }
   togetherUi.wasInRoom = Boolean(togetherUi.snapshot.inRoom);
@@ -2847,14 +2847,6 @@ applyTogetherSnapshot = (snapshot) => {
       playStatus: togetherUi.snapshot.playStatus,
       clientSeq: togetherUi.snapshot.clientSeq || 1,
     }, togetherUi.snapshot);
-  }
-  if (pageRoot && !disposed) {
-    const label = togetherUi.snapshot.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite;
-    pageRoot.querySelectorAll('.streaming-together-hero-btn').forEach((node) => {
-      node.title = label;
-      const text = node.childNodes[node.childNodes.length - 1];
-      if (text && text.nodeType === 3) text.textContent = label;
-    });
   }
 };
 const togetherReportLocal = async (commandType) => {
@@ -2894,8 +2886,6 @@ togetherInviteFlow = async () => {
   }
   try {
     togetherUi.pickerOpen = true;
-    togetherUi.railCollapsed = false;
-    persistMemory();
     paintTogetherChrome();
     const friends = await togetherInvoke('togetherFriends', { query: togetherUi.friendQuery, refresh: true });
     applyTogetherSnapshot({ ...togetherUi.snapshot, ...friends, friends: friends.friends || [] });
@@ -3065,37 +3055,35 @@ const renderTogetherBanner = () => {
   }, { className: 'echo-streaming-together-decline' }));
   document.body.append(banner);
 };
-const renderTogetherRail = () => {
-  let rail = document.querySelector('.echo-streaming-together-rail');
-  if (!rail) {
-    rail = make('aside', 'echo-streaming-together-rail');
-    document.body.append(rail);
-  }
+const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-restore, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
+let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
+let fillSimilarSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint)); };
+const closeStreamingSheet = () => {
+  togetherUi.sheetOpen = false;
+  ncmUi.commentOpen = false;
+  ncmUi.similarOpen = false;
+  persistMemory();
+  paintTogetherChrome();
+};
+const openStreamingSheet = (tab) => {
+  togetherUi.sheetOpen = true;
+  togetherUi.sheetTab = tab === 'comments' || tab === 'similar' ? tab : 'together';
+  ncmUi.commentOpen = togetherUi.sheetTab === 'comments';
+  ncmUi.similarOpen = togetherUi.sheetTab === 'similar';
+  persistMemory();
+  paintTogetherChrome();
+};
+const fillTogetherSheet = (root) => {
   const snap = togetherUi.snapshot;
-  rail.dataset.collapsed = String(togetherUi.railCollapsed);
-  rail.dataset.inRoom = String(Boolean(snap.inRoom));
-  rail.replaceChildren();
-  const tab = actionButton(togetherCopy.title, 'users', () => {
-    togetherUi.railCollapsed = !togetherUi.railCollapsed;
-    persistMemory();
-    paintTogetherChrome();
-  }, { className: 'echo-streaming-together-tab', title: togetherUi.railCollapsed ? togetherCopy.expand : togetherCopy.collapse });
-  rail.append(tab);
-  if (togetherUi.railCollapsed) return;
   const header = make('header', 'echo-streaming-together-head');
   const heading = make('div');
   heading.append(make('strong', '', togetherCopy.title));
   heading.append(make('small', '', snap.inRoom ? `${snap.users?.length || 1} · ${formatTogetherClock(snap.elapsedMs)}` : togetherCopy.idle));
   header.append(heading);
-  header.append(actionButton(togetherCopy.collapse, 'chevron', () => {
-    togetherUi.railCollapsed = true;
-    persistMemory();
-    paintTogetherChrome();
-  }, { iconOnly: true, className: 'streaming-icon-button', title: togetherCopy.collapse }));
-  rail.append(header);
+  root.append(header);
   if (!snap.loggedIn && !neteaseConnected()) {
-    rail.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
-    rail.append(actionButton(copy.accounts, 'user', () => { state.accountPageOpen = true; render(); }, { className: 'echo-streaming-together-primary' }));
+    root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
+    root.append(actionButton(copy.accounts, 'user', () => { closeStreamingSheet(); state.accountPageOpen = true; render(); }, { className: 'echo-streaming-together-primary' }));
     return;
   }
   const nowPlaying = make('div', 'echo-streaming-together-now');
@@ -3113,14 +3101,14 @@ const renderTogetherRail = () => {
     snap.songDurationMs ? `${formatTogetherClock(snap.progressMs)} / ${formatTogetherClock(snap.songDurationMs)}` : formatTogetherClock(snap.progressMs),
   ].filter(Boolean).join(' · ')));
   nowPlaying.append(meta);
-  rail.append(nowPlaying);
+  root.append(nowPlaying);
   const actions = make('div', 'echo-streaming-together-actions');
   actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'echo-streaming-together-primary' }));
   if (snap.inRoom) {
     actions.append(actionButton(togetherCopy.copyLink, 'link', () => void togetherCopyShare(), { className: 'echo-streaming-together-secondary' }));
     actions.append(actionButton(togetherCopy.leave, 'close', () => void togetherLeaveRoom(), { className: 'echo-streaming-together-danger' }));
   }
-  rail.append(actions);
+  root.append(actions);
   const members = make('div', 'echo-streaming-together-members');
   members.append(make('h3', '', togetherCopy.members));
   const users = snap.users?.length ? snap.users : (snap.inRoom && snap.userId ? [{ userId: snap.userId, nickname: snap.nickname, avatarUrl: snap.avatarUrl, joinedAt: snap.startedAt }] : []);
@@ -3139,55 +3127,88 @@ const renderTogetherRail = () => {
     row.append(info);
     members.append(row);
   });
-  rail.append(members);
+  root.append(members);
   const invites = snap.invites || [];
-  if (invites.length) {
-    const inbox = make('div', 'echo-streaming-together-invites');
-    inbox.append(make('h3', '', togetherCopy.incoming));
-    invites.forEach((invite) => {
-      const row = make('div', 'echo-streaming-together-invite-row');
-      row.append(make('span', '', invite.nickname || invite.inviterId));
-      row.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'echo-streaming-together-accept' }));
-      inbox.append(row);
-    });
-    rail.append(inbox);
-  }
+  if (!invites.length) return;
+  const inbox = make('div', 'echo-streaming-together-invites');
+  inbox.append(make('h3', '', togetherCopy.incoming));
+  invites.forEach((invite) => {
+    const row = make('div', 'echo-streaming-together-invite-row');
+    row.append(make('span', '', invite.nickname || invite.inviterId));
+    row.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'echo-streaming-together-accept' }));
+    inbox.append(row);
+  });
+  root.append(inbox);
 };
-const mountTogetherPlayerButton = () => {
-  const bars = [...document.querySelectorAll('.player-bar, .player-bar-host, footer.player-bar')];
-  if (!bars.length) return;
-  for (const bar of bars) {
-    if (bar.querySelector('[data-echo-streaming-together="invite"]')) continue;
-    if (bar.closest('.echo-streaming-together-rail')) continue;
-    const host = bar.querySelector('.player-bar-actions, .player-actions, .player-bar-right, .player-extra-actions') || bar;
-    const button = actionButton(togetherCopy.invite, 'users', () => void togetherInviteFlow(), {
-      className: 'echo-streaming-together-player-btn',
-      title: togetherCopy.invite,
-      ariaLabel: togetherCopy.invite,
-    });
-    button.dataset.echoStreamingTogether = 'invite';
-    host.append(button);
-  }
+const paintStreamingDock = () => {
+  document.querySelectorAll('.echo-streaming-dock').forEach((node) => node.remove());
+  if (togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
+  const dock = make('nav', 'echo-streaming-dock');
+  dock.setAttribute('aria-label', togetherCopy.title);
+  const togetherBtn = actionButton(togetherCopy.title, 'users', () => openStreamingSheet('together'), { iconOnly: true, className: 'echo-streaming-dock-btn', title: togetherCopy.title });
+  if (togetherUi.snapshot.inRoom) togetherBtn.dataset.active = 'true';
+  const inviteCount = (togetherUi.snapshot.invites || []).length;
+  if (inviteCount) togetherBtn.dataset.badge = inviteCount > 9 ? '9+' : String(inviteCount);
+  dock.append(
+    togetherBtn,
+    actionButton(ncmCopy.comments, 'chat', () => void openNeteaseComments(), { iconOnly: true, className: 'echo-streaming-dock-btn', title: ncmCopy.comments }),
+    actionButton(ncmCopy.similar, 'spark', () => void openNeteaseSimilar(), { iconOnly: true, className: 'echo-streaming-dock-btn', title: ncmCopy.similar }),
+  );
+  document.body.append(dock);
+};
+const paintStreamingSheet = () => {
+  document.querySelectorAll('.echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
+  if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore) return;
+  const backdrop = make('div', 'echo-streaming-sheet-backdrop');
+  backdrop.addEventListener('mousedown', (event) => {
+    if (event.target === backdrop) closeStreamingSheet();
+  });
+  const sheet = make('aside', 'echo-streaming-sheet');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  const head = make('header', 'echo-streaming-sheet-head');
+  const tabs = make('nav', 'echo-streaming-sheet-tabs');
+  [
+    { id: 'together', label: togetherCopy.title, icon: 'users' },
+    { id: 'comments', label: ncmCopy.comments, icon: 'chat' },
+    { id: 'similar', label: ncmCopy.similar, icon: 'spark' },
+  ].forEach((tab) => {
+    const button = actionButton(tab.label, tab.icon, () => {
+      if (tab.id === 'comments') void openNeteaseComments();
+      else if (tab.id === 'similar') void openNeteaseSimilar();
+      else openStreamingSheet('together');
+    }, { className: 'echo-streaming-sheet-tab', title: tab.label });
+    button.dataset.active = String(togetherUi.sheetTab === tab.id);
+    tabs.append(button);
+  });
+  head.append(tabs, actionButton(copy.close, 'close', closeStreamingSheet, { iconOnly: true, className: 'streaming-icon-button', title: copy.close }));
+  const body = make('div', 'echo-streaming-sheet-body');
+  if (togetherUi.sheetTab === 'comments') fillCommentSheet(body);
+  else if (togetherUi.sheetTab === 'similar') fillSimilarSheet(body);
+  else fillTogetherSheet(body);
+  sheet.append(head, body);
+  document.body.append(backdrop, sheet);
 };
 paintTogetherChrome = () => {
   if (packageDisposed) return;
-  renderTogetherRail();
+  paintStreamingDock();
+  paintStreamingSheet();
   renderTogetherRestore();
   renderTogetherBanner();
   renderTogetherPicker();
-  mountTogetherPlayerButton();
+};
+const onStreamingSheetKey = (event) => {
+  if (event.key !== 'Escape' || togetherUi.pickerOpen || togetherUi.snapshot.pendingRestore) return;
+  if (togetherUi.sheetOpen) closeStreamingSheet();
 };
 const installTogetherChrome = () => {
   window.addEventListener('echo-native', onNativeBroadcast);
-  const observer = new MutationObserver(() => { mountTogetherPlayerButton(); });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('keydown', onStreamingSheetKey);
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
-    mountTogetherPlayerButton();
-    const rail = document.querySelector('.echo-streaming-together-rail');
-    if (rail && !togetherUi.railCollapsed && togetherUi.snapshot.inRoom) {
-      const elapsed = rail.querySelector('.echo-streaming-together-head small');
-      if (elapsed) elapsed.textContent = `${togetherUi.snapshot.users?.length || 1} · ${formatTogetherClock(togetherUi.snapshot.startedAt ? Date.now() - togetherUi.snapshot.startedAt : togetherUi.snapshot.elapsedMs)}`;
+    const elapsed = document.querySelector('.echo-streaming-sheet .echo-streaming-together-head small');
+    if (elapsed && togetherUi.sheetOpen && togetherUi.sheetTab === 'together' && togetherUi.snapshot.inRoom) {
+      elapsed.textContent = `${togetherUi.snapshot.users?.length || 1} · ${formatTogetherClock(togetherUi.snapshot.startedAt ? Date.now() - togetherUi.snapshot.startedAt : togetherUi.snapshot.elapsedMs)}`;
     }
     if (togetherUi.snapshot.inRoom && !togetherUi.applying) {
       void (async () => {
@@ -3210,10 +3231,10 @@ const installTogetherChrome = () => {
   void togetherInvoke('togetherStatus', {}).then((snap) => applyTogetherSnapshot(snap)).catch(() => paintTogetherChrome());
   paintTogetherChrome();
   disposeTogetherChrome = () => {
-    observer.disconnect();
     window.clearInterval(poll);
     window.removeEventListener('echo-native', onNativeBroadcast);
-    document.querySelectorAll('.echo-streaming-together-rail, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-restore, [data-echo-streaming-together="invite"]').forEach((node) => node.remove());
+    window.removeEventListener('keydown', onStreamingSheetKey);
+    document.querySelectorAll(overlayCleanupSelector).forEach((node) => node.remove());
   };
 };
 const neteaseTrackOf = (track) => {
@@ -3251,21 +3272,20 @@ const openNeteaseComments = async (track) => {
     showChromeNotice(ncmCopy.emptyComments);
     return;
   }
-  ncmUi.commentOpen = true;
   ncmUi.draft = '';
   ncmUi.replyTo = null;
+  openStreamingSheet('comments');
   await loadNeteaseComments(target, 1);
 };
 const openNeteaseSimilar = async (track) => {
   const target = neteaseTrackOf(track);
   if (!target) return;
-  ncmUi.similarOpen = true;
   ncmUi.similarTrack = target;
-  paintNeteaseExtras();
+  openStreamingSheet('similar');
   const result = await invokeMain('neteaseSimilar', { id: target.providerTrackId, limit: ncmUi.similarCount });
   ncmUi.similarTracks = result.tracks || [];
   ncmUi.similarSeed = String(target.providerTrackId);
-  paintNeteaseExtras();
+  paintTogetherChrome();
 };
 const queueSimilarTracks = async (playFirst = false) => {
   const tracks = ncmUi.similarTracks || [];
@@ -3341,126 +3361,82 @@ const renderCommentItem = (item, songId) => {
   row.append(body);
   return row;
 };
-let paintNeteaseExtras = () => {};
-paintNeteaseExtras = () => {
-  if (packageDisposed) return;
-  document.querySelectorAll('.echo-streaming-comment-panel, .echo-streaming-similar-panel').forEach((node) => node.remove());
-  if (ncmUi.commentOpen && ncmUi.commentTrack) {
-    const panel = make('aside', 'echo-streaming-comment-panel');
-    const head = make('header');
-    head.append(make('strong', '', `${ncmCopy.comments} · ${ncmUi.commentTrack.title || ''}`));
-    head.append(actionButton(copy.close, 'close', () => { ncmUi.commentOpen = false; paintNeteaseExtras(); }, { iconOnly: true, className: 'streaming-icon-button' }));
-    panel.append(head);
-    const list = make('div', 'echo-streaming-comment-list');
-    if (ncmUi.hot.length) {
-      list.append(make('h3', '', ncmCopy.hot));
-      ncmUi.hot.forEach((item) => list.append(renderCommentItem(item, ncmUi.commentTrack.providerTrackId)));
-    }
-    list.append(make('h3', '', ncmCopy.latest));
-    if (!ncmUi.comments.length && !ncmUi.loading) list.append(make('p', 'echo-streaming-together-empty', ncmCopy.emptyComments));
-    ncmUi.comments.forEach((item) => list.append(renderCommentItem(item, ncmUi.commentTrack.providerTrackId)));
-    if (ncmUi.comments.length < (ncmUi.total || 0)) list.append(actionButton(ncmCopy.loadMore, 'chevron', () => void loadNeteaseComments(ncmUi.commentTrack, ncmUi.commentPage + 1), { className: 'echo-streaming-together-secondary' }));
-    panel.append(list);
-    const composer = make('form', 'echo-streaming-comment-composer');
-    composer.addEventListener('submit', (event) => event.preventDefault());
-    if (ncmUi.replyTo) composer.append(make('small', '', `${ncmCopy.reply} ${ncmUi.replyTo.nickname}`));
-    const input = document.createElement('textarea');
-    input.rows = 2;
-    input.placeholder = neteaseConnected() ? ncmCopy.composer : ncmCopy.needLogin;
-    input.value = ncmUi.draft;
-    input.addEventListener('input', () => { ncmUi.draft = input.value; });
-    composer.append(input, actionButton(ncmCopy.sending, 'check', async () => {
-      const content = String(ncmUi.draft || '').trim();
-      if (!content) return;
-      await invokeMain('neteaseCommentAdd', {
-        id: ncmUi.commentTrack.providerTrackId,
-        content,
-        commentId: ncmUi.replyTo?.id,
-      });
-      ncmUi.draft = '';
-      ncmUi.replyTo = null;
-      showChromeNotice(ncmCopy.sent);
-      await loadNeteaseComments(ncmUi.commentTrack, 1);
-    }, { className: 'echo-streaming-together-primary', disabled: !neteaseConnected() }));
-    panel.append(composer);
-    document.body.append(panel);
+fillCommentSheet = (root) => {
+  const title = make('header', 'echo-streaming-together-head');
+  title.append(make('div', undefined, make('strong', '', ncmUi.commentTrack?.title || ncmCopy.comments)));
+  root.append(title);
+  const list = make('div', 'echo-streaming-comment-list');
+  if (ncmUi.hot.length) {
+    list.append(make('h3', '', ncmCopy.hot));
+    ncmUi.hot.forEach((item) => list.append(renderCommentItem(item, ncmUi.commentTrack.providerTrackId)));
   }
-  if (ncmUi.similarOpen) {
-    const panel = make('aside', 'echo-streaming-similar-panel');
-    const head = make('header');
-    head.append(make('strong', '', `${ncmCopy.similar}${ncmUi.similarTrack ? ` · ${ncmUi.similarTrack.title || ''}` : ''}`));
-    head.append(actionButton(copy.close, 'close', () => { ncmUi.similarOpen = false; paintNeteaseExtras(); }, { iconOnly: true, className: 'streaming-icon-button' }));
-    panel.append(head, make('p', 'echo-streaming-together-empty', ncmCopy.similarHint));
-    const tools = make('div', 'echo-streaming-together-actions');
-    const auto = actionButton(ncmCopy.similarAuto, 'radio', () => {
-      ncmUi.similarAutoPlay = !ncmUi.similarAutoPlay;
-      persistMemory();
-      paintNeteaseExtras();
-      if (ncmUi.similarAutoPlay) void similarOnTrackChange(true);
-    }, { className: ncmUi.similarAutoPlay ? 'echo-streaming-together-primary' : 'echo-streaming-together-secondary', active: ncmUi.similarAutoPlay });
-    const count = document.createElement('input');
-    count.type = 'number';
-    count.min = '3';
-    count.max = '50';
-    count.value = String(ncmUi.similarCount);
-    count.title = ncmCopy.similarCount;
-    count.addEventListener('change', () => {
-      ncmUi.similarCount = Math.max(3, Math.min(50, Math.round(Number(count.value) || 10)));
-      persistMemory();
+  list.append(make('h3', '', ncmCopy.latest));
+  if (ncmUi.loading && !ncmUi.comments.length) list.append(make('p', 'echo-streaming-together-empty', copy.loading));
+  else if (!ncmUi.comments.length) list.append(make('p', 'echo-streaming-together-empty', ncmCopy.emptyComments));
+  ncmUi.comments.forEach((item) => list.append(renderCommentItem(item, ncmUi.commentTrack?.providerTrackId)));
+  if (ncmUi.comments.length < (ncmUi.total || 0)) list.append(actionButton(ncmCopy.loadMore, 'chevron', () => void loadNeteaseComments(ncmUi.commentTrack, ncmUi.commentPage + 1), { className: 'echo-streaming-together-secondary' }));
+  root.append(list);
+  const composer = make('form', 'echo-streaming-comment-composer');
+  composer.addEventListener('submit', (event) => event.preventDefault());
+  if (ncmUi.replyTo) composer.append(make('small', '', `${ncmCopy.reply} ${ncmUi.replyTo.nickname}`));
+  const input = document.createElement('textarea');
+  input.rows = 2;
+  input.placeholder = neteaseConnected() ? ncmCopy.composer : ncmCopy.needLogin;
+  input.value = ncmUi.draft;
+  input.addEventListener('input', () => { ncmUi.draft = input.value; });
+  composer.append(input, actionButton(ncmCopy.sending, 'check', async () => {
+    const content = String(ncmUi.draft || '').trim();
+    if (!content) return;
+    await invokeMain('neteaseCommentAdd', {
+      id: ncmUi.commentTrack.providerTrackId,
+      content,
+      commentId: ncmUi.replyTo?.id,
     });
-    tools.append(auto, count, actionButton(ncmCopy.similarPlay, 'play', () => void queueSimilarTracks(true), { className: 'echo-streaming-together-primary' }), actionButton(ncmCopy.similarQueue, 'list', () => void queueSimilarTracks(false), { className: 'echo-streaming-together-secondary' }));
-    panel.append(tools);
-    const list = make('div', 'echo-streaming-similar-list');
-    (ncmUi.similarTracks || []).forEach((track) => {
-      const row = make('button', 'echo-streaming-together-friend');
-      row.type = 'button';
-      row.append(make('strong', '', track.title || track.providerTrackId), make('small', '', track.artist || ''));
-      row.addEventListener('click', () => void playViaQueue(track, { source: sourceFor('netease', ncmCopy.similar) }));
-      list.append(row);
-    });
-    panel.append(list);
-    document.body.append(panel);
-  }
+    ncmUi.draft = '';
+    ncmUi.replyTo = null;
+    showChromeNotice(ncmCopy.sent);
+    await loadNeteaseComments(ncmUi.commentTrack, 1);
+  }, { className: 'echo-streaming-together-primary', disabled: !neteaseConnected() }));
+  root.append(composer);
 };
-const attachNeteaseTrackActions = () => {
-  if (!pageRoot) return;
-  const tracks = visibleLyricsTracks();
-  pageRoot.querySelectorAll('.streaming-row').forEach((row, index) => {
-    const track = tracks[index];
-    if (!track || track.provider !== 'netease') return;
-    const actions = row.querySelector('.streaming-actions');
-    if (!actions) return;
-    if (!row.querySelector('[data-echo-ncm-comment]')) {
-      const button = actionButton(ncmCopy.comments, 'chat', () => openNeteaseComments(track), { iconOnly: true, title: ncmCopy.comments, className: 'streaming-icon-button' });
-      button.dataset.echoNcmComment = 'true';
-      actions.append(button);
-    }
-    if (!row.querySelector('[data-echo-ncm-similar]')) {
-      const button = actionButton(ncmCopy.similar, 'spark', () => openNeteaseSimilar(track), { iconOnly: true, title: ncmCopy.similar, className: 'streaming-icon-button' });
-      button.dataset.echoNcmSimilar = 'true';
-      actions.append(button);
-    }
-    if (!row.querySelector('[data-echo-ncm-unblock]')) {
-      const button = actionButton(ncmCopy.unblock, 'shield', () => unblockNeteaseTrack(track), { iconOnly: true, title: ncmCopy.unblock, className: 'streaming-icon-button' });
-      button.dataset.echoNcmUnblock = 'true';
-      actions.append(button);
-    }
+fillSimilarSheet = (root) => {
+  const title = make('header', 'echo-streaming-together-head');
+  title.append(make('div', undefined, make('strong', '', ncmUi.similarTrack?.title ? `${ncmCopy.similar} · ${ncmUi.similarTrack.title}` : ncmCopy.similar)));
+  root.append(title, make('p', 'echo-streaming-together-empty', ncmCopy.similarHint));
+  const tools = make('div', 'echo-streaming-together-actions');
+  const auto = actionButton(ncmCopy.similarAuto, 'radio', () => {
+    ncmUi.similarAutoPlay = !ncmUi.similarAutoPlay;
+    persistMemory();
+    paintTogetherChrome();
+    if (ncmUi.similarAutoPlay) void similarOnTrackChange(true);
+  }, { className: ncmUi.similarAutoPlay ? 'echo-streaming-together-primary' : 'echo-streaming-together-secondary', active: ncmUi.similarAutoPlay });
+  const count = document.createElement('input');
+  count.type = 'number';
+  count.min = '3';
+  count.max = '50';
+  count.value = String(ncmUi.similarCount);
+  count.title = ncmCopy.similarCount;
+  count.addEventListener('change', () => {
+    ncmUi.similarCount = Math.max(3, Math.min(50, Math.round(Number(count.value) || 10)));
+    persistMemory();
   });
+  tools.append(auto, count, actionButton(ncmCopy.similarPlay, 'play', () => void queueSimilarTracks(true), { className: 'echo-streaming-together-primary' }), actionButton(ncmCopy.similarQueue, 'list', () => void queueSimilarTracks(false), { className: 'echo-streaming-together-secondary' }));
+  root.append(tools);
+  const list = make('div', 'echo-streaming-similar-list');
+  (ncmUi.similarTracks || []).forEach((track) => {
+    const row = make('button', 'echo-streaming-together-friend');
+    row.type = 'button';
+    const copyBox = make('span');
+    copyBox.append(make('strong', '', track.title || track.providerTrackId), make('small', '', track.artist || ''));
+    row.append(copyBox);
+    row.addEventListener('click', () => void playViaQueue(track, { source: sourceFor('netease', ncmCopy.similar) }));
+    list.append(row);
+  });
+  root.append(list);
 };
-const mountNeteasePlayerButtons = () => {
-  const bars = [...document.querySelectorAll('.player-bar, .player-bar-host, footer.player-bar')];
-  for (const bar of bars) {
-    if (bar.querySelector('[data-echo-ncm-player="comment"]')) continue;
-    const host = bar.querySelector('.player-bar-actions, .player-actions, .player-bar-right, .player-extra-actions') || bar;
-    const comment = actionButton(ncmCopy.comments, 'chat', () => void openNeteaseComments(), { className: 'echo-streaming-together-player-btn', title: ncmCopy.comments });
-    comment.dataset.echoNcmPlayer = 'comment';
-    const similar = actionButton(ncmCopy.similar, 'spark', () => void openNeteaseSimilar(), { className: 'echo-streaming-together-player-btn', title: ncmCopy.similar });
-    similar.dataset.echoNcmPlayer = 'similar';
-    host.append(comment, similar);
-  }
-};
-const ncmPlayerPoll = window.setInterval(() => { if (!packageDisposed) mountNeteasePlayerButtons(); }, 1500);
-mountNeteasePlayerButtons();
+const paintNeteaseExtras = () => paintTogetherChrome();
+const attachNeteaseTrackActions = () => {};
+const ncmPlayerPoll = 0;
 installTogetherChrome();
 const installListeners = () => { if (downloadApi()?.onJobsUpdated) downloadUnsubscribe = downloadApi().onJobsUpdated((jobs) => { state.downloadJobs = Array.isArray(jobs) ? jobs : []; indexDownloadJobs(state.downloadJobs); state.downloadJobs.forEach(notifyDownloadJob); render(); }); bindAccountStatuses(); void invokeMain('target', {}).then((result) => { if (result?.directory) state.musicTargetBase = String(result.directory); }).catch(() => undefined); statusTimer = window.setInterval(() => { if (disposed) return; const key = playCurrentStableKey(); if (key !== state.currentStableKey) { state.currentStableKey = key; void similarOnTrackChange(); render(); } }, 1000); };
 
