@@ -3718,7 +3718,7 @@ const installTogetherChrome = () => {
     if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying) {
       void (async () => {
         const snap = togetherUi.snapshot;
-        if (snap.role !== 'guest') {
+        if (snap.role === 'host') {
           const status = await playbackApi()?.getStatus?.().catch(() => null);
           const current = togetherCurrentNetease(status);
           if (!current) return;

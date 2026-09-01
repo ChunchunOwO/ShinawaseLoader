@@ -1651,8 +1651,7 @@ const extractTogetherRoomId = (body) => {
   const data = neteaseRecord(record.data);
   const roomInfo = neteaseRecord(data.roomInfo || data.room || record.roomInfo || record.room);
   const direct = neteaseIdText(
-    roomInfo.roomId || roomInfo.id || roomInfo.roomid
-    || data.roomId || data.roomid || record.roomId
+    roomInfo.roomId || roomInfo.roomid || data.roomId || data.roomid || record.roomId
   );
   if (direct) return direct;
   const share = parseTogetherShare(roomInfo.shareUrl || roomInfo.url || data.shareUrl || data.url || record.shareUrl);
@@ -2292,8 +2291,18 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       emit(true);
       const cookie = streamingAccountCookie('netease');
       const roomId = state.roomId || pendingRestore?.roomId;
+      const isHost = Boolean(state.userId && (state.inviterId || pendingRestore?.inviterId) && state.userId === (state.inviterId || pendingRestore?.inviterId));
       if (cookie && roomId) {
-        await ncmCall('listentogether_end', { cookie, roomId });
+        if (!isHost) {
+          let left = false;
+          for (const path of ['/api/listen/together/play/leave', '/api/listen/together/room/leave', '/api/listen/together/end']) {
+            const result = await ncmBatchPath(cookie, path, { roomId: String(roomId) });
+            if (result.ok) { left = true; break; }
+          }
+          if (!left) await ncmCall('listentogether_end', { cookie, roomId }).catch(() => undefined);
+        } else {
+          await ncmCall('listentogether_end', { cookie, roomId });
+        }
       }
       log('INFO', `together left room ${roomId || ''}`);
       pendingRestore = null;
@@ -2315,19 +2324,16 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   };
 
   const restore = async () => {
+    const held = pendingRestore;
     try {
       state.busy = 'restore';
       emit(true);
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
-      const held = pendingRestore;
-      sessionActive = true;
-      pendingRestore = null;
-      restorePrompted = false;
       missedInRoom = 0;
       if (held?.roomId) {
         state.roomId = held.roomId;
-        state.inviterId = held.inviterId || state.userId;
+        state.inviterId = held.inviterId || null;
         state.users = held.users || [];
         state.songId = held.songId || state.songId;
         state.songTitle = held.songTitle || state.songTitle;
@@ -2337,8 +2343,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         state.progressMs = held.progressMs || 0;
         state.startedAt = held.startedAt || Date.now();
         state.inRoom = true;
-        const isHost = Boolean(state.userId && state.inviterId && state.userId === state.inviterId);
-        state.role = isHost ? 'host' : 'guest';
+        state.role = state.userId && state.inviterId && state.userId === state.inviterId ? 'host' : 'guest';
         state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
       }
       const status = await ncmCall('listentogether_status', { cookie });
@@ -2348,17 +2353,23 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           inRoom: true,
           forceRoom: true,
           roomId: server.roomId || state.roomId,
-          inviterId: server.inviterId || state.inviterId,
+          inviterId: server.inviterId || held?.inviterId || state.inviterId,
         });
       }
+      sessionActive = true;
+      pendingRestore = null;
+      restorePrompted = false;
       await refreshRoom(cookie);
       if (!(state.userId && state.inviterId && state.userId === state.inviterId)) state.role = 'guest';
       else state.role = 'host';
       if (!state.inRoom || !state.roomId) throw new Error('together_restore_failed');
       state.lastError = null;
-      log('INFO', `together restored room ${state.roomId}`);
+      log('INFO', `together restored room ${state.roomId} as ${state.role}`);
       return { ok: true, restored: true, ...emit(true) };
     } catch (error) {
+      sessionActive = false;
+      pendingRestore = held || pendingRestore;
+      restorePrompted = Boolean(pendingRestore?.roomId);
       return fail(error);
     } finally {
       state.busy = null;
