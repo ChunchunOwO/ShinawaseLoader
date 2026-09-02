@@ -1847,10 +1847,13 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   };
 
   const applySongMeta = async (songId) => {
-    if (!songId || songId === state.songId && state.songTitle) return;
+    if (!songId) return;
+    if (String(state.songId) === String(songId) && state.songTitle) return;
     const songs = await fetchNeteaseSongDetails([songId]).catch(() => new Map());
+    if (state.songId && String(state.songId) !== String(songId)) return;
     const mapped = mapNeteasePlaylistSong(songs.get(songId));
     if (!mapped) return;
+    if (state.songId && String(state.songId) !== String(mapped.providerTrackId || songId)) return;
     state.songId = mapped.providerTrackId;
     state.songTitle = mapped.title;
     state.songArtist = mapped.artist;
@@ -1966,10 +1969,12 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       state.shareUrl = togetherShareUrl(state.roomId, state.inviterId || state.userId, state.songId);
     }
     if (extras.metaOnly === true) {
-      const songId = neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
-      if (songId && songId !== state.songId) {
-        state.songId = songId;
-        await applySongMeta(state.songId);
+      if (!state.songId) {
+        const songId = neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
+        if (songId) {
+          state.songId = songId;
+          await applySongMeta(state.songId);
+        }
       }
       return;
     }
@@ -1982,7 +1987,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       || togetherPlayCommandFrom(record.playInfo);
     const command = rawCommand && adoptTogetherCommand(rawCommand) ? rawCommand : null;
     const songId = (command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : null)
-      || neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
+      || (state.lastCommand ? null : neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId));
     if (!command && data.playStatus && !(state.lastCommand && state.clientSeq > (Number(state.lastCommand.clientSeq) || 0))) {
       state.playStatus = String(data.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
       const progress = data.progress ?? data.progressMs;
@@ -2652,6 +2657,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       if (payload?.artist) state.songArtist = String(payload.artist);
       if (payload?.coverUrl) state.songCover = String(payload.coverUrl);
       if (Number(payload?.durationMs) > 0) state.songDurationMs = Math.floor(Number(payload.durationMs));
+      emit();
       if (songId && !state.songTitle) await applySongMeta(songId);
       const cookie = streamingAccountCookie('netease');
       if (!togetherRoomIdText(state.roomId) && cookie) await ensureTogetherRoomId(cookie);
