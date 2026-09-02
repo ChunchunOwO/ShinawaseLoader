@@ -15,10 +15,10 @@
  * track metadata and cover art supplied by the renderer.
  */
 
-const { createWriteStream, existsSync, readFileSync } = require('node:fs');
+const { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const { mkdir, rename, rm } = require('node:fs/promises');
-const { join, resolve } = require('node:path');
+const { join, resolve, dirname } = require('node:path');
 const { homedir } = require('node:os');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
@@ -1761,6 +1761,26 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   let missedInRoom = 0;
   let lastEndedRoomId = null;
   let lastEndedAt = 0;
+  let leaveInFlight = false;
+  const leaveMemoryPath = join(process.env.APPDATA || homedir(), 'ECHO Steam', 'echo-community-streaming-together-leave.json');
+  try {
+    const saved = JSON.parse(readFileSync(leaveMemoryPath, 'utf8'));
+    lastEndedRoomId = togetherRoomIdText(saved?.roomId) || null;
+    lastEndedAt = Number(saved?.at) || 0;
+  } catch {}
+  const rememberEndedRoom = (roomId) => {
+    lastEndedRoomId = togetherRoomIdText(roomId) || lastEndedRoomId;
+    lastEndedAt = Date.now();
+    try {
+      mkdirSync(dirname(leaveMemoryPath), { recursive: true });
+      writeFileSync(leaveMemoryPath, `${JSON.stringify({ roomId: lastEndedRoomId, at: lastEndedAt })}\n`);
+    } catch {}
+  };
+  const recentlyLeftRoom = (roomId) => {
+    const id = togetherRoomIdText(roomId);
+    if (!id || !lastEndedRoomId || id !== lastEndedRoomId) return false;
+    return Date.now() - lastEndedAt < 7 * 24 * 60 * 60 * 1000;
+  };
   let statusTimer = 0;
   let heartbeatTimer = 0;
   let tray = null;
@@ -2126,8 +2146,16 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (status.ok) {
       const server = togetherServerRoom(status.body);
       const serverInRoom = server.inRoom === true;
-      const endedSame = Boolean(server.roomId && server.roomId === lastEndedRoomId && Date.now() - lastEndedAt < 120000);
-      if (sessionActive && state.inRoom) {
+      const endedSame = recentlyLeftRoom(server.roomId);
+      if (leaveInFlight || endedSame) {
+        missedInRoom = 0;
+        pendingRestore = null;
+        restorePrompted = false;
+        if (state.inRoom || sessionActive) {
+          sessionActive = false;
+          clearRoom();
+        }
+      } else if (sessionActive && state.inRoom) {
         if (serverInRoom) missedInRoom = 0;
         else missedInRoom += 1;
         if (missedInRoom >= 4) {
@@ -2250,6 +2278,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   };
 
   const playCommand = async (commandType, extras = {}) => {
+    if (leaveInFlight || (recentlyLeftRoom(lastEndedRoomId || state.roomId) && !sessionActive)) return { ok: false, error: 'together_not_in_room' };
     if (!state.inRoom && !sessionActive) return { ok: false, error: 'together_not_in_room' };
     const cookie = cookieOrThrow();
     if (!togetherRoomIdText(state.roomId)) await ensureTogetherRoomId(cookie);
@@ -2431,34 +2460,53 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     }
   };
 
+  const leaveOfficialRoom = async (cookie, roomId) => {
+    if (!cookie || !roomId) return;
+    const bodies = [
+      { roomId: String(roomId) },
+      { roomId: String(roomId), userId: state.userId || undefined },
+    ];
+    const paths = [
+      '/api/listen/together/play/leave',
+      '/api/listen/together/room/leave',
+      '/api/listen/together/room/quit',
+      '/api/listen/together/leave',
+    ];
+    for (const path of paths) {
+      for (const body of bodies) {
+        const result = await ncmBatchPath(cookie, path, body);
+        if (result.ok) return;
+      }
+    }
+    await ncmCall('listentogether_end', { cookie, roomId });
+  };
+
   const leave = async () => {
+    leaveInFlight = true;
     try {
       state.busy = 'leave';
       emit(true);
       const cookie = streamingAccountCookie('netease');
       const roomId = state.roomId || pendingRestore?.roomId;
       const isHost = Boolean(state.userId && (state.inviterId || pendingRestore?.inviterId) && state.userId === (state.inviterId || pendingRestore?.inviterId));
-      if (cookie && roomId && isHost) {
-        await ncmCall('listentogether_end', { cookie, roomId });
-      }
+      rememberEndedRoom(roomId);
+      if (cookie && roomId) await leaveOfficialRoom(cookie, roomId);
       log('INFO', `together left room ${roomId || ''} as ${isHost ? 'host' : 'guest'}`);
-      lastEndedRoomId = roomId || lastEndedRoomId;
-      lastEndedAt = Date.now();
       pendingRestore = null;
       restorePrompted = false;
       sessionActive = false;
       clearRoom();
       state.lastError = null;
-      return { ok: true, ...emit(true) };
+      return { ok: true, inRoom: false, sessionActive: false, pendingRestore: null, alreadyInRoom: false, ...emit(true) };
     } catch (error) {
-      lastEndedRoomId = state.roomId || pendingRestore?.roomId || lastEndedRoomId;
-      lastEndedAt = Date.now();
+      rememberEndedRoom(state.roomId || pendingRestore?.roomId);
       pendingRestore = null;
       restorePrompted = false;
       sessionActive = false;
       clearRoom();
       return fail(error);
     } finally {
+      leaveInFlight = false;
       state.busy = null;
       emit();
     }
@@ -2466,6 +2514,9 @@ const createTogetherService = ({ log, broadcast, electron }) => {
 
   const restore = async () => {
     const held = pendingRestore;
+    lastEndedRoomId = null;
+    lastEndedAt = 0;
+    try { writeFileSync(leaveMemoryPath, '{}\n'); } catch {}
     try {
       state.busy = 'restore';
       emit(true);
@@ -2640,6 +2691,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
 
   const report = async (payload) => {
     try {
+      if (leaveInFlight || (recentlyLeftRoom(lastEndedRoomId || state.roomId) && !sessionActive)) return { ok: true, ...snapshot() };
       if (!state.inRoom && !sessionActive && !pendingRestore) return { ok: true, ...snapshot() };
       const songId = neteaseIdText(payload?.songId) || state.songId;
       const playStatus = String(payload?.playStatus || state.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
@@ -2660,8 +2712,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       emit();
       if (songId && !state.songTitle) await applySongMeta(songId);
       const cookie = streamingAccountCookie('netease');
-      if (!togetherRoomIdText(state.roomId) && cookie) await ensureTogetherRoomId(cookie);
-      if (!togetherRoomIdText(state.roomId)) {
+      if (!togetherRoomIdText(state.roomId) && cookie && sessionActive && !recentlyLeftRoom(lastEndedRoomId)) await ensureTogetherRoomId(cookie);
+      if (!togetherRoomIdText(state.roomId) || (recentlyLeftRoom(lastEndedRoomId) && !sessionActive)) {
         emit();
         return { ok: true, ...snapshot() };
       }

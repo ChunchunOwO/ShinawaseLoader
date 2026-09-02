@@ -3143,6 +3143,7 @@ const remoteTogetherCommandIsNew = (snapshot) => {
 };
 togetherOnLocalPlay = async (track, options = {}) => {
   if (options.togetherRemote || track?.provider !== 'netease') return;
+  if (!togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.snapshot.sessionActive) return;
   const songId = String(track.providerTrackId || '').trim();
   if (!/^\d+$/u.test(songId) || songId === '0') return;
   togetherUi.localControlAt = Date.now();
@@ -3200,8 +3201,12 @@ togetherOnLocalPlay = async (track, options = {}) => {
     if (reported.lastCommand?.clientSeq) togetherUi.lastSentSeq = Math.max(togetherUi.lastSentSeq, Number(reported.lastCommand.clientSeq) || 0);
     paintTogetherChrome();
   }
-  const queue = options.replaceQueueWith || togetherQueueTracks(togetherUi.snapshot);
-  const ids = [...new Set((queue || []).map((item) => item?.provider === 'netease' ? String(item.providerTrackId || '') : '').filter((id) => /^\d+$/u.test(id)))];
+  const liveQueue = findPlaybackQueue();
+  const queueItems = Array.isArray(options.replaceQueueWith) && options.replaceQueueWith.length
+    ? options.replaceQueueWith
+    : Array.isArray(liveQueue?.items) ? liveQueue.items : [];
+  const ids = [...new Set(queueItems.map((item) => item?.provider === 'netease' ? String(item.providerTrackId || '') : '').filter((id) => /^\d+$/u.test(id)))];
+  if (songId && !ids.includes(songId)) ids.unshift(songId);
   if (ids.length && togetherUi.snapshot.roomId && togetherUi.pendingSongId === songId) {
     void togetherInvoke('togetherSyncList', { ids }).catch(() => undefined);
   }
@@ -3238,13 +3243,12 @@ const applyTogetherRemoteCommand = async (command, snapshot, force = false) => {
     if (togetherUi.pendingSongId && songId !== togetherUi.pendingSongId && Date.now() - togetherUi.localControlAt < 8000) return;
     const controls = togetherPlaybackControls();
     if ((type === 'GOTO' || (songId && songId !== current?.songId)) && songId) {
-      const tracks = togetherQueueTracks({ ...snapshot, songId });
       const target = togetherTrackFromId(songId, snapshot);
       if (target) {
         await playViaQueue(target, {
-          replaceQueueWith: tracks.length ? tracks.map((item) => toLibraryTrack(item)) : undefined,
           startSeconds: progressSec,
           togetherRemote: true,
+          forceNewQueueItem: true,
           source: sourceFor('netease', togetherCopy.title),
         });
         if (command.playStatus === 'PAUSE') await controls.pause?.();
@@ -3309,6 +3313,16 @@ const syncTogetherPlayback = async (snapshot, previous) => {
 applyTogetherSnapshot = (snapshot) => {
   const previous = togetherUi.snapshot;
   const incoming = snapshot && typeof snapshot === 'object' ? snapshot : previous;
+  if (incoming && incoming.inRoom === false && incoming.sessionActive === false && incoming.pendingRestore == null) {
+    togetherUi.pendingSongId = '';
+    togetherUi.localControlAt = 0;
+    togetherUi.snapshot = incoming;
+    togetherUi.wasInRoom = false;
+    togetherUi.roomClockAt = 0;
+    togetherUi.lastMemberCount = 0;
+    paintTogetherChrome();
+    return;
+  }
   const keepLocal = Boolean(togetherUi.pendingSongId && Date.now() - togetherUi.localControlAt < 8000 && incoming.songId && incoming.songId !== togetherUi.pendingSongId && Number(incoming.lastCommand?.clientSeq || 0) <= togetherUi.lastSentSeq);
   togetherUi.snapshot = keepLocal ? {
     ...incoming,
@@ -3416,8 +3430,10 @@ const togetherAcceptInvite = async (invite) => {
 };
 const togetherLeaveRoom = async () => {
   try {
+    togetherUi.pendingSongId = '';
+    togetherUi.localControlAt = 0;
     const left = await togetherInvoke('togetherLeave', {});
-    applyTogetherSnapshot(left);
+    applyTogetherSnapshot({ ...left, inRoom: false, sessionActive: false, pendingRestore: null, alreadyInRoom: false, users: [], songId: null });
   } catch (error) {
     showChromeNotice(togetherErrorMessage(error));
   }
