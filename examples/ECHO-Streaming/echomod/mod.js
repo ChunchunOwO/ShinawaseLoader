@@ -42,6 +42,7 @@ const ncmCopy = chinese ? {
   comments: 'Comments', similar: 'Similar', unblock: 'Unblock', sending: 'Send', reply: 'Reply', delete: 'Delete', like: 'Like', loadMore: 'More comments', emptyComments: 'No comments yet', needLogin: 'Sign in to NetEase to comment', hot: 'Hot', latest: 'Latest', composer: 'Write a comment…', sent: 'Comment posted', deleted: 'Comment deleted', similarHint: 'Recommend similar tracks from the current song. Queue them or auto-play batches.', similarPlay: 'Play batch', similarQueue: 'Add to queue', similarAuto: 'Auto-play', similarCount: 'Batch size', similarDone: (n) => `Queued ${n} similar tracks`, unblocked: 'Playing via unblock sources', phone: 'Phone', captcha: 'Captcha', sendCaptcha: 'Send code', phoneLogin: 'Phone login', password: 'Password (optional)', captchaSent: 'Captcha sent', loggedIn: 'Signed in with phone', country: 'Code',
 };
 copy.dailyOpenStreaming = chinese ? '这个每日歌单不能写入本地歌单，已在流媒体页打开。' : 'This daily list cannot be written to a local playlist, so it opened on the Streaming page.';
+copy.playlistPlaceholderShort = chinese ? '粘贴歌单链接' : 'Paste a playlist URL';
 const stored = (() => { try { return external.settings?.get?.() || {}; } catch { return {}; } })();
 const togetherUi = {
   snapshot: { loggedIn: false, inRoom: false, users: [], invites: [], friends: [], playlistIds: [] },
@@ -2680,23 +2681,51 @@ const installNativePlaylistImport = () => {
   const cloudDownIcon = (size) => lucideSvg(size, '<path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/>');
   const closeIcon = (size) => lucideSvg(size, '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
   const removeForms = () => { for (const node of document.querySelectorAll(`form[${marker}]`)) node.remove(); };
-  // Expanding form that mirrors the native "new local playlist" flow: it uses
-  // the same playlist-create-form / secondary-action / tool-button classes so
-  // the app stylesheet keeps it visually identical and sized to the sidebar.
+  const importStyleId = 'echo-streaming-playlist-import-style';
+  const ensureImportStyle = () => {
+    if (document.getElementById(importStyleId)) return;
+    const style = document.createElement('style');
+    style.id = importStyleId;
+    style.textContent = `
+      .playlist-home-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) max-content 40px 40px; }
+      .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) 40px 40px; }
+      @media (max-width: 1040px) {
+        .playlist-home-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(210px, 300px) max-content 40px 40px; }
+        .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(210px, 300px) 40px 40px; }
+      }
+      @media (max-width: 700px) {
+        .playlist-home-header:has([${buttonMarker}]),
+        .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 40px 40px; }
+      }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 34px 34px; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import { grid-column: auto; }
+      [${buttonMarker}] { display: grid; width: 34px; height: 34px; place-items: center; flex: none; }
+      .playlist-home-header [${buttonMarker}] { width: 40px; height: 40px; }
+      .playlist-collection-home > .echo-streaming-import-form { display: flex; justify-self: end; width: auto; max-width: min(100%, 560px); }
+      .collection-playlist-sidebar .echo-streaming-import-form,
+      .playlist-sidebar .echo-streaming-import-form { margin: 4px 6px 8px; min-width: 0; }
+    `;
+    document.head.append(style);
+  };
+  // Home uses the official compact create card (right-aligned, 320px input).
+  // The old playlist-create-form is a 1fr grid and stretches the whole page
+  // when inserted under .playlist-home-header.
   const openForm = (header) => {
     const existing = header.parentElement?.querySelector(`form[${marker}]`);
     removeForms();
     if (existing) return;
+    ensureImportStyle();
+    const home = header.matches('.playlist-home-header, .playlist-collection-home > header');
     const form = document.createElement('form');
-    form.className = 'playlist-create-form echo-streaming-import-form';
+    form.className = home ? 'playlist-home-create-form echo-streaming-import-form' : 'playlist-create-form echo-streaming-import-form';
     form.setAttribute(marker, 'true');
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = copy.playlistPlaceholder;
+    input.placeholder = copy.playlistPlaceholderShort;
     input.setAttribute('aria-label', copy.addPlaylist);
     const submit = document.createElement('button');
     submit.type = 'submit';
-    submit.className = 'secondary-action';
+    submit.className = home ? 'primary-action' : 'secondary-action';
     submit.disabled = true;
     const submitLabel = document.createElement('span');
     submitLabel.textContent = copy.add;
@@ -2769,12 +2798,6 @@ const installNativePlaylistImport = () => {
       .echo-streaming-daily-item span { display: grid; min-width: 0; }
       .echo-streaming-daily-item strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
       .echo-streaming-daily-item small { overflow: hidden; color: var(--theme-muted-text, #6c7179); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-      .playlist-home-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) max-content 40px 40px; }
-      .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) minmax(250px, 360px) 40px 40px; }
-      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 34px 34px; }
-      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import { grid-column: auto; }
-      [${buttonMarker}] { display: grid; width: 34px; height: 34px; place-items: center; flex: none; }
-      .playlist-home-header [${buttonMarker}] { width: 40px; height: 40px; }
     `;
     document.head.append(style);
   };
@@ -2959,6 +2982,7 @@ const installNativePlaylistImport = () => {
     mountDailyDetail();
   };
   const mount = () => {
+    ensureImportStyle();
     for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}]`)) {
       if (!isLivePage(node)) node.remove();
     }
@@ -3025,6 +3049,7 @@ const installNativePlaylistImport = () => {
     paintNativeDailyPanel = () => {};
     for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}], [${dailyDetailMarker}]`)) node.remove();
     document.getElementById(dailyStyleId)?.remove();
+    document.getElementById(importStyleId)?.remove();
   };
 };
 playlistPageUnsubscribe = installNativePlaylistImport();
