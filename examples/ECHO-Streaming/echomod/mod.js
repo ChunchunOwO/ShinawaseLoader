@@ -3037,6 +3037,7 @@ const togetherErrorMessage = (error) => {
   if (/netease_login_required/iu.test(message)) return togetherCopy.needLogin;
   if (/together_restore_pending|together_already_in_room/iu.test(message)) return togetherCopy.restoreTitle;
   if (/together_restore_failed|together_room_id_missing/iu.test(message)) return chinese ? '已进入一起听，房间号稍后同步。' : 'Joined listen-together. Room id will sync next.';
+  if (/together_not_in_room/iu.test(message)) return chinese ? '一起听房间还在同步，请再播一次当前歌曲。' : 'Listen-together is still joining. Play the current track again.';
   return message;
 };
 const togetherTrackFromId = (songId, meta = {}) => {
@@ -3140,10 +3141,17 @@ togetherOnLocalPlay = async (track, options = {}) => {
     coverUrl: track.coverThumb || track.coverUrl,
     durationMs: Math.round((Number(track.duration) || 0) * 1000),
   }).catch(() => undefined);
-  if (reported?.clientSeq) togetherUi.lastSentSeq = Number(reported.clientSeq) || togetherUi.lastSentSeq;
+  if (reported) {
+    togetherUi.snapshot = { ...togetherUi.snapshot, ...reported };
+    if (reported.clientSeq) togetherUi.lastSentSeq = Number(reported.clientSeq) || togetherUi.lastSentSeq;
+    paintTogetherChrome();
+  }
   const queue = options.replaceQueueWith || togetherQueueTracks(togetherUi.snapshot);
   const ids = [...new Set((queue || []).map((item) => item?.provider === 'netease' ? String(item.providerTrackId || '') : '').filter((id) => /^\d+$/u.test(id)))];
-  if (ids.length) await togetherInvoke('togetherSyncList', { ids }).catch(() => undefined);
+  if (ids.length && togetherUi.snapshot.roomId) {
+    const synced = await togetherInvoke('togetherSyncList', { ids }).catch(() => undefined);
+    if (synced) togetherUi.snapshot = { ...togetherUi.snapshot, ...synced };
+  }
 };
 const applyTogetherRemoteCommand = async (command, snapshot, force = false) => {
   if (!command || togetherUi.applying) return;
@@ -3534,7 +3542,7 @@ const fillTogetherSheet = (root) => {
   meta.append(line);
   nowPlaying.append(meta);
   root.append(nowPlaying);
-  if (snap.lastError) root.append(make('p', 'echo-streaming-together-empty', snap.lastError));
+  if (snap.lastError) root.append(make('p', 'echo-streaming-together-empty', togetherErrorMessage(snap.lastError)));
   if (snap.inRoom && !snap.songId && snap.role === 'host') root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needTrack));
   const actions = make('div', 'echo-streaming-together-actions');
   actions.append(actionButton(snap.inRoom ? togetherCopy.inviteFriend : togetherCopy.invite, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));

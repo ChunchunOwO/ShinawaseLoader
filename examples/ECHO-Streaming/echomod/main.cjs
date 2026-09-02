@@ -532,6 +532,19 @@ const neteaseIdText = (value) => {
   return /^\d+$/u.test(text) && text !== '0' ? text : null;
 };
 
+// Official listen-together rooms use either digits or hex_underscore ids such as
+// `3d1fbf631e8e2ce3e342dc3e2425956b_1788065404`. Digit-only parsers drop those.
+const togetherRoomIdText = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return String(Math.trunc(value));
+  let text = String(value ?? '').trim();
+  if (!text || text === '0' || text === 'null' || text === 'undefined') return null;
+  try { text = decodeURIComponent(text); } catch {}
+  text = text.trim();
+  if (/^\d+$/u.test(text) && text !== '0') return text;
+  if (/^[0-9a-f]{8,64}_\d+$/iu.test(text)) return text;
+  return null;
+};
+
 const dailySongsFromBody = (value) => {
   const body = neteaseRecord(value);
   const data = neteaseRecord(body.data);
@@ -1503,9 +1516,9 @@ const parseTogetherShare = (value) => {
   const text = typeof value === 'string' ? value : (() => {
     try { return JSON.stringify(value || ''); } catch { return String(value || ''); }
   })();
-  const roomId = (text.match(/[?&]roomId=(\d+)/iu) || [])[1] || null;
-  const inviterId = (text.match(/[?&]inviterId=(\d+)/iu) || [])[1] || null;
-  const songId = (text.match(/[?&]songId=(\d+)/iu) || [])[1] || null;
+  const roomId = togetherRoomIdText((text.match(/[?&]roomId=([^&#\s]+)/iu) || [])[1]);
+  const inviterId = neteaseIdText((text.match(/[?&]inviterId=(\d+)/iu) || [])[1]);
+  const songId = neteaseIdText((text.match(/[?&]songId=(\d+)/iu) || [])[1]);
   if (!roomId || !inviterId) return null;
   return { roomId, inviterId, songId };
 };
@@ -1561,7 +1574,7 @@ const togetherInviteFrom = (value, fallback = {}) => {
   const row = neteaseRecord(value);
   const nested = neteaseRecord(row.data || row.invitation || row.content || row.msg);
   const share = parseTogetherShare(row.msg || row.lastMsg || row.url || row.shareUrl || nested.msg || nested.url || nested.content || row);
-  const roomId = neteaseIdText(row.roomId || nested.roomId || share?.roomId);
+  const roomId = togetherRoomIdText(row.roomId || nested.roomId || share?.roomId);
   const inviterId = neteaseIdText(row.inviterId || row.fromUserId || row.userId || nested.inviterId || share?.inviterId);
   if (!roomId || !inviterId) return null;
   const fromUser = togetherUserFrom(row.fromUser || row.user || row.inviter || nested.fromUser) || togetherUserFrom(row);
@@ -1648,6 +1661,11 @@ const togetherFlagTrue = (value) => {
 };
 
 const extractTogetherRoomId = (body) => {
+  const record = neteaseRecord(body);
+  const data = neteaseRecord(record.data);
+  const roomInfo = neteaseRecord(data.roomInfo || data.room || record.roomInfo || record.room);
+  const direct = togetherRoomIdText(roomInfo.roomId || data.roomId || record.roomId);
+  if (direct) return direct;
   const seen = new Set();
   const visit = (value, depth) => {
     if (value == null || depth > 8) return null;
@@ -1671,8 +1689,8 @@ const extractTogetherRoomId = (body) => {
       return null;
     }
     for (const key of Object.keys(value)) {
-      if (/^(room[_-]?id|roomid|agoraroominid|agoreroomid|listenroomid|ltroomid|channelid)$/iu.test(key)) {
-        const id = neteaseIdText(value[key]);
+      if (/^(room[_-]?id|roomid|agoraroominid|agoreroomid|listenroomid|ltroomid)$/iu.test(key)) {
+        const id = togetherRoomIdText(value[key]);
         if (id) return id;
         const nested = visit(value[key], depth + 1);
         if (nested) return nested;
@@ -1844,7 +1862,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const record = neteaseRecord(body);
     const data = neteaseRecord(record.data);
     const roomInfo = neteaseRecord(data.roomInfo || data.room || extras.roomInfo || record.roomInfo);
-    const roomId = extractTogetherRoomId(body) || neteaseIdText(extras.roomId || state.roomId);
+    const roomId = extractTogetherRoomId(body) || togetherRoomIdText(extras.roomId) || togetherRoomIdText(state.roomId);
     const users = togetherUsersFrom(roomInfo) || togetherUsersFrom(data);
     const moreUsers = togetherUsersFrom(data.roomUsers);
     const mergedUsers = [...users];
@@ -2182,9 +2200,44 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     }
   };
 
+  const ensureTogetherRoomId = async (cookie) => {
+    const held = togetherRoomIdText(state.roomId) || togetherRoomIdText(pendingRestore?.roomId);
+    if (held) {
+      state.roomId = held;
+      return held;
+    }
+    if (!cookie) return null;
+    const adopt = async (body, label) => {
+      const harvested = extractTogetherRoomId(body);
+      if (!harvested) return null;
+      log('INFO', `together harvested roomId ${harvested} from ${label}`);
+      await applyRoomBody(body, {
+        inRoom: true,
+        forceRoom: true,
+        roomId: harvested,
+        inviterId: state.inviterId || pendingRestore?.inviterId,
+      });
+      if (!state.roomId) state.roomId = harvested;
+      return togetherRoomIdText(state.roomId);
+    };
+    const status = await ncmCall('listentogether_status', { cookie });
+    if (status.body) {
+      const found = await adopt(status.body, 'status');
+      if (found) return found;
+    }
+    const created = await ncmCall('listentogether_room_create', { cookie });
+    if (created.body) {
+      const found = await adopt(created.body, 'create');
+      if (found) return found;
+    }
+    return togetherRoomIdText(state.roomId);
+  };
+
   const playCommand = async (commandType, extras = {}) => {
-    if (!state.inRoom || !state.roomId) return { ok: false, error: 'together_not_in_room' };
+    if (!state.inRoom && !sessionActive) return { ok: false, error: 'together_not_in_room' };
     const cookie = cookieOrThrow();
+    if (!togetherRoomIdText(state.roomId)) await ensureTogetherRoomId(cookie);
+    if (!togetherRoomIdText(state.roomId)) return { ok: false, error: 'together_not_in_room' };
     const type = String(commandType || 'PLAY').trim() || 'PLAY';
     const targetSongId = String(extras.targetSongId || state.songId || '0');
     const formerSongId = type.toUpperCase() === 'GOTO' ? '-1' : String(extras.formerSongId || state.songId || '-1');
@@ -2221,9 +2274,11 @@ const createTogetherService = ({ log, broadcast, electron }) => {
   };
 
   const heartbeat = async () => {
-    if (!sessionActive || pendingRestore || !state.inRoom || !state.roomId) return;
+    if (!sessionActive || pendingRestore || !state.inRoom) return;
     const cookie = streamingAccountCookie('netease');
     if (!cookie) return;
+    if (!togetherRoomIdText(state.roomId)) await ensureTogetherRoomId(cookie);
+    if (!togetherRoomIdText(state.roomId)) return;
     const result = await ncmCall('listentogether_heatbeat', {
       cookie,
       roomId: String(state.roomId),
@@ -2328,7 +2383,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       emit(true);
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
-      const roomId = neteaseIdText(payload?.roomId);
+      const roomId = togetherRoomIdText(payload?.roomId);
       const inviterId = neteaseIdText(payload?.inviterId);
       if (!roomId || !inviterId) throw new Error('together_invite_invalid');
       const result = await ncmCall('listentogether_accept', { cookie, roomId, inviterId });
@@ -2425,28 +2480,21 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           inviterId: server.inviterId || held?.inviterId || state.inviterId,
         });
       }
-      if (!state.roomId) {
-        const created = await ncmCall('listentogether_room_create', { cookie });
-        const harvested = extractTogetherRoomId(created.body);
-        if (harvested) {
-          log('INFO', `together harvested roomId ${harvested} from create`);
-          await applyRoomBody(created.body, { inRoom: true, forceRoom: true, roomId: harvested, inviterId: state.inviterId || state.userId });
-          state.roomId = harvested;
-        } else if (created.body) {
-          try { log('WARN', `together create dump ${JSON.stringify(created.body).slice(0, 1800)}`); } catch {}
-        }
+      if (!togetherRoomIdText(state.roomId)) await ensureTogetherRoomId(cookie);
+      if (!togetherRoomIdText(state.roomId)) {
+        try { log('WARN', 'together restore still missing roomId after harvest'); } catch {}
       }
       sessionActive = true;
       pendingRestore = null;
       restorePrompted = false;
-      if (state.roomId) {
+      if (togetherRoomIdText(state.roomId)) {
         await refreshRoom(cookie);
         await heartbeat();
       }
       if (!(state.userId && state.inviterId && state.userId === state.inviterId)) state.role = 'guest';
       else state.role = 'host';
       state.inRoom = true;
-      state.lastError = state.roomId ? null : 'together_room_id_missing';
+      state.lastError = togetherRoomIdText(state.roomId) ? null : 'together_room_id_missing';
       log('INFO', `together restored room ${state.roomId || 'unknown'} as ${state.role}`);
       return { ok: true, restored: true, ...emit(true) };
     } catch (error) {
@@ -2541,8 +2589,10 @@ const createTogetherService = ({ log, broadcast, electron }) => {
 
   const syncList = async (payload) => {
     try {
-      if (!state.inRoom || !state.roomId) throw new Error('together_not_in_room');
+      if (!state.inRoom && !sessionActive) return { ok: true, ...snapshot() };
       const cookie = cookieOrThrow();
+      if (!togetherRoomIdText(state.roomId)) await ensureTogetherRoomId(cookie);
+      if (!togetherRoomIdText(state.roomId)) return { ok: true, ...snapshot() };
       const ids = [...new Set((Array.isArray(payload?.ids) ? payload.ids : [])
         .map((id) => neteaseIdText(id))
         .filter(Boolean))];
@@ -2568,7 +2618,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
 
   const report = async (payload) => {
     try {
-      if (!state.inRoom || !state.roomId) return { ok: true, ...snapshot() };
+      if (!state.inRoom && !sessionActive && !pendingRestore) return { ok: true, ...snapshot() };
       const songId = neteaseIdText(payload?.songId) || state.songId;
       const playStatus = String(payload?.playStatus || state.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
       const progressMs = Math.max(0, Math.floor(Number(payload?.progressMs) || 0));
@@ -2586,6 +2636,16 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       if (payload?.coverUrl) state.songCover = String(payload.coverUrl);
       if (Number(payload?.durationMs) > 0) state.songDurationMs = Math.floor(Number(payload.durationMs));
       if (songId && !state.songTitle) await applySongMeta(songId);
+      const cookie = streamingAccountCookie('netease');
+      if (!togetherRoomIdText(state.roomId) && cookie) await ensureTogetherRoomId(cookie);
+      if (!togetherRoomIdText(state.roomId)) {
+        emit();
+        return { ok: true, ...snapshot() };
+      }
+      if (!state.inRoom) {
+        state.inRoom = true;
+        sessionActive = true;
+      }
       if (commandType || songChanged || statusChanged || (seeked && commandType)) {
         await playCommand(commandType || (songChanged ? 'GOTO' : (statusChanged ? playStatus : 'seek')), {
           targetSongId: songId,
