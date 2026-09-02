@@ -3308,7 +3308,7 @@ const togetherReportLocal = async (commandType) => {
   if (reported?.clientSeq) togetherUi.lastSentSeq = Number(reported.clientSeq) || togetherUi.lastSentSeq;
 };
 togetherInviteFlow = async () => {
-  if (togetherUi.snapshot.pendingRestore) {
+  if (togetherUi.snapshot.pendingRestore?.roomId) {
     const restored = await togetherInvoke('togetherRestore', {}).catch((error) => {
       showChromeNotice(togetherErrorMessage(error));
       return null;
@@ -3318,6 +3318,9 @@ togetherInviteFlow = async () => {
       paintTogetherChrome();
       return;
     }
+  } else if (togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom) {
+    paintTogetherChrome();
+    return;
   }
   if (!neteaseConnected() && !togetherUi.snapshot.loggedIn) {
     showChromeNotice(togetherCopy.needLogin);
@@ -3330,7 +3333,7 @@ togetherInviteFlow = async () => {
       showChromeNotice(togetherCopy.creating);
       const created = await togetherInvoke('togetherCreate', {});
       applyTogetherSnapshot(created);
-      if (created?.pendingRestore || togetherUi.snapshot.pendingRestore) {
+      if (created?.pendingRestore || created?.alreadyInRoom || togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom) {
         paintTogetherChrome();
         return;
       }
@@ -3347,6 +3350,9 @@ togetherInviteFlow = async () => {
     paintTogetherChrome();
   } catch (error) {
     showChromeNotice(togetherErrorMessage(error));
+    const snap = await togetherInvoke('togetherStatus', {}).catch(() => null);
+    if (snap) applyTogetherSnapshot(snap);
+    else paintTogetherChrome();
   }
 };
 const togetherAcceptInvite = async (invite) => {
@@ -3366,7 +3372,7 @@ const togetherLeaveRoom = async () => {
     showChromeNotice(togetherErrorMessage(error));
   }
 };
-const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.pendingRestore);
+const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.pendingRestore || snap?.alreadyInRoom);
 const makeTogetherLeaveButton = (className = '') => {
   const node = actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
     className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
