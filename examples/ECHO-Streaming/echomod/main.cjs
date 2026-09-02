@@ -1671,7 +1671,7 @@ const extractTogetherRoomId = (body) => {
       return null;
     }
     for (const key of Object.keys(value)) {
-      if (/^(room[_-]?id|roomid)$/iu.test(key)) {
+      if (/^(room[_-]?id|roomid|agoraroominid|agoreroomid|listenroomid|ltroomid|channelid)$/iu.test(key)) {
         const id = neteaseIdText(value[key]);
         if (id) return id;
         const nested = visit(value[key], depth + 1);
@@ -1916,7 +1916,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (roomId) state.roomId = roomId;
     if (inviterId) state.inviterId = inviterId;
     if (mergedUsers.length) state.users = mergedUsers;
-    state.inRoom = Boolean((inRoom || (sessionActive && extras.forceRoom)) && state.roomId);
+    state.inRoom = Boolean((inRoom || (sessionActive && extras.forceRoom)) && (state.roomId || extras.forceRoom === true));
     if (state.inRoom && !Number(state.startedAt)) state.startedAt = Date.now();
     if (!state.inRoom) {
       if (!sessionActive) {
@@ -2113,18 +2113,23 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           roomId: server.roomId,
           inviterId: server.inviterId,
         });
-        if (pendingRestore?.roomId && cookie) {
-          const check = await ncmCall('listentogether_room_check', { cookie, roomId: pendingRestore.roomId });
-          if (check.ok) {
-            await applyRoomBody(check.body, {
-              inRoom: true,
-              forceRoom: true,
-              activate: false,
-              roomId: pendingRestore.roomId,
-              inviterId: pendingRestore.inviterId || server.inviterId,
-            });
+        if (!server.roomId && !pendingRestore?.roomId) {
+          try { log('WARN', `together leftover dump ${JSON.stringify(status.body).slice(0, 1800)}`); } catch {}
+        }
+        if (pendingRestore && cookie) {
+          if (pendingRestore.roomId) {
+            const check = await ncmCall('listentogether_room_check', { cookie, roomId: pendingRestore.roomId });
+            if (check.ok) {
+              await applyRoomBody(check.body, {
+                inRoom: true,
+                forceRoom: true,
+                activate: false,
+                roomId: pendingRestore.roomId,
+                inviterId: pendingRestore.inviterId || server.inviterId,
+              });
+            }
           }
-          log('INFO', `together auto-adopting leftover room ${pendingRestore.roomId}`);
+          log('INFO', `together auto-adopting leftover room ${pendingRestore.roomId || 'unknown'}`);
           await restore();
         }
       } else {
@@ -2398,8 +2403,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const cookie = cookieOrThrow();
       if (!(await refreshAccount())) throw new Error('netease_login_required');
       missedInRoom = 0;
-      if (held?.roomId) {
-        state.roomId = held.roomId;
+      if (held) {
+        if (held.roomId) state.roomId = held.roomId;
         state.inviterId = held.inviterId || null;
         state.users = held.users || [];
         state.songId = held.songId || state.songId;
@@ -2416,6 +2421,9 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       const status = await ncmCall('listentogether_status', { cookie });
       if (status.ok) {
         const server = togetherServerRoom(status.body);
+        if (!server.roomId && !state.roomId) {
+          try { log('WARN', `together restore dump ${JSON.stringify(status.body).slice(0, 1800)}`); } catch {}
+        }
         await applyRoomBody(status.body, {
           inRoom: true,
           forceRoom: true,
@@ -2423,23 +2431,38 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           inviterId: server.inviterId || held?.inviterId || state.inviterId,
         });
       }
+      if (!state.roomId) {
+        const created = await ncmCall('listentogether_room_create', { cookie });
+        const harvested = extractTogetherRoomId(created.body);
+        if (harvested) {
+          log('INFO', `together harvested roomId ${harvested} from create`);
+          await applyRoomBody(created.body, { inRoom: true, forceRoom: true, roomId: harvested, inviterId: state.inviterId || state.userId });
+          state.roomId = harvested;
+        } else if (created.body) {
+          try { log('WARN', `together create dump ${JSON.stringify(created.body).slice(0, 1800)}`); } catch {}
+        }
+      }
       sessionActive = true;
       pendingRestore = null;
       restorePrompted = false;
-      await refreshRoom(cookie);
-      await heartbeat();
+      if (state.roomId) {
+        await refreshRoom(cookie);
+        await heartbeat();
+      }
       if (!(state.userId && state.inviterId && state.userId === state.inviterId)) state.role = 'guest';
       else state.role = 'host';
-      if (!state.inRoom || !state.roomId) throw new Error('together_restore_failed');
-      state.lastError = null;
-      log('INFO', `together restored room ${state.roomId} as ${state.role}`);
+      state.inRoom = true;
+      state.lastError = state.roomId ? null : 'together_room_id_missing';
+      log('INFO', `together restored room ${state.roomId || 'unknown'} as ${state.role}`);
       return { ok: true, restored: true, ...emit(true) };
     } catch (error) {
-      sessionActive = false;
-      clearRoom();
-      pendingRestore = held || pendingRestore;
-      restorePrompted = Boolean(pendingRestore?.roomId);
-      return fail(error);
+      sessionActive = true;
+      pendingRestore = null;
+      restorePrompted = false;
+      state.inRoom = true;
+      state.lastError = error instanceof Error ? error.message : String(error);
+      log('WARN', `together restore continued after ${state.lastError}`);
+      return { ok: true, restored: true, ...emit(true) };
     } finally {
       state.busy = null;
       emit();

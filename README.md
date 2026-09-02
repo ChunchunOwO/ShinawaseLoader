@@ -242,7 +242,7 @@ flowchart TB
 
 | 名称 | 说明 | 清单 |
 | --- | --- | --- |
-| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质。支持账号登录、歌单扫描、每日推荐、一起听、评论、相似推荐、灰色曲目回退。 | `echo.community-streaming` · 1.6.27 |
+| [ECHO Streaming](examples/ECHO-Streaming) | 社区歌曲源浏览（公共 streaming / playback 桥），并带空间音频外壳 CSS（`spatial.css`）。部分歌曲源线路依赖 `ShinawaseLoader/package.json` 中的增强客户端（安装脚本自动 `npm install`）。右键下载到系统 Music/Stream：单曲 / 歌单 / 专辑可选音质。支持账号登录、歌单扫描、每日推荐、一起听、评论、相似推荐、灰色曲目回退。 | `echo.community-streaming` · 1.6.28 |
 | [ECHO MV](examples/ECHO-MV) | 恢复 ECHO 隐藏的 MV 功能：播放条只留 MV 入口，歌词页面板与设置为 Mod 自建（不劫持官方舞台）；在线视频源应用内播放、外部搜索、本地绑定。含 `main.cjs`。 | `echo.mv` · 1.0.10 |
 
 从仓库根目录打包预装示例：

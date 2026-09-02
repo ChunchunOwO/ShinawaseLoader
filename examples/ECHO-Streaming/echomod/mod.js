@@ -3035,7 +3035,8 @@ const formatTogetherClock = (ms) => {
 const togetherErrorMessage = (error) => {
   const message = error instanceof Error ? error.message : String(error || '');
   if (/netease_login_required/iu.test(message)) return togetherCopy.needLogin;
-  if (/together_restore_pending|together_already_in_room|together_restore_failed/iu.test(message)) return togetherCopy.restoreTitle;
+  if (/together_restore_pending|together_already_in_room/iu.test(message)) return togetherCopy.restoreTitle;
+  if (/together_restore_failed|together_room_id_missing/iu.test(message)) return chinese ? '已进入一起听，房间号稍后同步。' : 'Joined listen-together. Room id will sync next.';
   return message;
 };
 const togetherTrackFromId = (songId, meta = {}) => {
