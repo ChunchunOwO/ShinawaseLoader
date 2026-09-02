@@ -2132,6 +2132,18 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     if (check.ok) await applyRoomBody(check.body, { forceRoom: true, roomId: state.roomId });
     const playlist = await ncmCall('listentogether_sync_playlist_get', { cookie, roomId: state.roomId });
     if (playlist.ok) await applyRoomBody(playlist.body, { forceRoom: true, roomId: state.roomId });
+    if (!state.songId && state.playlistIds[0]) {
+      state.songId = state.playlistIds[0];
+      await applySongMeta(state.songId);
+      state.playStatus = state.playStatus || 'PLAY';
+      state.lastCommand = {
+        commandType: 'GOTO',
+        targetSongId: state.songId,
+        playStatus: state.playStatus,
+        progressMs: state.progressMs || 0,
+        clientSeq: state.clientSeq,
+      };
+    }
   };
 
   const playCommand = async (commandType, extras = {}) => {

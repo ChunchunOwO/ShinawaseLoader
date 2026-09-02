@@ -55,6 +55,7 @@ const togetherUi = {
   wasInRoom: false,
   roomClockAt: 0,
   lastMemberCount: 0,
+  pulling: false,
   friendQuery: '',
   friendSearchTimer: 0,
 };
@@ -3199,33 +3200,59 @@ const togetherDisplayedProgress = () => {
   const started = togetherUi.progressAt || 0;
   return started ? base + Math.max(0, Date.now() - started) : base;
 };
-const syncTogetherPlayback = async (snapshot, previous) => {
-  if (!snapshot?.inRoom || snapshot.pendingRestore || togetherUi.applying) return;
-  const joined = Boolean(snapshot.inRoom && !previous?.inRoom);
-  togetherUi.lastMemberCount = snapshot.users?.length || 0;
-  if (snapshot.role === 'host') {
-    if (joined || !snapshot.songId) await togetherReportLocal('GOTO');
-    return;
-  }
-  const songId = String(snapshot.songId || snapshot.lastCommand?.targetSongId || '').trim();
-  if (!songId || songId === '0') return;
+const playTogetherSong = async (snapshot) => {
+  const songId = String(snapshot?.songId || snapshot?.lastCommand?.targetSongId || (snapshot?.playlistIds || [])[0] || '').trim();
+  if (!songId || songId === '0') return false;
+  const progressSec = Math.max(0, Number(snapshot.progressMs || snapshot.lastCommand?.progressMs || 0) / 1000);
   const current = togetherCurrentNetease();
-  const playStatus = snapshot.playStatus === 'PAUSE' ? 'PAUSE' : 'PLAY';
-  const progressMs = Number(snapshot.progressMs) || 0;
-  const status = await playbackApi()?.getStatus?.().catch(() => null);
-  const wrongSong = current?.songId !== songId;
-  const localPlaying = status?.state === 'playing' || status?.state === 'loading';
-  const wrongPlay = playStatus === 'PLAY' ? !localPlaying : localPlaying;
-  const drifted = Math.abs((Number(status?.positionMs) || 0) - progressMs) > 2500;
-  if (!joined && !wrongSong && !wrongPlay && !drifted) return;
-  const type = wrongSong || joined ? 'GOTO' : (wrongPlay ? playStatus : 'seek');
+  if (current?.songId === songId) {
+    const controls = togetherPlaybackControls();
+    if (snapshot.playStatus === 'PAUSE') await controls.pause?.();
+    else {
+      await controls.play?.();
+      if (progressSec > 1) await controls.seek?.(progressSec);
+    }
+    return true;
+  }
   await applyTogetherRemoteCommand({
-    commandType: type,
+    commandType: 'GOTO',
     targetSongId: songId,
-    progressMs,
-    playStatus,
+    progressMs: Math.round(progressSec * 1000),
+    playStatus: snapshot.playStatus === 'PAUSE' ? 'PAUSE' : 'PLAY',
     clientSeq: Date.now(),
   }, snapshot, true);
+  return true;
+};
+const syncTogetherPlayback = async (snapshot, previous) => {
+  if (!snapshot?.inRoom || snapshot.pendingRestore) return;
+  const joined = Boolean(snapshot.inRoom && !previous?.inRoom);
+  togetherUi.lastMemberCount = snapshot.users?.length || 0;
+  if (snapshot.role !== 'guest') await togetherReportLocal(joined || !snapshot.songId ? 'GOTO' : undefined);
+  const latest = togetherUi.snapshot.inRoom ? togetherUi.snapshot : snapshot;
+  if (latest.songId || (latest.playlistIds || [])[0]) {
+    await playTogetherSong(latest);
+    return;
+  }
+  if (!joined && snapshot.role === 'host') return;
+  if (togetherUi.pulling) return;
+  togetherUi.pulling = true;
+  try {
+    for (let i = 0; i < 8; i += 1) {
+      const pulled = await togetherInvoke('togetherRefresh', {}).catch(() => null);
+      if (!pulled?.inRoom) break;
+      togetherUi.snapshot = { ...togetherUi.snapshot, ...pulled };
+      paintTogetherChrome();
+      if (pulled.role !== 'guest') await togetherReportLocal('GOTO');
+      const ready = togetherUi.snapshot;
+      if (ready.songId || (ready.playlistIds || [])[0]) {
+        await playTogetherSong(ready);
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 400));
+    }
+  } finally {
+    togetherUi.pulling = false;
+  }
 };
 applyTogetherSnapshot = (snapshot) => {
   const previous = togetherUi.snapshot;
@@ -3250,15 +3277,13 @@ applyTogetherSnapshot = (snapshot) => {
   void syncTogetherPlayback(togetherUi.snapshot, previous);
 };
 const togetherReportLocal = async (commandType) => {
-  if (togetherUi.applying || !togetherUi.snapshot.inRoom || togetherUi.snapshot.role !== 'host') return;
-  const status = await playbackApi()?.getStatus?.().catch(() => null);
-  const current = togetherCurrentNetease(status);
+  if (togetherUi.applying || !togetherUi.snapshot.inRoom || togetherUi.snapshot.role === 'guest') return;
+  const playbackStatus = await playbackApi()?.getStatus?.().catch(() => null);
+  const playerStatus = playbackStatus || await playerApi()?.status?.().catch(() => null);
+  const current = togetherCurrentNetease(playerStatus);
   if (!current) return;
-  const playing = status?.state === 'playing' || status?.state === 'loading';
-  const progressMs = status
-    ? (Number(status.positionMs) || 0)
-    : (Number(togetherUi.snapshot.progressMs) || togetherUi.expectedMs || 0);
-  if (!status && String(commandType || '').toUpperCase() === 'GOTO') return;
+  const playing = playerStatus?.state === 'playing' || playerStatus?.state === 'loading';
+  const progressMs = Number(playerStatus?.positionMs || playerStatus?.positionSeconds * 1000) || 0;
   const playStatus = playing ? 'PLAY' : 'PAUSE';
   const key = `${current.songId}:${playStatus}:${commandType || ''}:${Math.floor(progressMs / 800)}`;
   if (!commandType && key === togetherUi.lastReportKey) return;
@@ -3274,6 +3299,7 @@ const togetherReportLocal = async (commandType) => {
     coverUrl: current.track.coverThumb || current.track.coverUrl,
     durationMs: Math.round((Number(current.track.duration) || 0) * 1000),
   }).catch(() => undefined);
+  if (reported?.inRoom) togetherUi.snapshot = { ...togetherUi.snapshot, ...reported };
   if (reported?.clientSeq) togetherUi.lastSentSeq = Number(reported.clientSeq) || togetherUi.lastSentSeq;
 };
 togetherInviteFlow = async () => {
@@ -3296,7 +3322,10 @@ togetherInviteFlow = async () => {
         paintTogetherChrome();
         return;
       }
-      if (togetherUi.snapshot.role === 'host') await togetherReportLocal('GOTO');
+      if (togetherUi.snapshot.role !== 'guest') {
+        await togetherReportLocal('GOTO');
+        await playTogetherSong(togetherUi.snapshot);
+      }
     }
     togetherUi.pickerOpen = true;
     paintTogetherChrome();
@@ -3376,6 +3405,7 @@ const renderTogetherPicker = () => {
   dialog.setAttribute('aria-modal', 'true');
   const header = make('header', 'settings-font-modal-header');
   header.append(make('h3', '', togetherCopy.pickerTitle));
+  if (togetherInSession(snap)) header.append(makeTogetherLeaveButton('echo-streaming-together-leave--head'));
   header.append(actionButton(copy.close, 'close', () => { togetherUi.pickerOpen = false; paintTogetherChrome(); }, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   dialog.append(header);
   const searchLabel = make('label', 'search-box echo-search-surface echo-streaming-together-search-wrap');
@@ -3458,9 +3488,31 @@ const renderTogetherRestore = () => {
   backdrop.append(dialog);
   document.body.append(backdrop);
 };
+const renderTogetherHud = () => {
+  document.querySelectorAll('.echo-streaming-together-hud').forEach((node) => node.remove());
+  const snap = togetherUi.snapshot;
+  const pending = snap.pendingRestore;
+  if (!pending?.roomId && !togetherInSession(snap) && !snap.inRoom) return;
+  const hud = make('div', 'echo-streaming-together-hud');
+  hud.setAttribute('role', 'status');
+  const copyBox = make('div', 'echo-streaming-together-hud-copy');
+  if (pending?.roomId) {
+    copyBox.append(make('strong', '', togetherCopy.restoreTitle));
+    copyBox.append(make('span', '', pending.songTitle || togetherCopy.restoreBody));
+    hud.append(copyBox);
+    hud.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
+    hud.append(makeTogetherLeaveButton());
+  } else {
+    copyBox.append(make('strong', '', snap.songTitle || togetherCopy.inRoomBar));
+    copyBox.append(make('span', '', togetherNowPlayingText(snap) || `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''}`));
+    hud.append(copyBox);
+    hud.append(makeTogetherLeaveButton());
+  }
+  document.body.append(hud);
+};
 const renderTogetherBanner = () => {
   document.querySelectorAll('.echo-streaming-together-notice').forEach((node) => node.remove());
-  const bar = document.querySelector('footer.player-bar');
+  const bar = document.querySelector('footer.player-bar, .player-bar');
   if (!bar) return;
   const snap = togetherUi.snapshot;
   const pending = snap.pendingRestore;
@@ -3494,7 +3546,7 @@ const renderTogetherBanner = () => {
   }
   bar.prepend(notice);
 };
-const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
+const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .echo-streaming-together-hud, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
 let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
 let fillSimilarSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint)); };
 const closeStreamingSheet = () => {
@@ -3693,6 +3745,7 @@ paintTogetherChrome = () => {
   mountStreamingTransportButton();
   renderTogetherRestore();
   renderTogetherBanner();
+  renderTogetherHud();
   renderTogetherPicker();
 };
 const onStreamingSheetKey = (event) => {
@@ -3716,30 +3769,19 @@ const installTogetherChrome = () => {
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
     mountStreamingTransportButton();
-    const meta = document.querySelector('.echo-streaming-drawer [data-together-meta]');
-    if (meta && togetherUi.sheetOpen && togetherUi.sheetTab === 'together') {
-      meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
-    }
-    if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying) {
+    document.querySelectorAll('.echo-streaming-drawer [data-together-meta], .echo-streaming-together-hud-copy span').forEach((meta) => {
+      if (togetherUi.snapshot.inRoom) meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
+    });
+    if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying && !togetherUi.pulling) {
       void (async () => {
         const snap = togetherUi.snapshot;
-        if (snap.role === 'host') {
-          const status = await playbackApi()?.getStatus?.().catch(() => null);
-          const current = togetherCurrentNetease(status);
-          if (!current) return;
-          const playing = status?.state === 'playing' || status?.state === 'loading';
-          const progressMs = Number(status?.positionMs) || 0;
-          const jumped = Math.abs(progressMs - togetherUi.expectedMs) > 2200;
-          const playStatus = playing ? 'PLAY' : 'PAUSE';
-          const statusChanged = playStatus !== snap.playStatus;
-          const songChanged = current.songId !== snap.songId;
-          if (!snap.songId || songChanged) await togetherReportLocal('GOTO');
-          else if (statusChanged) await togetherReportLocal(playStatus);
-          else if (jumped) await togetherReportLocal('seek');
-          else await togetherReportLocal();
+        if (snap.role === 'guest') {
+          if (snap.songId) await playTogetherSong(snap);
+          else await syncTogetherPlayback(snap, snap);
           return;
         }
-        await syncTogetherPlayback(snap, snap);
+        await togetherReportLocal(snap.songId ? undefined : 'GOTO');
+        await playTogetherSong(togetherUi.snapshot);
       })();
     }
   }, 1000);
