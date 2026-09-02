@@ -41,6 +41,7 @@ const ncmCopy = chinese ? {
 } : {
   comments: 'Comments', similar: 'Similar', unblock: 'Unblock', sending: 'Send', reply: 'Reply', delete: 'Delete', like: 'Like', loadMore: 'More comments', emptyComments: 'No comments yet', needLogin: 'Sign in to NetEase to comment', hot: 'Hot', latest: 'Latest', composer: 'Write a comment…', sent: 'Comment posted', deleted: 'Comment deleted', similarHint: 'Recommend similar tracks from the current song. Queue them or auto-play batches.', similarPlay: 'Play batch', similarQueue: 'Add to queue', similarAuto: 'Auto-play', similarCount: 'Batch size', similarDone: (n) => `Queued ${n} similar tracks`, unblocked: 'Playing via unblock sources', phone: 'Phone', captcha: 'Captcha', sendCaptcha: 'Send code', phoneLogin: 'Phone login', password: 'Password (optional)', captchaSent: 'Captcha sent', loggedIn: 'Signed in with phone', country: 'Code',
 };
+copy.dailyOpenStreaming = chinese ? '这个每日歌单不能写入本地歌单，已在流媒体页打开。' : 'This daily list cannot be written to a local playlist, so it opened on the Streaming page.';
 const stored = (() => { try { return external.settings?.get?.() || {}; } catch { return {}; } })();
 const togetherUi = {
   snapshot: { loggedIn: false, inRoom: false, users: [], invites: [], friends: [], playlistIds: [] },
@@ -1697,8 +1698,9 @@ const findImportedLibraryPlaylist = async (playlist) => {
 };
 const loadPlaylistTracksForView = async (playlist) => {
   const fallbackName = playlist.title || playlist.name || 'Playlist';
-  const viaDaily = await loadDailyPlaylistTracksViaMain(playlist, fallbackName, { requireTracks: false });
-  if (viaDaily) return viaDaily;
+  const viaDaily = await loadDailyPlaylistTracksViaMain(playlist, fallbackName, { requireTracks: isVirtualDailyPlaylist(playlist) });
+  if (viaDaily?.tracks?.length) return viaDaily;
+  if (viaDaily && isVirtualDailyPlaylist(playlist)) return viaDaily;
   const viaNetease = await loadNeteasePlaylistTracksViaMain(playlist, fallbackName, { requireTracks: false });
   if (viaNetease) return viaNetease;
   const viaQq = await loadQqPlaylistTracksViaMain(playlist, fallbackName, { requireTracks: false });
@@ -2111,13 +2113,17 @@ const findPlaylistsNav = () => document.querySelector('button.nav-item[data-work
   || [...document.querySelectorAll('button.nav-item:not([data-echo-external-sidebar]):not([data-echo-external-loader]):not([data-echo-external-mods])')]
     .find((button) => /收藏与歌单|播放列表|Playlists|歌单/iu.test(button.textContent || ''));
 const nativePlaylistLabel = (el) => String(el?.getAttribute('aria-label') || el?.querySelector('strong')?.textContent || '').trim();
+const nativePlaylistHasTracks = (el) => /[1-9]/u.test(String(el?.querySelector('small')?.textContent || ''));
 const selectNativePlaylist = (imported) => {
   const name = String(imported?.playlistName || '').trim();
   const surface = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
   if (!surface || !name) return false;
   const nodes = [...surface.querySelectorAll('button.collection-playlist-nav-item--playlist, .playlist-list-item')]
     .filter((el) => !el.closest('[data-echo-streaming-daily], .echo-streaming-daily-native'));
-  const match = nodes.find((el) => nativePlaylistLabel(el) === name)
+  const matches = nodes.filter((el) => nativePlaylistLabel(el) === name);
+  const match = matches.find(nativePlaylistHasTracks)
+    || matches[0]
+    || nodes.find((el) => nativePlaylistLabel(el).includes(name) && nativePlaylistHasTracks(el))
     || nodes.find((el) => nativePlaylistLabel(el).includes(name));
   if (!match) return false;
   if (match.getAttribute('data-active') === 'true') return true;
@@ -2314,17 +2320,23 @@ const loadDailyPlaylists = async (options = {}) => {
     render();
   }
 };
+const findStreamingNav = () => document.querySelector('.nav-item[data-echo-external-sidebar]')
+  || [...document.querySelectorAll('button.nav-item')].find((button) => /流媒体|Streaming|ECHO Streaming/iu.test(button.textContent || ''));
+const openStreamingDailyPlaylist = async (playlist) => {
+  findStreamingNav()?.click();
+  await sleep(40);
+  await openPlaylist(asStreamingDailyPlaylist(playlist));
+};
 const syncDailyPlaylistToLibrary = async (playlist) => {
   const item = asStreamingDailyPlaylist(playlist);
   const stream = streamApi();
   if (item.syncMode === 'official-daily' || item.providerPlaylistId === 'daily-recommend') {
-    if (stream?.refreshNeteaseDailyRecommend) {
-      try {
-        const imported = await stream.refreshNeteaseDailyRecommend();
-        rememberDailySync(item, imported);
-        return imported;
-      } catch {}
-    }
+    if (!stream?.refreshNeteaseDailyRecommend) throw new Error(copy.noBridge);
+    const imported = await stream.refreshNeteaseDailyRecommend();
+    if (!imported?.playlistId) throw new Error(copy.playlistItemsUnavailable);
+    if (!Number(imported.importedCount)) throw new Error(copy.musicNoDownloadableTracks);
+    rememberDailySync(item, imported);
+    return imported;
   }
   if (item.syncMode === 'url' || item.webUrl) {
     if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge);
@@ -2332,33 +2344,9 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
     rememberDailySync(item, imported);
     return imported;
   }
-  const library = libraryApi();
-  if (!library?.createPlaylist) throw new Error(copy.noBridge);
-  const addStreaming = library.addStreamingTrackToPlaylist;
-  if (typeof addStreaming !== 'function' && item.webUrl && stream?.importPlaylistFromUrl) {
-    const imported = await stream.importPlaylistFromUrl(item.webUrl);
-    rememberDailySync(item, imported);
-    return imported;
-  }
-  if (typeof addStreaming !== 'function') throw new Error(copy.noBridge);
-  const listed = await loadDailyPlaylistTracksViaMain(item, item.title, { requireTracks: true });
-  if (!listed?.tracks?.length) throw new Error(copy.musicNoDownloadableTracks);
-  const existing = await findImportedLibraryPlaylist({ ...item, importedPlaylistId: state.dailySyncedKeys[dailyPlaylistKey(item)]?.libraryPlaylistId, title: listed.name });
-  let playlistId = existing?.id || state.dailySyncedKeys[dailyPlaylistKey(item)]?.libraryPlaylistId || null;
-  let playlistName = existing?.name || listed.name;
-  if (!playlistId) {
-    const created = await library.createPlaylist({ name: listed.name, description: item.description || copy.dailyTitle });
-    playlistId = created?.id || created?.playlistId || created?.playlist?.id;
-    playlistName = created?.name || created?.playlist?.name || listed.name;
-  }
-  if (!playlistId) throw new Error(copy.playlistItemsUnavailable);
-  try { await library.clearPlaylist?.(playlistId); } catch {}
-  for (const track of listed.tracks) {
-    try { await addStreaming.call(library, playlistId, toLibraryTrack(track)); } catch {}
-  }
-  const imported = { playlistId, playlistName, importedCount: listed.tracks.length };
-  rememberDailySync(item, imported);
-  return imported;
+  // ECHO rejects streaming tracks on local/manual playlists, so virtual daily
+  // lists (history 日推, etc.) cannot be materialized that way.
+  throw new Error('streaming_daily_local_blocked');
 };
 const openNativeDailyPlaylist = async (playlist) => {
   const key = dailyPlaylistKey(playlist);
@@ -2367,13 +2355,19 @@ const openNativeDailyPlaylist = async (playlist) => {
   showChromeNotice(copy.readingPlaylist);
   try {
     const synced = state.dailySyncedKeys[key];
-    if (synced?.libraryPlaylistId) {
+    if (synced?.libraryPlaylistId && !isVirtualDailyPlaylist(playlist)) {
       const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
       if (opened) return;
     }
-    const imported = await syncDailyPlaylistToLibrary(playlist);
-    const opened = await openImportedPlaylist(imported);
-    if (!opened) showChromeNotice(copy.dailyOpenNative);
+    try {
+      const imported = await syncDailyPlaylistToLibrary(playlist);
+      const opened = await openImportedPlaylist(imported);
+      if (opened) return;
+    } catch (error) {
+      if (!isVirtualDailyPlaylist(playlist) && (playlist.syncMode === 'url' || playlist.webUrl)) throw error;
+    }
+    await openStreamingDailyPlaylist(playlist);
+    showChromeNotice(state.playlistError || copy.dailyOpenStreaming);
   } catch (error) {
     showChromeNotice(error instanceof Error ? error.message : String(error));
   } finally {
@@ -3651,10 +3645,15 @@ const fillTogetherSheet = (root) => {
   });
   root.append(inbox);
 };
+const isCompactMiniPlayerBar = (node) => Boolean(node?.closest?.('.lyrics-player-drawer-host, .mini-player-shell, .mini-player-app, [data-compact-away]'));
 const mountStreamingTransportButton = (lyricsButton) => {
   const lyrics = lyricsButton || document.querySelector('button.transport-lyrics-button');
   const host = lyrics?.parentElement;
   if (!host) return;
+  if (isCompactMiniPlayerBar(host)) {
+    host.querySelectorAll(':scope > .transport-streaming-button, :scope > .transport-comment-button').forEach((node) => node.remove());
+    return;
+  }
   const visible = ncmExtrasVisible();
   const ensure = (className, title, icon, onClick) => {
     let button = host.querySelector(`:scope > .${className}`);

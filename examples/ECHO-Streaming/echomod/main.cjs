@@ -395,25 +395,33 @@ const neteaseImageUrl = (value, size) => {
   return `${url}${url.includes('?') ? '&' : '?'}param=${size}y${size}`;
 };
 
-const mapNeteasePlaylistSong = (song) => {
+const unwrapNeteaseSong = (song) => {
   if (!song || typeof song !== 'object') return null;
-  const id = song.id != null ? String(song.id) : '';
+  const nested = [song.song, song.songInfo, song.track, song.simpleSong]
+    .find((item) => item && typeof item === 'object' && !Array.isArray(item));
+  return nested ? { ...song, ...nested } : song;
+};
+
+const mapNeteasePlaylistSong = (song) => {
+  const record = unwrapNeteaseSong(song);
+  if (!record) return null;
+  const id = record.id != null ? String(record.id) : '';
   if (!id) return null;
-  const album = (song.al && typeof song.al === 'object' ? song.al : song.album) || {};
-  const artists = Array.isArray(song.ar) ? song.ar : Array.isArray(song.artists) ? song.artists : [];
+  const album = (record.al && typeof record.al === 'object' ? record.al : record.album) || {};
+  const artists = Array.isArray(record.ar) ? record.ar : Array.isArray(record.artists) ? record.artists : [];
   const artist = artists.map((item) => String(item?.name || '').trim()).filter(Boolean).join(' / ');
-  const durationMs = Number(song.dt ?? song.duration) || 0;
+  const durationMs = Number(record.dt ?? record.duration) || 0;
   const cover = album.picUrl ?? album.blurPicUrl ?? null;
   return {
     providerTrackId: id,
-    title: String(song.name || '').trim() || `NetEase ${id}`,
+    title: String(record.name || '').trim() || `NetEase ${id}`,
     artist,
     album: String(album.name || '').trim(),
     albumArtist: artist,
     duration: durationMs > 0 ? durationMs / 1000 : 0,
     coverUrl: neteaseImageUrl(cover, 800),
     coverThumb: neteaseImageUrl(cover, 300),
-    qualities: neteaseQualityTiers(song),
+    qualities: neteaseQualityTiers(record),
   };
 };
 
@@ -548,11 +556,23 @@ const togetherRoomIdText = (value) => {
 const dailySongsFromBody = (value) => {
   const body = neteaseRecord(value);
   const data = neteaseRecord(body.data);
-  if (Array.isArray(data.dailySongs)) return data.dailySongs;
-  if (Array.isArray(body.recommend)) return body.recommend;
-  if (Array.isArray(data.songs)) return data.songs;
-  if (Array.isArray(body.songs)) return body.songs;
+  const lists = [data.dailySongs, data.orderSongs, body.recommend, data.recommend, data.songs, body.songs, data.list];
+  for (const list of lists) {
+    if (!Array.isArray(list) || !list.length) continue;
+    return list.map(unwrapNeteaseSong).filter(Boolean);
+  }
   return [];
+};
+
+const neteaseBodyCode = (value) => {
+  const body = neteaseRecord(value);
+  const code = Number(body.code ?? neteaseRecord(body.data).code);
+  return Number.isFinite(code) ? code : null;
+};
+
+const assertNeteaseDailyLogin = (body) => {
+  const code = neteaseBodyCode(body);
+  if (code === 301 || code === 302) throw new Error('netease_session_expired');
 };
 
 const resolveNeteaseUserId = async (cookie) => {
@@ -655,25 +675,40 @@ const collectHomepagePlaylists = (node, found) => {
 };
 
 const fetchNeteaseDailySongs = async (cookie, afresh = false) => {
-  let body = await ncmInvoke('recommend_songs', { cookie, afresh: afresh ? true : undefined });
-  if (!body) {
+  const params = afresh ? { cookie, afresh: true } : { cookie };
+  const attempts = [
+    ['weapi', { ...params, crypto: 'weapi' }],
+    ['eapi', { ...params, crypto: 'eapi' }],
+    ['default', params],
+  ];
+  for (const [via, query] of attempts) {
+    const body = await ncmInvoke('recommend_songs', query);
+    if (!body) continue;
+    assertNeteaseDailyLogin(body);
+    const songs = dailySongsFromBody(body);
+    if (songs.length) return songs;
+    const record = neteaseRecord(body);
+    const data = neteaseRecord(record.data);
+    logMod('WARN', `daily songs empty via ncm ${via}: code=${record.code ?? 'none'} msg=${record.message || record.msg || data.message || 'none'}`);
+  }
+  for (const init of [
+    {
+      method: 'POST',
+      headers: { ...neteaseApiHeaders(cookie), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(afresh ? { afresh: 'true' } : {}).toString(),
+    },
+    { headers: neteaseApiHeaders(cookie) },
+  ]) {
     try {
-      body = await probeFetchJson('https://music.163.com/api/v3/discovery/recommend/songs', {
-        method: 'POST',
-        headers: { ...neteaseApiHeaders(cookie), 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(afresh ? { afresh: 'true' } : {}).toString(),
-      });
-    } catch {
-      try {
-        body = await probeFetchJson('https://music.163.com/api/v3/discovery/recommend/songs', {
-          headers: neteaseApiHeaders(cookie),
-        });
-      } catch {
-        body = null;
-      }
+      const body = await probeFetchJson('https://music.163.com/api/v3/discovery/recommend/songs', init);
+      assertNeteaseDailyLogin(body);
+      const songs = dailySongsFromBody(body);
+      if (songs.length) return songs;
+    } catch (error) {
+      logMod('WARN', `daily songs http fallback: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return dailySongsFromBody(body);
+  return [];
 };
 
 const fetchNeteaseRecommendResources = async (cookie) => {

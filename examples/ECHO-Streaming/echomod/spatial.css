@@ -1524,6 +1524,20 @@
   position: relative;
 }
 
+.app-shell--lyrics-player-drawer .lyrics-player-drawer-host {
+  width: min(960px, calc(100vw - 36px));
+}
+
+.app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar {
+  width: min(900px, 100%);
+}
+
+.app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar :is(.transport-streaming-button, .transport-comment-button),
+.mini-player-app :is(.transport-streaming-button, .transport-comment-button),
+.mini-player-shell :is(.transport-streaming-button, .transport-comment-button) {
+  display: none !important;
+}
+
 .player-bar .transport-streaming-button[data-badge]::after {
   content: "";
   position: absolute;
