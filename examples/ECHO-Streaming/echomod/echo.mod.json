@@ -1,7 +1,7 @@
 {
   "id": "echo.community-streaming",
   "name": "ECHO Streaming",
-  "version": "1.6.28",
+  "version": "1.6.29",
   "minEchoVersion": "26.8.15",
   "description": "Community streaming browser powered by ECHO's public streaming and playback bridge. NetEase comments, similar-track autoplay, phone login, grey-track unblock, daily playlists, and official-style listen-together.",
   "icon": "icon.svg",

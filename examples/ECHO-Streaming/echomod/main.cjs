@@ -2274,10 +2274,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
             roomId: server.roomId,
             inviterId: server.inviterId,
           });
-          if (pendingRestore?.roomId) return restore();
-          restorePrompted = true;
-          try { broadcast('together-restore-prompt', snapshot()); } catch {}
-          return { ok: true, alreadyInRoom: true, pendingRestore, ...emit(true) };
+          return restore();
         }
       }
       const result = await ncmCall('listentogether_room_create', { cookie });
@@ -2295,10 +2292,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
             roomId: server.roomId,
             inviterId: server.inviterId,
           });
-          if (pendingRestore?.roomId) return restore();
-          restorePrompted = true;
-          try { broadcast('together-restore-prompt', snapshot()); } catch {}
-          return { ok: true, alreadyInRoom: true, pendingRestore, ...emit(true) };
+          return restore();
         }
         throw new Error(result.error);
       }

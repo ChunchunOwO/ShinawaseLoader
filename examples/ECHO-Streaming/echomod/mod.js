@@ -3309,20 +3309,6 @@ const togetherReportLocal = async (commandType) => {
   if (reported?.clientSeq) togetherUi.lastSentSeq = Number(reported.clientSeq) || togetherUi.lastSentSeq;
 };
 togetherInviteFlow = async () => {
-  if (togetherUi.snapshot.pendingRestore?.roomId) {
-    const restored = await togetherInvoke('togetherRestore', {}).catch((error) => {
-      showChromeNotice(togetherErrorMessage(error));
-      return null;
-    });
-    if (restored) applyTogetherSnapshot(restored);
-    if (togetherUi.snapshot.pendingRestore) {
-      paintTogetherChrome();
-      return;
-    }
-  } else if (togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom) {
-    paintTogetherChrome();
-    return;
-  }
   if (!neteaseConnected() && !togetherUi.snapshot.loggedIn) {
     showChromeNotice(togetherCopy.needLogin);
     state.accountPageOpen = true;
@@ -3330,20 +3316,20 @@ togetherInviteFlow = async () => {
     return;
   }
   try {
-    if (!togetherUi.snapshot.inRoom) {
-      showChromeNotice(togetherCopy.creating);
-      const created = await togetherInvoke('togetherCreate', {});
-      applyTogetherSnapshot(created);
-      if (created?.pendingRestore || created?.alreadyInRoom || togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom) {
-        paintTogetherChrome();
-        return;
-      }
-      if (togetherUi.snapshot.role !== 'guest') {
-        await togetherReportLocal('GOTO');
-        await playTogetherSong(togetherUi.snapshot);
-      }
+    showChromeNotice(togetherCopy.creating);
+    if (togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom || !togetherUi.snapshot.inRoom) {
+      const joined = togetherUi.snapshot.pendingRestore
+        ? await togetherInvoke('togetherRestore', {})
+        : await togetherInvoke('togetherCreate', {});
+      applyTogetherSnapshot(joined);
+    }
+    if (togetherUi.snapshot.role !== 'guest') {
+      await togetherReportLocal('GOTO');
+      await playTogetherSong(togetherUi.snapshot);
     }
     togetherUi.pickerOpen = true;
+    togetherUi.sheetOpen = true;
+    togetherUi.sheetTab = 'together';
     paintTogetherChrome();
     const friends = await togetherInvoke('togetherFriends', { query: togetherUi.friendQuery, refresh: true });
     applyTogetherSnapshot({ ...togetherUi.snapshot, ...friends, friends: friends.friends || [] });
@@ -3351,9 +3337,12 @@ togetherInviteFlow = async () => {
     paintTogetherChrome();
   } catch (error) {
     showChromeNotice(togetherErrorMessage(error));
+    togetherUi.pickerOpen = true;
+    togetherUi.sheetOpen = true;
+    togetherUi.sheetTab = 'together';
     const snap = await togetherInvoke('togetherStatus', {}).catch(() => null);
     if (snap) applyTogetherSnapshot(snap);
-    else paintTogetherChrome();
+    paintTogetherChrome();
   }
 };
 const togetherAcceptInvite = async (invite) => {
@@ -3527,10 +3516,9 @@ const fillTogetherSheet = (root) => {
       ? `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`
       : togetherCopy.restoreBody));
     const restoreActions = make('div', 'echo-streaming-together-actions');
-    restoreActions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
+    restoreActions.append(actionButton(togetherCopy.inviteFriend, 'users', () => void togetherInviteFlow(), { className: 'primary-action' }));
     restoreActions.append(makeTogetherLeaveButton());
     root.append(restoreActions);
-    return;
   }
   const nowPlaying = make('div', 'echo-streaming-together-now');
   if (snap.songCover) {
