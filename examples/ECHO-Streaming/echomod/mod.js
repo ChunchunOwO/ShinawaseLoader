@@ -3120,7 +3120,12 @@ const togetherCurrentNetease = (status = null) => {
   };
 };
 togetherOnLocalPlay = async (track, options = {}) => {
-  if (togetherUi.applying || !togetherUi.snapshot.inRoom || track?.provider !== 'netease') return;
+  if (options.togetherRemote || track?.provider !== 'netease') return;
+  if (togetherUi.snapshot.pendingRestore) {
+    const restored = await togetherInvoke('togetherRestore', {}).catch(() => null);
+    if (restored) applyTogetherSnapshot(restored);
+  }
+  if (!togetherUi.snapshot.inRoom) return;
   const songId = String(track.providerTrackId || '').trim();
   if (!/^\d+$/u.test(songId) || songId === '0') return;
   const status = await playbackApi()?.getStatus?.().catch(() => null);
@@ -3304,8 +3309,15 @@ const togetherReportLocal = async (commandType) => {
 };
 togetherInviteFlow = async () => {
   if (togetherUi.snapshot.pendingRestore) {
-    paintTogetherChrome();
-    return;
+    const restored = await togetherInvoke('togetherRestore', {}).catch((error) => {
+      showChromeNotice(togetherErrorMessage(error));
+      return null;
+    });
+    if (restored) applyTogetherSnapshot(restored);
+    if (togetherUi.snapshot.pendingRestore) {
+      paintTogetherChrome();
+      return;
+    }
   }
   if (!neteaseConnected() && !togetherUi.snapshot.loggedIn) {
     showChromeNotice(togetherCopy.needLogin);
@@ -3355,11 +3367,15 @@ const togetherLeaveRoom = async () => {
   }
 };
 const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.pendingRestore);
-const makeTogetherLeaveButton = (className = '') => actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
-  className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
-  title: togetherCopy.leave,
-  ariaLabel: togetherCopy.leave,
-});
+const makeTogetherLeaveButton = (className = '') => {
+  const node = actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
+    className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
+    title: togetherCopy.leave,
+    ariaLabel: togetherCopy.leave,
+  });
+  node.style.cssText = 'display:inline-flex!important;visibility:visible!important;opacity:1!important;align-items:center;justify-content:center;min-width:128px;min-height:40px;padding:0 16px;border:0;border-radius:10px;background:#e11d48;color:#fff;font-weight:800;font-size:14px;cursor:pointer;pointer-events:auto;z-index:2147483647;';
+  return node;
+};
 const togetherCopyShare = async () => {
   const url = togetherUi.snapshot.shareUrl;
   if (!url) return;
@@ -3495,6 +3511,7 @@ const renderTogetherHud = () => {
   if (!pending?.roomId && !togetherInSession(snap) && !snap.inRoom) return;
   const hud = make('div', 'echo-streaming-together-hud');
   hud.setAttribute('role', 'status');
+  hud.style.cssText = 'position:fixed;left:16px;right:16px;bottom:92px;z-index:2147483646;display:flex;visibility:visible;align-items:center;gap:12px;min-height:56px;padding:10px 14px;background:#16181d;color:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.4);pointer-events:auto;';
   const copyBox = make('div', 'echo-streaming-together-hud-copy');
   if (pending?.roomId) {
     copyBox.append(make('strong', '', togetherCopy.restoreTitle));
@@ -3546,7 +3563,7 @@ const renderTogetherBanner = () => {
   }
   bar.prepend(notice);
 };
-const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .echo-streaming-together-hud, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
+const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .echo-streaming-together-hud, .transport-together-leave, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
 let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
 let fillSimilarSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', ncmCopy.similarHint)); };
 const closeStreamingSheet = () => {
@@ -3678,6 +3695,13 @@ const mountStreamingTransportButton = (lyricsButton) => {
     comments.classList.toggle('is-soft-active', Boolean(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
     comments.setAttribute('aria-pressed', String(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
   }
+  let leave = host.querySelector(':scope > .transport-together-leave');
+  if (togetherInSession(togetherUi.snapshot) || togetherUi.snapshot.inRoom || togetherUi.snapshot.pendingRestore) {
+    if (!leave) {
+      leave = makeTogetherLeaveButton('transport-together-leave');
+      host.insertBefore(leave, lyrics);
+    }
+  } else leave?.remove();
   if (!visible && togetherUi.sheetOpen) closeStreamingSheet();
 };
 const paintStreamingSheet = () => {
@@ -3769,6 +3793,7 @@ const installTogetherChrome = () => {
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
     mountStreamingTransportButton();
+    if ((togetherUi.snapshot.inRoom || togetherUi.snapshot.pendingRestore || togetherUi.snapshot.sessionActive) && !document.querySelector('.echo-streaming-together-hud')) renderTogetherHud();
     document.querySelectorAll('.echo-streaming-drawer [data-together-meta], .echo-streaming-together-hud-copy span').forEach((meta) => {
       if (togetherUi.snapshot.inRoom) meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
     });
