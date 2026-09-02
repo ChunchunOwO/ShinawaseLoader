@@ -1858,6 +1858,22 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     state.songDurationMs = Math.round((Number(mapped.duration) || 0) * 1000);
   };
 
+  const adoptTogetherCommand = (command) => {
+    if (!command) return false;
+    const incomingSeq = Math.max(0, Math.floor(Number(command.clientSeq) || 0));
+    const currentSeq = Math.max(0, Math.floor(Number(state.lastCommand?.clientSeq) || 0));
+    if (incomingSeq) state.clientSeq = Math.max(state.clientSeq, incomingSeq);
+    if (currentSeq && incomingSeq && incomingSeq < currentSeq) return false;
+    state.lastCommand = command;
+    if (command.playStatus) state.playStatus = command.playStatus;
+    const type = String(command.commandType || '').toUpperCase();
+    if (command.progressMs != null && (type === 'GOTO' || type === 'SEEK' || type === 'PLAY' || type === 'PAUSE')) {
+      state.progressMs = command.progressMs;
+      state.progressAt = Date.now();
+    }
+    return true;
+  };
+
   const applyRoomBody = async (body, extras = {}) => {
     const record = neteaseRecord(body);
     const data = neteaseRecord(record.data);
@@ -1911,6 +1927,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
           songCover = mapped.coverThumb || mapped.coverUrl;
         }
       }
+      if (command?.clientSeq) state.clientSeq = Math.max(state.clientSeq, Number(command.clientSeq) || 0);
       pendingRestore = {
         roomId: roomId || pendingRestore?.roomId || null,
         inviterId: inviterId || pendingRestore?.inviterId || null,
@@ -1919,9 +1936,10 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         songTitle,
         songArtist,
         songCover,
-        playStatus: command?.playStatus || pendingRestore?.playStatus || 'PAUSE',
+        playStatus: command?.playStatus || pendingRestore?.playStatus || null,
         progressMs: command?.progressMs || pendingRestore?.progressMs || 0,
         startedAt: Number(state.startedAt) || pendingRestore?.startedAt || Date.now(),
+        clientSeq: Math.max(Number(command?.clientSeq) || 0, Number(pendingRestore?.clientSeq) || 0, state.clientSeq),
       };
       if (!restorePrompted) {
         restorePrompted = true;
@@ -1955,24 +1973,17 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       }
       return;
     }
-    const command = togetherPlayCommandFrom(data)
+    const rawCommand = togetherPlayCommandFrom(data)
       || togetherPlayCommandFrom(data.playCommand)
       || togetherPlayCommandFrom(data.playInfo)
       || togetherPlayCommandFrom(roomInfo.playCommand)
       || togetherPlayCommandFrom(roomInfo.playInfo)
       || togetherPlayCommandFrom(record.playCommand)
       || togetherPlayCommandFrom(record.playInfo);
+    const command = rawCommand && adoptTogetherCommand(rawCommand) ? rawCommand : null;
     const songId = (command?.targetSongId && command.targetSongId !== '0' ? command.targetSongId : null)
       || neteaseIdText(data.songId || data.currentSongId || roomInfo.songId || roomInfo.currentSongId);
-    if (command) {
-      if (!state.lastCommand || command.clientSeq >= (state.lastCommand.clientSeq || 0)) state.lastCommand = command;
-      if (command.playStatus) state.playStatus = command.playStatus;
-      const type = String(command.commandType || '').toUpperCase();
-      if (command.progressMs != null && (type === 'GOTO' || type === 'SEEK' || type === 'PLAY' || type === 'PAUSE')) {
-        state.progressMs = command.progressMs;
-        state.progressAt = Date.now();
-      }
-    } else if (data.playStatus) {
+    if (!command && data.playStatus && !(state.lastCommand && state.clientSeq > (Number(state.lastCommand.clientSeq) || 0))) {
       state.playStatus = String(data.playStatus).toUpperCase() === 'PAUSE' ? 'PAUSE' : 'PLAY';
       const progress = data.progress ?? data.progressMs;
       if (progress != null && Number.isFinite(Number(progress))) {
@@ -2241,7 +2252,7 @@ const createTogetherService = ({ log, broadcast, electron }) => {
     const type = String(commandType || 'PLAY').trim() || 'PLAY';
     const targetSongId = String(extras.targetSongId || state.songId || '0');
     const formerSongId = type.toUpperCase() === 'GOTO' ? '-1' : String(extras.formerSongId || state.songId || '-1');
-    state.clientSeq += 1;
+    state.clientSeq = Math.max(state.clientSeq, Number(state.lastCommand?.clientSeq) || 0) + 1;
     const progress = Math.max(0, Math.floor(Number(extras.progressMs != null ? extras.progressMs : state.progressMs) || 0));
     const sent = {
       commandType: type,
@@ -2261,7 +2272,11 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       targetSongId: sent.targetSongId,
       clientSeq: sent.clientSeq,
     });
-    if (!result.ok) return fail(new Error(result.error));
+    if (!result.ok) {
+      log('WARN', `together play_command failed ${result.error || ''} seq=${sent.clientSeq} song=${targetSongId}`);
+      return fail(new Error(result.error));
+    }
+    log('INFO', `together play ${sent.commandType} seq=${sent.clientSeq} song=${targetSongId} status=${sent.playStatus}`);
     state.lastCommand = sent;
     if (targetSongId && targetSongId !== '0') state.songId = String(targetSongId);
     state.playStatus = sent.playStatus;
@@ -2460,7 +2475,8 @@ const createTogetherService = ({ log, broadcast, electron }) => {
         state.songTitle = held.songTitle || state.songTitle;
         state.songArtist = held.songArtist || state.songArtist;
         state.songCover = held.songCover || state.songCover;
-        state.playStatus = held.playStatus || state.playStatus;
+        if (held.playStatus) state.playStatus = held.playStatus;
+        if (held.clientSeq) state.clientSeq = Math.max(state.clientSeq, Number(held.clientSeq) || 0);
         state.progressMs = held.progressMs || 0;
         state.startedAt = held.startedAt || Date.now();
         state.inRoom = true;
@@ -2494,8 +2510,9 @@ const createTogetherService = ({ log, broadcast, electron }) => {
       if (!(state.userId && state.inviterId && state.userId === state.inviterId)) state.role = 'guest';
       else state.role = 'host';
       state.inRoom = true;
+      if (!state.lastCommand) state.playStatus = 'PLAY';
       state.lastError = togetherRoomIdText(state.roomId) ? null : 'together_room_id_missing';
-      log('INFO', `together restored room ${state.roomId || 'unknown'} as ${state.role}`);
+      log('INFO', `together restored room ${state.roomId || 'unknown'} as ${state.role} user=${state.userId || ''} host=${state.inviterId || ''} seq=${state.clientSeq} song=${state.songId || ''} status=${state.playStatus}`);
       return { ok: true, restored: true, ...emit(true) };
     } catch (error) {
       sessionActive = true;
