@@ -78,7 +78,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.6.6';
+const loaderVersion = '1.6.7';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
 const alignedEchoProduct = 'echo-steam';
@@ -192,6 +192,7 @@ const loaderConfig = readJson(loaderConfigPath, {
   nativeHost: true,
   nativePort: 17863,
   nativeMemoryApi: true,
+  autoUpdate: true,
   ui: { ...defaultUiSettings },
 });
 
@@ -271,7 +272,7 @@ const loaderStats = { startedAt: Date.now(), injects: 0, lastInjectAt: null, las
 const exportableConfigKeys = [
   'autoStart', 'autoStartMode', 'enableWebConsole', 'showConsole', 'port', 'debugPort', 'loadMode',
   'safeMode', 'debugMode', 'injectIntervalMs', 'startupDelayMs', 'logLevel', 'nativeHost', 'nativePort',
-  'nativeMemoryApi', 'inspectPort',
+  'nativeMemoryApi', 'inspectPort', 'autoUpdate',
 ];
 const exportLoaderSettings = () => {
   const config = readJson(loaderConfigPath, loaderConfig);
@@ -2229,9 +2230,18 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/api/update') {
       try {
-        const remote = await fetch('https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main/ShinawaseLoader/loader-version.json');
-        const info = await remote.json();
-        return jsonResponse(response, 200, { ok: true, local: loaderVersion, remote: info.version, updateAvailable: String(info.version || '') !== String(loaderVersion) });
+        return jsonResponse(response, 200, await checkSelfUpdate());
+      } catch (error) {
+        return jsonResponse(response, 200, { ok: false, local: loaderVersion, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (request.method === 'POST' && url.pathname === '/api/update') {
+      try {
+        const result = await applySelfUpdate({ force: true, auto: false });
+        if (result.ok && result.applied?.some((item) => item.kind === 'package')) {
+          void requestInjection('self-update').catch((error) => log('WARN', `reinject after self-update failed: ${error.message}`));
+        }
+        return jsonResponse(response, 200, result);
       } catch (error) {
         return jsonResponse(response, 200, { ok: false, local: loaderVersion, error: error instanceof Error ? error.message : String(error) });
       }
@@ -2350,7 +2360,154 @@ const printList = () => {
   }
 };
 
+const UPDATE_SKIP = new Set(['node.exe', 'node_modules', 'logs', 'backups', 'modded-runtime', 'loader-state.json', 'loader.config.json', 'loader-debug.log', '.git', '.processed']);
+const UPDATE_REPO = 'https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main';
+const UPDATE_ARCHIVE = 'https://github.com/ChunchunOwO/ShinawaseLoader/archive/refs/heads/main.zip';
+const UPDATE_PACKAGES = [
+  { id: 'echo.community-streaming', manifest: `${UPDATE_REPO}/examples/ECHO-Streaming/echomod/echo.mod.json`, file: `${UPDATE_REPO}/examples/packages/ECHO-Streaming.echomod` },
+  { id: 'echo.mv', manifest: `${UPDATE_REPO}/examples/ECHO-MV/echomod/echo.mod.json`, file: `${UPDATE_REPO}/examples/packages/ECHO-MV.echomod` },
+];
+const updateStampPath = join(logsRoot, 'last-self-update.json');
+const compareVersions = (left, right) => {
+  const parts = (value) => String(value || '0').split(/[^\d]+/u).map((part) => Number(part) || 0);
+  const a = parts(left);
+  const b = parts(right);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    if ((a[i] || 0) > (b[i] || 0)) return 1;
+    if ((a[i] || 0) < (b[i] || 0)) return -1;
+  }
+  return 0;
+};
+const fetchUpdateJson = async (url, timeoutMs = 12000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { 'user-agent': `ShinawaseLoader/${loaderVersion}` } });
+    if (!response.ok) throw new Error(`http_${response.status}`);
+    return await response.json();
+  } finally { clearTimeout(timer); }
+};
+const fetchUpdateBuffer = async (url, timeoutMs = 120000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { 'user-agent': `ShinawaseLoader/${loaderVersion}` } });
+    if (!response.ok) throw new Error(`http_${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  } finally { clearTimeout(timer); }
+};
+const checkSelfUpdate = async () => {
+  const remoteLoader = await fetchUpdateJson(`${UPDATE_REPO}/ShinawaseLoader/loader-version.json`);
+  const remote = String(remoteLoader?.version || '');
+  const packages = [];
+  for (const item of UPDATE_PACKAGES) {
+    try {
+      const remoteManifest = await fetchUpdateJson(item.manifest);
+      const localManifest = readJson(join(modsRoot, 'installed', item.id, 'echo.mod.json'), {});
+      const remoteVersion = String(remoteManifest?.version || '');
+      packages.push({
+        id: item.id,
+        file: item.file,
+        local: localManifest.version || null,
+        remote: remoteVersion,
+        updateAvailable: compareVersions(remoteVersion, localManifest.version || '0') > 0,
+      });
+    } catch (error) {
+      packages.push({ id: item.id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return {
+    ok: true,
+    local: loaderVersion,
+    remote,
+    updateAvailable: compareVersions(remote, loaderVersion) > 0 || packages.some((item) => item.updateAvailable),
+    loaderUpdate: compareVersions(remote, loaderVersion) > 0,
+    packages,
+  };
+};
+const applySelfUpdate = async (options = {}) => {
+  const quiet = options.quiet === true;
+  const force = options.force === true;
+  const auto = options.auto === true;
+  const config = readJson(loaderConfigPath, loaderConfig);
+  if (auto && config.autoUpdate === false) return { ok: true, skipped: 'disabled', local: loaderVersion };
+  const stamp = readJson(updateStampPath, {});
+  if (auto && !force && Number(stamp.checkedAt) && Date.now() - Number(stamp.checkedAt) < 10 * 60 * 1000) {
+    return { ok: true, skipped: 'recent', local: loaderVersion, remote: stamp.remote || null };
+  }
+  let status;
+  try {
+    status = await checkSelfUpdate();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!quiet) log('WARN', `self-update check failed: ${message}`);
+    return { ok: false, local: loaderVersion, error: message };
+  }
+  writeJson(updateStampPath, { checkedAt: Date.now(), local: loaderVersion, remote: status.remote });
+  if (!status.updateAvailable) return { ok: true, updated: false, ...status };
+  const applied = [];
+  try {
+    if (status.loaderUpdate) {
+      const archive = await fetchUpdateBuffer(UPDATE_ARCHIVE);
+      const files = readZip(archive, { maxEntries: 20000, maxBytes: 256 * 1024 * 1024 });
+      for (const file of files) {
+        const normalized = String(file.path || '').replaceAll('\\', '/');
+        const marker = '/ShinawaseLoader/';
+        const at = normalized.indexOf(marker);
+        if (at < 0) continue;
+        const relativePath = normalized.slice(at + marker.length);
+        if (!relativePath || relativePath.endsWith('/')) continue;
+        const top = relativePath.split('/')[0];
+        if (UPDATE_SKIP.has(top.toLowerCase()) || UPDATE_SKIP.has(relativePath.toLowerCase())) continue;
+        if (relativePath.split('/').includes('..')) continue;
+        const target = join(root, relativePath);
+        if (relative(root, target).startsWith('..')) continue;
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, file.data);
+      }
+      applied.push({ kind: 'loader', version: status.remote });
+      log('INFO', `self-update loader ${loaderVersion} -> ${status.remote}`);
+    }
+    for (const item of status.packages.filter((entry) => entry.updateAvailable && entry.file)) {
+      const bytes = await fetchUpdateBuffer(item.file);
+      const temp = join(logsRoot, `update-${item.id}.echomod`);
+      mkdirSync(logsRoot, { recursive: true });
+      writeFileSync(temp, bytes);
+      try {
+        const manifest = importPackage(temp);
+        applied.push({ kind: 'package', id: manifest.id, version: manifest.version || item.remote });
+        log('INFO', `self-update package ${manifest.id} v${manifest.version || item.remote}`);
+      } finally {
+        rmSync(temp, { force: true });
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log('WARN', `self-update apply failed: ${message}`);
+    return { ok: false, local: loaderVersion, remote: status.remote, applied, error: message };
+  }
+  return {
+    ok: true,
+    updated: applied.length > 0,
+    local: loaderVersion,
+    remote: status.remote,
+    applied,
+    restart: status.loaderUpdate,
+  };
+};
+
 const run = async () => {
+  if (command === 'self-update') {
+    const result = await applySelfUpdate({
+      quiet: hasFlag('--quiet'),
+      force: hasFlag('--force'),
+      auto: hasFlag('--auto') || hasFlag('--quiet'),
+    });
+    if (!hasFlag('--quiet')) printLogo(result.remote || loaderVersion);
+    console.log(JSON.stringify(result, null, hasFlag('--quiet') ? 0 : 2));
+    return;
+  }
   if (!locale) locale = await promptLocale();
   printLogo();
   if (command === 'init' || command === 'install-loader') {

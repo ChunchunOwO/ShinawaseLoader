@@ -42,9 +42,9 @@ internal static class EchoModdedHost
         return "node";
     }
 
-    private static void SyncIsolatedRuntime(string root, string loaderRoot)
+    private static void RunNodeScript(string root, string loaderRoot, string scriptName, string extraArgs)
     {
-        var script = Path.Combine(loaderRoot, "runtime-sync.mjs");
+        var script = Path.Combine(loaderRoot, scriptName);
         if (!File.Exists(script)) return;
         var node = FindNode(loaderRoot);
         var logDir = Path.Combine(loaderRoot, "Logs");
@@ -52,7 +52,7 @@ internal static class EchoModdedHost
         var info = new ProcessStartInfo
         {
             FileName = node,
-            Arguments = Quote(script) + " --echo " + Quote(root),
+            Arguments = Quote(script) + " " + extraArgs,
             WorkingDirectory = root,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -75,7 +75,7 @@ internal static class EchoModdedHost
                 }
                 try
                 {
-                    File.AppendAllText(Path.Combine(logDir, "runtime-sync.log"),
+                    File.AppendAllText(Path.Combine(logDir, Path.GetFileNameWithoutExtension(scriptName) + ".log"),
                         "[" + DateTime.UtcNow.ToString("o") + "] exit=" + proc.ExitCode + Environment.NewLine
                         + stdout + stderr + Environment.NewLine);
                 }
@@ -89,7 +89,8 @@ internal static class EchoModdedHost
     {
         var root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var loaderRoot = Path.Combine(root, "ShinawaseLoader");
-        SyncIsolatedRuntime(root, loaderRoot);
+        RunNodeScript(root, loaderRoot, "ShinawaseLoader.mjs", "self-update --auto --quiet");
+        RunNodeScript(root, loaderRoot, "runtime-sync.mjs", "--echo " + Quote(root) + " --skip-update");
         var moddedExe = Path.Combine(loaderRoot, "modded-runtime", "ECHO.exe");
         if (!File.Exists(moddedExe))
         {

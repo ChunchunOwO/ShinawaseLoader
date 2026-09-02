@@ -6,7 +6,7 @@
 
 *Community external ModLoader for ECHO Steam — local CDP injection, no built-in plugin VM.*
 
-![version](https://img.shields.io/badge/version-1.6.6-3b82f6?style=flat-square)
+![version](https://img.shields.io/badge/version-1.6.7-3b82f6?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square)
 ![node](https://img.shields.io/badge/node-22.23.2-339933?style=flat-square)
 ![mode](https://img.shields.io/badge/mode-external--CDP-8b5cf6?style=flat-square)
@@ -17,7 +17,7 @@
 
 ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar/exe。userData 为 `%APPDATA%\ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
-> **v1.6.6**（当前）对齐 echo-steam 26.9.1，并在 Steam 更新后自动刷新 Mod 隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
+> **v1.6.7**（当前）对齐 echo-steam 26.9.1。双击 `ECHO.modded.exe` 或 `start-echo-with-mods.cmd` 时会自动检查 GitHub 上的 Loader 与预装包并更新，Steam 更新后也会自动刷新隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
 ## 目录
 
@@ -41,7 +41,7 @@ ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 4
 | 渲染进程注入 | 默认 `external-cdp`：经 Chrome DevTools Protocol 注入，不改 `ECHO.exe`。 |
 | 主进程 bootstrap | Loader 启动 ECHO 时经 Node inspector（`--inspect`）加载 `streaming-bridge`、`native-host` 与额外 preload，不改写已安装的 `app.asar`。 |
 | 原生能力 | in-process native host（`.node` addon / host-dll，导出 `EchoNative_Init`）；可选当前进程内存 API。 |
-| 隔离运行时 | 安装时生成 `ECHO.modded.exe` + `modded-runtime`。Steam 更新后启动前自动对照 asar/exe 指纹并重拷/重打补丁。 |
+| 隔离运行时 | 安装时生成 `ECHO.modded.exe` + `modded-runtime`。Steam 更新后启动前自动对照 asar/exe 指纹并重拷/重打补丁。双击 `ECHO.modded.exe` 也会自动更新 Loader 与预装包。 |
 | 可逆自启 | 可选 `app-asar-bridge`，用于双击 ECHO 即走 Loader 路径；CDP / inspector 模式不依赖它。 |
 | 运行模式 | 安全模式、调试模式、`attach-only`；单实例监听端口 `17862`。 |
 | 语言 | 首次运行选择中文 / English，写入 `%LOCALAPPDATA%\ShinawaseLoader\selection.json`，之后可在 Loader 页更改。 |
@@ -78,9 +78,11 @@ cd ShinawaseLoader
 ```text
 --echo --safe-mode --debug --load-mode --inject-interval --startup-delay
 --native-port --inspect-port --no-native-host --locale
+```
 
 `node ShinawaseLoader.mjs sync-runtime [--force]` 对照 Steam 的 `app.asar` / `ECHO.exe` 指纹，刷新隔离运行时。Steam 更新后启动 `start-echo-with-mods.cmd` 或 `ECHO.modded.exe` 也会自动做这一步。
-```
+
+`node ShinawaseLoader.mjs self-update [--force]` 从 GitHub 更新 Loader 与预装包。双击 `ECHO.modded.exe` 时默认自动执行；可在 `loader.config.json` 设 `"autoUpdate": false` 关闭。
 
 `--load-mode` 取值：`external-cdp`（默认）、`attach-only`、`disabled`。
 

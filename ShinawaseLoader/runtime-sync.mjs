@@ -18,6 +18,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { patch } from './echo-asar.mjs';
@@ -262,6 +263,20 @@ if (isMain) {
   const echoHint = option('--echo') || process.env.ECHO_ROOT || process.env.ECHO_EXE || join(loaderDir, '..');
   const echoRoot = existsSync(echoHint) && statSync(echoHint).isFile() ? dirname(echoHint) : echoHint;
   const loaderRoot = option('--loader') || process.env.ECHO_MOD_HOME || loaderDir;
+  if (!args.includes('--skip-update')) {
+    const updater = join(loaderRoot, 'ShinawaseLoader.mjs');
+    if (existsSync(updater)) {
+      try {
+        spawnSync(process.execPath, [updater, 'self-update', '--auto', '--quiet'], {
+          cwd: loaderRoot,
+          env: { ...process.env, ECHO_MOD_HOME: loaderRoot, ECHO_GAME_ROOT: echoRoot },
+          timeout: 120000,
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } catch {}
+    }
+  }
   try {
     const result = syncModdedRuntime({
       echoRoot,

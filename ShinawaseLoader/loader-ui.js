@@ -1390,8 +1390,11 @@ const openLoader = async () => {
   };
   loaderPanel.querySelector('[data-action="update"]').onclick = async () => {
     try {
-      const result = await api('/api/update');
-      toast(result.updateAvailable ? (T.updateAvailable + ' ' + result.remote) : T.updateCurrent, result.updateAvailable ? 'info' : 'success');
+      const result = await api('/api/update', { method: 'POST' });
+      if (!result.ok) throw new Error(result.error || T.updateFailed);
+      if (result.updated && result.restart) toast(T.updateApplied + ' v' + (result.remote || ''), 'success');
+      else if (result.updated) toast(T.updatePackages + (result.remote ? ' · ' + result.remote : ''), 'success');
+      else toast(T.updateCurrent + (result.remote ? ' v' + result.remote : ''), 'success');
     } catch (error) { toast(T.updateFailed + ': ' + error.message, 'error'); }
   };
   loaderPanel.querySelector('[data-action="debug"]').onclick = async () => {

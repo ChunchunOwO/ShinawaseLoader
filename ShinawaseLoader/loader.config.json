@@ -15,6 +15,7 @@
   "nativePort": 17863,
   "nativeMemoryApi": true,
   "inspectPort": 9230,
+  "autoUpdate": true,
   "locale": "zh",
   "ui": {
     "density": "comfortable",
