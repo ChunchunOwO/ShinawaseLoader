@@ -1524,46 +1524,6 @@
   position: relative;
 }
 
-.echo-streaming-together-hud {
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 92px;
-  z-index: 2147483646;
-  display: flex !important;
-  visibility: visible !important;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 10px 14px;
-  pointer-events: auto !important;
-  border: 1px solid var(--theme-panel-border-strong, rgba(0, 0, 0, 0.16));
-  border-radius: 14px;
-  background: var(--theme-panel-bg-strong, #fff);
-  box-shadow: 0 16px 48px rgba(10, 14, 22, 0.28);
-  color: inherit;
-}
-
-.echo-streaming-together-hud-copy {
-  display: grid;
-  min-width: 0;
-  flex: 1 1 auto;
-  gap: 2px;
-}
-
-.echo-streaming-together-hud-copy strong,
-.echo-streaming-together-hud-copy span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.echo-streaming-together-hud .echo-streaming-together-leave {
-  width: auto !important;
-  min-width: 128px !important;
-  flex: 0 0 auto;
-}
-
 .player-bar .transport-streaming-button[data-badge]::after {
   content: "";
   position: absolute;

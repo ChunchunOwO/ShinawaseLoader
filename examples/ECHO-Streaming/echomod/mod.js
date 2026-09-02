@@ -3265,7 +3265,7 @@ applyTogetherSnapshot = (snapshot) => {
   if (Number(togetherUi.snapshot.progressMs) !== Number(previous?.progressMs) || togetherUi.snapshot.songId !== previous?.songId) {
     togetherUi.progressAt = Date.now();
   }
-  if (togetherUi.snapshot.inRoom && !togetherUi.wasInRoom && !togetherUi.snapshot.pendingRestore) {
+  if ((togetherUi.snapshot.inRoom || togetherUi.snapshot.pendingRestore || togetherUi.snapshot.alreadyInRoom) && !togetherUi.wasInRoom) {
     togetherUi.sheetOpen = true;
     togetherUi.sheetTab = 'together';
     persistMemory();
@@ -3373,15 +3373,11 @@ const togetherLeaveRoom = async () => {
   }
 };
 const togetherInSession = (snap = togetherUi.snapshot) => Boolean(snap?.inRoom || snap?.sessionActive || snap?.pendingRestore || snap?.alreadyInRoom);
-const makeTogetherLeaveButton = (className = '') => {
-  const node = actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
-    className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
-    title: togetherCopy.leave,
-    ariaLabel: togetherCopy.leave,
-  });
-  node.style.cssText = 'display:inline-flex!important;visibility:visible!important;opacity:1!important;align-items:center;justify-content:center;min-width:128px;min-height:40px;padding:0 16px;border:0;border-radius:10px;background:#e11d48;color:#fff;font-weight:800;font-size:14px;cursor:pointer;pointer-events:auto;z-index:2147483647;';
-  return node;
-};
+const makeTogetherLeaveButton = (className = '') => actionButton(togetherCopy.leave, null, () => void togetherLeaveRoom(), {
+  className: `secondary-action echo-streaming-together-leave ${className}`.trim(),
+  title: togetherCopy.leave,
+  ariaLabel: togetherCopy.leave,
+});
 const togetherCopyShare = async () => {
   const url = togetherUi.snapshot.shareUrl;
   if (!url) return;
@@ -3427,7 +3423,6 @@ const renderTogetherPicker = () => {
   dialog.setAttribute('aria-modal', 'true');
   const header = make('header', 'settings-font-modal-header');
   header.append(make('h3', '', togetherCopy.pickerTitle));
-  if (togetherInSession(snap)) header.append(makeTogetherLeaveButton('echo-streaming-together-leave--head'));
   header.append(actionButton(copy.close, 'close', () => { togetherUi.pickerOpen = false; paintTogetherChrome(); }, { iconOnly: true, className: 'settings-icon-button', title: copy.close }));
   dialog.append(header);
   const searchLabel = make('label', 'search-box echo-search-surface echo-streaming-together-search-wrap');
@@ -3487,87 +3482,7 @@ const renderTogetherPicker = () => {
   window.setTimeout(() => search.focus(), 0);
 };
 const renderTogetherRestore = () => {
-  document.querySelectorAll('.echo-streaming-together-restore').forEach((node) => node.remove());
-  const pending = togetherUi.snapshot.pendingRestore;
-  if (!pending?.roomId) return;
-  const names = (pending.users || []).map((user) => user.nickname).filter(Boolean);
-  const others = names.filter((name) => name !== togetherUi.snapshot.nickname);
-  const backdrop = make('div', 'settings-modal-backdrop echo-streaming-together-restore');
-  const dialog = make('section', 'settings-font-modal');
-  dialog.setAttribute('role', 'dialog');
-  dialog.setAttribute('aria-modal', 'true');
-  const header = make('header', 'settings-font-modal-header');
-  header.append(make('h3', '', togetherCopy.restoreTitle));
-  dialog.append(header);
-  dialog.append(make('p', '', others.length
-    ? `${togetherCopy.restoreBody}\n${others.slice(0, 4).join('、')}`
-    : togetherCopy.restoreBody));
-  if (pending.songTitle) dialog.append(make('small', '', `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`));
-  const actions = make('div', 'echo-streaming-together-restore-actions');
-  actions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
-  actions.append(makeTogetherLeaveButton());
-  dialog.append(actions);
-  backdrop.append(dialog);
-  document.body.append(backdrop);
-};
-const renderTogetherHud = () => {
-  document.querySelectorAll('.echo-streaming-together-hud').forEach((node) => node.remove());
-  const snap = togetherUi.snapshot;
-  const pending = snap.pendingRestore;
-  if (!pending?.roomId && !togetherInSession(snap) && !snap.inRoom) return;
-  const hud = make('div', 'echo-streaming-together-hud');
-  hud.setAttribute('role', 'status');
-  hud.style.cssText = 'position:fixed;left:16px;right:16px;bottom:92px;z-index:2147483646;display:flex;visibility:visible;align-items:center;gap:12px;min-height:56px;padding:10px 14px;background:#16181d;color:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.4);pointer-events:auto;';
-  const copyBox = make('div', 'echo-streaming-together-hud-copy');
-  if (pending?.roomId) {
-    copyBox.append(make('strong', '', togetherCopy.restoreTitle));
-    copyBox.append(make('span', '', pending.songTitle || togetherCopy.restoreBody));
-    hud.append(copyBox);
-    hud.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
-    hud.append(makeTogetherLeaveButton());
-  } else {
-    copyBox.append(make('strong', '', snap.songTitle || togetherCopy.inRoomBar));
-    copyBox.append(make('span', '', togetherNowPlayingText(snap) || `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''}`));
-    hud.append(copyBox);
-    hud.append(makeTogetherLeaveButton());
-  }
-  document.body.append(hud);
-};
-const renderTogetherBanner = () => {
-  document.querySelectorAll('.echo-streaming-together-notice').forEach((node) => node.remove());
-  const bar = document.querySelector('footer.player-bar, .player-bar');
-  if (!bar) return;
-  const snap = togetherUi.snapshot;
-  const pending = snap.pendingRestore;
-  const invite = (snap.invites || []).find((item) => !snap.inRoom || item.roomId !== snap.roomId);
-  if (!pending?.roomId && !togetherInSession(snap) && !invite) return;
-  const notice = make('div', 'player-download-notice echo-streaming-together-notice');
-  notice.setAttribute('role', 'status');
-  const copyBox = make('div', 'player-download-notice-copy');
-  if (pending?.roomId) {
-    copyBox.append(make('strong', '', togetherCopy.restoreTitle), make('span', '', pending.songTitle || togetherCopy.restoreBody));
-    notice.append(copyBox);
-    notice.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
-    notice.append(makeTogetherLeaveButton());
-    bar.prepend(notice);
-    return;
-  }
-  if (togetherInSession(snap)) {
-    copyBox.append(make('strong', '', togetherCopy.inRoomBar), make('span', '', `${Math.max(1, snap.users?.length || 1)}${chinese ? ' 人' : ''}`));
-  } else {
-    copyBox.append(make('strong', '', invite.nickname || invite.inviterId), make('span', '', togetherCopy.incoming));
-  }
-  notice.append(copyBox);
-  if (invite && !togetherInSession(snap)) {
-    notice.append(actionButton(togetherCopy.accept, 'check', () => void togetherAcceptInvite(invite), { className: 'secondary-action' }));
-    notice.append(actionButton(togetherCopy.decline, 'close', () => {
-      togetherUi.snapshot = { ...togetherUi.snapshot, invites: (togetherUi.snapshot.invites || []).filter((item) => item !== invite) };
-      paintTogetherChrome();
-    }, { className: 'secondary-action' }));
-  } else {
-    notice.append(makeTogetherLeaveButton());
-  }
-  bar.prepend(notice);
+  document.querySelectorAll('.echo-streaming-together-restore, .echo-streaming-together-hud, .echo-streaming-together-notice, .transport-together-leave').forEach((node) => node.remove());
 };
 const overlayCleanupSelector = '.echo-streaming-dock, .echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop, .echo-streaming-together-rail, .echo-streaming-comment-panel, .echo-streaming-similar-panel, .echo-streaming-together-picker, .echo-streaming-together-banner, .echo-streaming-together-notice, .echo-streaming-together-restore, .echo-streaming-together-hud, .transport-together-leave, .transport-streaming-button, .transport-comment-button, [data-echo-streaming-together="invite"], [data-echo-ncm-player]';
 let fillCommentSheet = (root) => { root.append(make('p', 'echo-streaming-together-empty', copy.loading)); };
@@ -3604,10 +3519,17 @@ const fillTogetherSheet = (root) => {
     root.append(make('p', 'echo-streaming-together-empty', togetherCopy.needLogin));
     return;
   }
-  if (togetherInSession(snap)) {
-    const leaveRow = make('div', 'echo-streaming-together-leave-row');
-    leaveRow.append(makeTogetherLeaveButton());
-    root.append(leaveRow);
+  const pending = snap.pendingRestore;
+  if (pending) {
+    root.append(make('p', 'echo-streaming-together-empty', togetherCopy.restoreTitle));
+    root.append(make('p', 'echo-streaming-together-empty', pending.songTitle
+      ? `${togetherCopy.restoreSong} · ${pending.songTitle}${pending.songArtist ? ` / ${pending.songArtist}` : ''}`
+      : togetherCopy.restoreBody));
+    const restoreActions = make('div', 'echo-streaming-together-actions');
+    restoreActions.append(actionButton(togetherCopy.restore, 'check', () => void togetherRestoreRoom(), { className: 'primary-action' }));
+    restoreActions.append(makeTogetherLeaveButton());
+    root.append(restoreActions);
+    return;
   }
   const nowPlaying = make('div', 'echo-streaming-together-now');
   if (snap.songCover) {
@@ -3701,18 +3623,12 @@ const mountStreamingTransportButton = (lyricsButton) => {
     comments.classList.toggle('is-soft-active', Boolean(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
     comments.setAttribute('aria-pressed', String(togetherUi.sheetOpen && togetherUi.sheetTab === 'comments'));
   }
-  let leave = host.querySelector(':scope > .transport-together-leave');
-  if (togetherInSession(togetherUi.snapshot) || togetherUi.snapshot.inRoom || togetherUi.snapshot.pendingRestore) {
-    if (!leave) {
-      leave = makeTogetherLeaveButton('transport-together-leave');
-      host.insertBefore(leave, lyrics);
-    }
-  } else leave?.remove();
+  host.querySelector(':scope > .transport-together-leave')?.remove();
   if (!visible && togetherUi.sheetOpen) closeStreamingSheet();
 };
 const paintStreamingSheet = () => {
   if (togetherUi.sheetTab === 'similar') togetherUi.sheetTab = 'together';
-  if (!togetherUi.sheetOpen || togetherUi.snapshot.pendingRestore || !ncmExtrasVisible()) {
+  if (!togetherUi.sheetOpen || !ncmExtrasVisible()) {
     document.querySelectorAll('.echo-streaming-drawer, .echo-streaming-sheet, .echo-streaming-sheet-backdrop').forEach((node) => node.remove());
     return;
   }
@@ -3774,12 +3690,10 @@ paintTogetherChrome = () => {
   paintStreamingSheet();
   mountStreamingTransportButton();
   renderTogetherRestore();
-  renderTogetherBanner();
-  renderTogetherHud();
   renderTogetherPicker();
 };
 const onStreamingSheetKey = (event) => {
-  if (event.key !== 'Escape' || togetherUi.pickerOpen || togetherUi.snapshot.pendingRestore) return;
+  if (event.key !== 'Escape' || togetherUi.pickerOpen) return;
   if (togetherUi.sheetOpen) closeStreamingSheet();
 };
 const installTogetherChrome = () => {
@@ -3799,8 +3713,7 @@ const installTogetherChrome = () => {
   const poll = window.setInterval(() => {
     if (packageDisposed) return;
     mountStreamingTransportButton();
-    if ((togetherUi.snapshot.inRoom || togetherUi.snapshot.pendingRestore || togetherUi.snapshot.sessionActive) && !document.querySelector('.echo-streaming-together-hud')) renderTogetherHud();
-    document.querySelectorAll('.echo-streaming-drawer [data-together-meta], .echo-streaming-together-hud-copy span').forEach((meta) => {
+    document.querySelectorAll('.echo-streaming-drawer [data-together-meta]').forEach((meta) => {
       if (togetherUi.snapshot.inRoom) meta.textContent = togetherNowPlayingText(togetherUi.snapshot);
     });
     if (togetherUi.snapshot.inRoom && !togetherUi.snapshot.pendingRestore && !togetherUi.applying && !togetherUi.pulling) {
