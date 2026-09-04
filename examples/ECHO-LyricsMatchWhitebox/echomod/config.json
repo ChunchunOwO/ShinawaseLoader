@@ -1,0 +1,9 @@
+{
+  "forceEnable": true,
+  "keepForced": false,
+  "injectToggle": true,
+  "injectRematch": true,
+  "closeDrawerOnRematch": true,
+  "notify": true,
+  "locale": "auto"
+}

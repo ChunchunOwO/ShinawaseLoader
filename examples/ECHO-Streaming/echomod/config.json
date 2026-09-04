@@ -11,5 +11,7 @@
   "autoSyncDailyPlaylists": false,
   "autoUnblock": true,
   "similarAutoPlay": true,
-  "similarCount": 10
+  "similarCount": 10,
+  "artistStreamingAlbumsEnabled": true,
+  "artistStreamingAlbumsProvider": "netease"
 }

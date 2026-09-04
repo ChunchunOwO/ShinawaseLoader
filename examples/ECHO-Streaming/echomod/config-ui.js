@@ -14,6 +14,8 @@ const defaults = {
   autoUnblock: true,
   similarAutoPlay: false,
   similarCount: 10,
+  artistStreamingAlbumsEnabled: true,
+  artistStreamingAlbumsProvider: 'netease',
 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const chinese = String(draft.locale || '').toLowerCase().startsWith('zh');
@@ -83,6 +85,7 @@ root.innerHTML = `
     </div>
     <section class="st-cfg-sec" data-sec="search"></section>
     <section class="st-cfg-sec" data-sec="display"></section>
+    <section class="st-cfg-sec" data-sec="artist"></section>
     <section class="st-cfg-sec" data-sec="daily"></section>
     <section class="st-cfg-sec" data-sec="netease"></section>
     <section class="st-cfg-sec" data-sec="download"></section>
@@ -181,6 +184,16 @@ display.append(toggle('hideUnavailable',
 display.append(toggle('showDisabledProviders',
   t('在平台栏中显示已被禁用的平台。', 'Keep disabled platforms visible in the provider rail.')));
 
+const artistProviders = [
+  { value: 'netease', label: t('网易云音乐', 'NetEase Cloud Music') },
+  { value: 'qqmusic', label: t('QQ 音乐', 'QQ Music') },
+];
+const artist = root.querySelector('[data-sec="artist"]');
+artist.append(toggle('artistStreamingAlbumsEnabled',
+  t('开启后，本地艺人详情的「专辑」页会在本地专辑下方单独显示流媒体专辑；点进专辑可打开流媒体专辑详情并播放。', 'When enabled, the artist detail Albums tab shows a separate streaming-albums strip below local albums. Open an album for streaming detail and playback.')));
+artist.append(field('artistStreamingAlbumsProvider', select('artistStreamingAlbumsProvider', artistProviders),
+  t('艺人页搜索流媒体专辑时使用的平台。', 'Provider used when searching streaming albums on artist pages.')));
+
 const textInput = (key, placeholder) => {
   const input = document.createElement('input');
   input.type = 'text';
@@ -225,6 +238,8 @@ echoConfigUi.onSave(() => ({
   autoUnblock: draft.autoUnblock !== false,
   similarAutoPlay: draft.similarAutoPlay === true,
   similarCount: Math.max(3, Math.min(50, Math.round(Number(draft.similarCount) || 10))),
+  artistStreamingAlbumsEnabled: draft.artistStreamingAlbumsEnabled !== false,
+  artistStreamingAlbumsProvider: draft.artistStreamingAlbumsProvider === 'qqmusic' ? 'qqmusic' : 'netease',
 }));
 
 return () => { root.replaceChildren(); };

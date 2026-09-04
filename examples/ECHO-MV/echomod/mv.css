@@ -3214,14 +3214,14 @@ section.lyrics-mv-panel,
 .echo-mv-root {
   position: fixed;
   inset: 0;
+  /* Leave the transport bar free so the MV button can toggle the sheet. */
+  bottom: calc(var(--player-height, 112px) + 8px);
   z-index: 40;
   pointer-events: none;
 }
-.echo-mv-root[data-open="true"] {
+.echo-mv-root[data-open="true"] .echo-mv-scrim,
+.echo-mv-root[data-open="true"] .echo-mv-sheet {
   pointer-events: auto;
-}
-.echo-mv-root[data-collapsed="true"] {
-  pointer-events: none;
 }
 .echo-mv-root[data-collapsed="true"] .echo-mv-sheet {
   pointer-events: auto;
@@ -3234,47 +3234,66 @@ section.lyrics-mv-panel,
   inset: 0;
   padding: 0;
   border: 0;
-  background: transparent;
+  background: color-mix(in srgb, #0a0d13 46%, transparent);
   cursor: default;
 }
 .echo-mv-sheet {
-  --echo-mv-sheet-text: #26384f;
-  --echo-mv-sheet-border: rgba(40, 46, 54, .1);
-  --echo-mv-sheet-bg: rgba(248, 250, 252, .82);
-  --echo-mv-sheet-shadow: 0 16px 36px rgba(30, 37, 47, .12), inset 0 1px 0 rgba(255, 255, 255, .58);
+  --echo-mv-sheet-text: #243246;
+  --echo-mv-sheet-muted: #667487;
+  --echo-mv-sheet-border: rgba(36, 50, 70, .16);
+  --echo-mv-sheet-bg: #ffffff;
+  --echo-mv-sheet-field-bg: #f4f6fa;
+  --echo-mv-sheet-field-border: rgba(36, 50, 70, .16);
+  --echo-mv-sheet-chip-bg: #e8eef6;
+  --echo-mv-sheet-chip-text: #3f556c;
+  --echo-mv-sheet-soft-bg: #f7f8fb;
+  --echo-mv-sheet-shadow: 0 24px 64px rgba(18, 24, 34, .28), 0 2px 10px rgba(18, 24, 34, .1);
   --audio-drawer-text: var(--echo-mv-sheet-text);
+  --audio-drawer-soft-text: var(--echo-mv-sheet-muted);
   position: absolute;
-  top: clamp(56px, 8vh, 88px);
-  right: clamp(16px, 2vw, 28px);
-  z-index: 1;
+  top: 50%;
+  right: auto;
+  left: 50%;
+  z-index: 2;
   display: grid;
-  width: min(560px, calc(100vw - 28px));
-  max-height: min(78vh, 820px);
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(78vh, calc(100vh - var(--player-height, 112px) - 48px));
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
-  gap: 6px;
-  padding: 9px;
+  gap: 8px;
+  padding: 14px;
   overflow: hidden;
   color: var(--echo-mv-sheet-text);
   border: 1px solid var(--echo-mv-sheet-border);
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--echo-mv-sheet-bg);
   box-shadow: var(--echo-mv-sheet-shadow);
-  backdrop-filter: blur(22px) saturate(1.12);
+  transform: translate(-50%, -50%);
+  isolation: isolate;
 }
 html[data-theme=dark] .echo-mv-sheet {
-  --echo-mv-sheet-text: rgba(236, 244, 255, .92);
-  --echo-mv-sheet-border: rgba(255, 255, 255, .12);
-  --echo-mv-sheet-bg: rgba(12, 18, 27, .78);
-  --echo-mv-sheet-shadow: 0 20px 50px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .08);
+  --echo-mv-sheet-text: rgba(236, 244, 255, .95);
+  --echo-mv-sheet-muted: rgba(190, 204, 224, .78);
+  --echo-mv-sheet-border: rgba(255, 255, 255, .14);
+  --echo-mv-sheet-bg: #151c28;
+  --echo-mv-sheet-field-bg: rgba(255, 255, 255, .06);
+  --echo-mv-sheet-field-border: rgba(255, 255, 255, .14);
+  --echo-mv-sheet-chip-bg: rgba(229, 237, 255, .14);
+  --echo-mv-sheet-chip-text: rgba(236, 244, 255, .86);
+  --echo-mv-sheet-soft-bg: rgba(255, 255, 255, .05);
+  --echo-mv-sheet-shadow: 0 28px 70px rgba(0, 0, 0, .5);
+}
+.echo-mv-root[data-open="false"] .echo-mv-sheet {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 10px));
+  pointer-events: none;
 }
 .echo-mv-root[data-collapsed="true"] .echo-mv-sheet {
   grid-template-rows: auto;
   max-height: none;
-}
-.echo-mv-root[data-open="false"] .echo-mv-sheet {
-  opacity: 0;
-  transform: translateY(8px);
-  pointer-events: none;
+  top: clamp(56px, 8vh, 88px);
+  right: clamp(16px, 2vw, 28px);
+  left: auto;
+  transform: none;
 }
 .echo-mv-sheet-bar {
   display: flex;
@@ -3474,17 +3493,18 @@ html[data-theme=dark] .echo-mv-quality-item {
   padding: 8px 9px;
   text-align: left;
   color: var(--echo-mv-sheet-text);
-  border: 1px solid rgba(54, 73, 95, .14);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .86);
+  border: 1px solid var(--echo-mv-sheet-field-border);
+  border-radius: 10px;
+  background: var(--echo-mv-sheet-field-bg);
   cursor: pointer;
 }
 html[data-theme=dark] .echo-mv-candidate {
-  border-color: rgba(255, 255, 255, .12);
-  background: rgba(255, 255, 255, .06);
+  border-color: var(--echo-mv-sheet-field-border);
+  background: var(--echo-mv-sheet-field-bg);
 }
 .echo-mv-candidate:hover {
-  border-color: rgba(63, 96, 134, .28);
+  border-color: color-mix(in srgb, var(--theme-accent, #4b55e8) 34%, var(--echo-mv-sheet-field-border));
+  background: color-mix(in srgb, var(--echo-mv-sheet-field-bg) 88%, var(--theme-accent, #4b55e8) 12%);
 }
 .echo-mv-candidate-thumb {
   grid-area: thumb;
@@ -3538,16 +3558,16 @@ html[data-theme=dark] .echo-mv-candidate {
   min-height: 18px;
   align-items: center;
   padding: 0 6px;
-  color: #456076;
+  color: var(--echo-mv-sheet-chip-text);
   border-radius: 999px;
-  background: rgba(226, 235, 244, .84);
+  background: var(--echo-mv-sheet-chip-bg);
   font-size: 9px;
   font-weight: 780;
   line-height: 18px;
 }
 html[data-theme=dark] .echo-mv-candidate-badges small {
-  color: rgba(236, 244, 255, .82);
-  background: rgba(229, 237, 255, .18);
+  color: var(--echo-mv-sheet-chip-text);
+  background: var(--echo-mv-sheet-chip-bg);
 }
 .echo-mv-error {
   margin: 0;
@@ -3557,6 +3577,99 @@ html[data-theme=dark] .echo-mv-candidate-badges small {
 .echo-mv-sheet .mv-toggle-copy em,
 .echo-mv-sheet .mv-threshold-copy em {
   color: color-mix(in srgb, var(--echo-mv-sheet-text) 62%, transparent);
+}
+
+/* Sheet-scoped controls: stock MV CSS is dark-glass oriented; keep the light
+   floating sheet readable on playlist/library pages. */
+.echo-mv-sheet .mv-search-controls {
+  border-top-color: var(--echo-mv-sheet-border);
+}
+.echo-mv-sheet .mv-search-input,
+.echo-mv-sheet .mv-custom-input,
+.echo-mv-sheet .mv-custom-controls input,
+.echo-mv-sheet input[type='text'],
+.echo-mv-sheet input[type='search'],
+.echo-mv-sheet input:not([type]) {
+  color: var(--echo-mv-sheet-text);
+  border-color: var(--echo-mv-sheet-field-border);
+  background: var(--echo-mv-sheet-field-bg);
+}
+.echo-mv-sheet .mv-search-input {
+  color: var(--echo-mv-sheet-muted);
+}
+.echo-mv-sheet .mv-search-input:focus-within,
+.echo-mv-sheet .mv-custom-input:focus-within,
+.echo-mv-sheet input[type='text']:focus,
+.echo-mv-sheet input[type='search']:focus,
+.echo-mv-sheet input:not([type]):focus {
+  border-color: color-mix(in srgb, var(--theme-accent, #4b55e8) 55%, var(--echo-mv-sheet-field-border));
+  background: var(--echo-mv-sheet-field-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent, #4b55e8) 18%, transparent);
+}
+.echo-mv-sheet .mv-search-input input,
+.echo-mv-sheet .mv-custom-input input,
+.echo-mv-sheet input {
+  color: var(--echo-mv-sheet-text);
+  caret-color: var(--echo-mv-sheet-text);
+}
+.echo-mv-sheet .mv-search-input input::placeholder,
+.echo-mv-sheet .mv-custom-input input::placeholder,
+.echo-mv-sheet input::placeholder {
+  color: var(--echo-mv-sheet-muted);
+  opacity: .8;
+}
+.echo-mv-sheet .mv-settings-actions button,
+.echo-mv-sheet .mv-search-controls > button[type='submit'],
+.echo-mv-sheet .mv-custom-controls button,
+.echo-mv-sheet .mv-selected-card button,
+.echo-mv-sheet .mv-source-drag-handle,
+.echo-mv-sheet .mv-source-toggle,
+.echo-mv-sheet .mv-quality-trigger,
+.echo-mv-sheet .echo-mv-icon-btn {
+  color: var(--echo-mv-sheet-text);
+  border-color: var(--echo-mv-sheet-field-border);
+  background: var(--echo-mv-sheet-field-bg);
+}
+.echo-mv-sheet .mv-settings-actions button:hover,
+.echo-mv-sheet .mv-search-controls > button[type='submit']:hover,
+.echo-mv-sheet .mv-custom-controls button:hover,
+.echo-mv-sheet .mv-selected-card button:hover,
+.echo-mv-sheet .mv-source-drag-handle:hover,
+.echo-mv-sheet .mv-source-toggle:hover,
+.echo-mv-sheet .mv-quality-trigger:hover,
+.echo-mv-sheet .echo-mv-icon-btn:hover {
+  color: var(--echo-mv-sheet-text);
+  border-color: color-mix(in srgb, var(--theme-accent, #4b55e8) 30%, var(--echo-mv-sheet-field-border));
+  background: color-mix(in srgb, var(--echo-mv-sheet-field-bg) 82%, var(--theme-accent, #4b55e8) 18%);
+}
+.echo-mv-sheet .mv-settings-actions button:disabled,
+.echo-mv-sheet .mv-search-controls > button[type='submit']:disabled,
+.echo-mv-sheet .mv-custom-controls button:disabled {
+  color: var(--echo-mv-sheet-muted);
+  border-color: var(--echo-mv-sheet-border);
+  background: color-mix(in srgb, var(--echo-mv-sheet-soft-bg) 70%, transparent);
+  opacity: .62;
+}
+.echo-mv-sheet .mv-search-controls > button[type='submit']:disabled:hover,
+.echo-mv-sheet .mv-custom-controls button:disabled:hover {
+  background: color-mix(in srgb, var(--echo-mv-sheet-soft-bg) 70%, transparent);
+}
+.echo-mv-sheet .mv-custom-card,
+.echo-mv-sheet .mv-selected-card,
+.echo-mv-sheet .echo-mv-current {
+  border-color: var(--echo-mv-sheet-field-border);
+  background: var(--echo-mv-sheet-field-bg);
+}
+.echo-mv-sheet .mv-current-song-toggle,
+.echo-mv-sheet .mv-toggle-row,
+.echo-mv-sheet .settings-toggle-row {
+  color: var(--echo-mv-sheet-text);
+  border-color: var(--echo-mv-sheet-field-border);
+  background: var(--echo-mv-sheet-field-bg);
+}
+.echo-mv-sheet .mv-settings-search-empty,
+.echo-mv-sheet .mv-settings-search-error {
+  color: var(--echo-mv-sheet-muted);
 }
 .echo-mv-quality-item[aria-pressed="true"],
 .echo-mv-quality-item[data-active="true"] {
@@ -3610,8 +3723,9 @@ html[data-theme=dark] .echo-mv-sheet .mv-auto-apply-toggle[aria-pressed="true"] 
   background: #8fcfbd;
 }
 .lyrics-page[data-lyrics-page-style="coverStage"] .echo-mv-sheet {
+  /* Keep centered modal; cover-stage no longer pins the sheet to a side. */
+  left: 50%;
   right: auto;
-  left: clamp(16px, 2vw, 28px);
 }
 
 /* Keep official cinema / cover stages when MV is the backdrop. */

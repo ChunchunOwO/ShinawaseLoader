@@ -17,7 +17,7 @@
 
 ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar/exe。userData 为 `%APPDATA%\ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
-> **v1.6.7**（当前）对齐 echo-steam 26.9.1。双击 `ECHO.modded.exe` 或 `start-echo-with-mods.cmd` 时会自动检查 GitHub 上的 Loader 与预装包并更新，Steam 更新后也会自动刷新隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
+> **v1.6.7**（当前）对齐 echo-steam 26.9.1。Loader 生成独立的 `ECHO.modded.exe`，**不取代** Steam 原版；安装结束后会指导把 Steam 启动项设为 `"…\ECHO.modded.exe" %command%`。双击该 exe 或 `start-echo-with-mods.cmd` 时会自动检查 GitHub 上的 Loader 与预装包并更新，Steam 更新后也会自动刷新隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
 ## 目录
 
@@ -41,8 +41,8 @@ ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 4
 | 渲染进程注入 | 默认 `external-cdp`：经 Chrome DevTools Protocol 注入，不改 `ECHO.exe`。 |
 | 主进程 bootstrap | Loader 启动 ECHO 时经 Node inspector（`--inspect`）加载 `streaming-bridge`、`native-host` 与额外 preload，不改写已安装的 `app.asar`。 |
 | 原生能力 | in-process native host（`.node` addon / host-dll，导出 `EchoNative_Init`）；可选当前进程内存 API。 |
-| 隔离运行时 | 安装时生成 `ECHO.modded.exe` + `modded-runtime`。Steam 更新后启动前自动对照 asar/exe 指纹并重拷/重打补丁。双击 `ECHO.modded.exe` 也会自动更新 Loader 与预装包。 |
-| 可逆自启 | 可选 `app-asar-bridge`，用于双击 ECHO 即走 Loader 路径；CDP / inspector 模式不依赖它。 |
+| 隔离运行时 | 安装时生成独立 `ECHO.modded.exe` + `modded-runtime`（不取代 Steam 原版）。推荐把 Steam 启动项设为 `"…\ECHO.modded.exe" %command%`。Steam 更新后启动前自动对照 asar/exe 指纹并重拷/重打补丁。 |
+| 可逆自启 | 可选 `app-asar-bridge`（仅作用于隔离运行时副本）；CDP / inspector 模式不依赖它。 |
 | 运行模式 | 安全模式、调试模式、`attach-only`；单实例监听端口 `17862`。 |
 | 语言 | 首次运行选择中文 / English，写入 `%LOCALAPPDATA%\ShinawaseLoader\selection.json`，之后可在 Loader 页更改。 |
 
@@ -58,11 +58,18 @@ cd ShinawaseLoader
 
 安装结束后会进入 **可选包**：默认勾选 **ECHO Streaming** 和 **ECHO MV**。空格开关，Enter 导入到游戏 `Mods`。其他示例已归档为 [`examples/reference/`](examples/reference/) 参考 Mod，不出现在安装列表里。
 
-安装后，请使用游戏目录下 `ShinawaseLoader` 中的启动器（Steam 快捷方式不会走 inspector bootstrap）：
+Loader **不会取代** Steam 原版 `ECHO.exe` / `app.asar`。安装会在游戏目录旁生成独立的 `ECHO.modded.exe`（启动隔离运行时）。打完可选包后，安装程序会提示并把下面这一行复制到剪贴板——请写入 Steam 启动项：
+
+```text
+"<游戏目录>\ECHO.modded.exe" %command%
+```
+
+路径：Steam → 库 → ECHO → 属性 → 启动选项。之后在 Steam 点「开始游戏」即走独立启动器。Loader 设置页常驻「喵」启动项提示，**点击路径即可复制**（无右下角弹窗）。也可双击 `ECHO.modded.exe`，或使用 `ShinawaseLoader` 下的启动器：
 
 | 启动器 | 用途 |
 | --- | --- |
-| `start-echo-with-mods.cmd` | 正常带 Mod 启动 |
+| `ECHO.modded.exe` | 独立主机（推荐配合 Steam 启动项） |
+| `start-echo-with-mods.cmd` | 同步运行时后启动独立主机 |
 | `start-echo-debug.cmd` | 调试模式 |
 | `start-echo-safe.cmd` | 安全模式（不注入包、不加载 native host） |
 | `attach-to-echo.cmd` | 附加到已在运行的 ECHO |
@@ -265,7 +272,7 @@ Pet、osu!downloader、AudioBand、Wallpaper Bridge、Together、Steam Listen Bo
 使用 `attach-to-echo.cmd`，或 `--load-mode attach-only`。附加模式不会再拉起一份 ECHO。
 
 **Mod 没有生效？**  
-确认是用 Loader 启动器打开的，而不是 Steam 快捷方式。Steam 入口不会执行 inspector 主进程 bootstrap。
+确认 Steam 启动项已设为 `"<游戏目录>\ECHO.modded.exe" %command%`，或双击了 `ECHO.modded.exe` / `start-echo-with-mods.cmd`。未改启动项时，Steam 原版入口不会走隔离运行时与 inspector bootstrap。
 
 **ECHO 43.3+ 双击 `ECHO.modded.exe` 立刻退出？**  
 新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。Steam 更新后 Loader / `ECHO.modded.exe` 会自动对照指纹并调用 `runtime-sync.mjs`；也可手动 `node ShinawaseLoader.mjs sync-runtime --force`。

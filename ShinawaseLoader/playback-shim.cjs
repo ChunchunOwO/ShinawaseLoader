@@ -139,8 +139,11 @@ const installProxy = () => {
     upstream.end();
   };
   const server = http.createServer((req, res) => {
-    const token = String(req.url || '/').split('?')[0].replace(/^\//, '').split('/')[0];
-    const entry = tokens.get(token);
+    // Accept /<token> and /<token>.flac so exclusive/ASIO daemon remote
+    // format detection can use a file extension on opaque proxy URLs.
+    const leaf = String(req.url || '/').split('?')[0].replace(/^\//, '').split('/')[0];
+    const token = leaf.replace(/\.[a-z0-9]+$/iu, '');
+    const entry = tokens.get(token) || tokens.get(leaf);
     if (!entry || entry.expires < Date.now()) {
       res.statusCode = 404;
       res.end();
@@ -159,11 +162,56 @@ const installProxy = () => {
         expires: Date.now() + 12 * 60 * 1000,
       });
       const addr = server.address();
-      return `http://127.0.0.1:${addr.port}/${token}`;
+      return `http://127.0.0.1:${addr.port}/${token}${extensionForSource(source, item)}`;
     },
   };
   globalThis.__shinawaseMediaProxy = api;
   return api;
+};
+
+const positiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+};
+
+const extensionForSource = (source, item) => {
+  const codec = String(source?.codec || item?.codec || '').toLowerCase();
+  const mime = String(source?.mimeType || item?.mimeType || '').toLowerCase();
+  if (codec.includes('flac') || mime.includes('flac')) return '.flac';
+  if (codec.includes('wav') || mime.includes('wav')) return '.wav';
+  if (codec.includes('ogg') || codec.includes('opus') || mime.includes('ogg') || mime.includes('opus')) return '.ogg';
+  if (codec.includes('aac') || codec.includes('mp4a') || codec === 'm4a' || codec === 'mp4' || mime.includes('mp4') || mime.includes('aac') || mime.includes('m4a')) return '.m4a';
+  if (codec.includes('mp3') || mime.includes('mpeg')) return '.mp3';
+  try {
+    const pathname = new URL(String(source?.url || '')).pathname.toLowerCase();
+    const match = pathname.match(/\.(flac|mp3|m4a|aac|ogg|opus|wav|m4s)(?:$|\?)/u);
+    if (match) return match[1] === 'm4s' || match[1] === 'aac' ? '.m4a' : `.${match[1]}`;
+  } catch {}
+  // Opaque URLs still need an extension so native daemon remote playback
+  // (exclusive / ASIO / DSP) can admit the source without a probed codec.
+  return '.mp3';
+};
+
+const buildStreamingProbe = (item, source) => {
+  const durationSeconds = positiveNumber(item?.duration) || positiveNumber(source?.durationSeconds);
+  // Default 44.1 kHz when the provider omits rate so SRC / SDM / dither can
+  // still build a sample-rate plan; the daemon may correct the real rate later.
+  const fileSampleRate = positiveNumber(source?.sampleRate) || positiveNumber(item?.sampleRate) || 44100;
+  const bitDepth = positiveNumber(source?.bitDepth) || positiveNumber(item?.bitDepth);
+  const bitrate = positiveNumber(source?.bitrate) || positiveNumber(item?.bitrate);
+  const channels = positiveNumber(source?.channels) || positiveNumber(item?.channels) || 2;
+  const extension = extensionForSource(source, item);
+  const codec = (typeof source?.codec === 'string' && source.codec.trim())
+    || (typeof item?.codec === 'string' && item.codec.trim())
+    || (extension === '.flac' ? 'flac' : extension === '.m4a' ? 'aac' : 'mp3');
+  return {
+    durationSeconds,
+    fileSampleRate,
+    channels,
+    codec,
+    bitDepth,
+    bitrate,
+  };
 };
 
 const stripStreamingChain = (options) => {
@@ -176,10 +224,22 @@ const stripStreamingChain = (options) => {
   return next;
 };
 
+// Never strip DSP / output fields when falling back to the local proxy path.
+const preserveOutputSettings = (raw) => {
+  const output = raw?.output;
+  if (!output || typeof output !== 'object') return output;
+  return { ...output };
+};
+
 const asLocalRequest = (raw, item, source) => {
   const proxy = installProxy();
+  const probe = buildStreamingProbe(item, source);
+  // Fallback path when Steam still rejects non-m3u8 streaming: local HTTP
+  // proxy + full probe/output so exclusive, ASIO, EQ, SRC, SDM, and dither
+  // can enter the native daemon processing path.
   return {
     ...(raw && typeof raw === 'object' ? raw : {}),
+    output: preserveOutputSettings(raw),
     item: {
       mediaType: 'local',
       path: proxy.urlFor(source, item),
@@ -188,9 +248,16 @@ const asLocalRequest = (raw, item, source) => {
       artist: item.artist || '',
       album: item.album || '',
       albumArtist: item.albumArtist || null,
-      duration: Number(item.duration) || null,
+      duration: probe.durationSeconds || null,
       coverThumb: item.coverThumb || null,
+      sampleRate: probe.fileSampleRate || null,
+      codec: probe.codec || null,
+      bitDepth: probe.bitDepth || null,
+      bitrate: probe.bitrate || null,
+      channels: probe.channels || null,
+      mimeType: source.mimeType || item.mimeType || null,
     },
+    probe,
     automix: stripStreamingChain(raw?.automix),
     gapless: stripStreamingChain(raw?.gapless),
   };
@@ -198,17 +265,34 @@ const asLocalRequest = (raw, item, source) => {
 
 const asResolvedSource = (item, source) => {
   const proxy = installProxy();
+  const probe = buildStreamingProbe(item, source);
   return {
     filePath: proxy.urlFor(source, item),
     inputHeaders: undefined,
-    mimeType: source.mimeType || null,
-    durationSeconds: Number(item.duration) || null,
-    probe: {
-      durationSeconds: Number(item.duration) || undefined,
-      codec: source.codec || undefined,
-      bitrate: source.bitrate || undefined,
-    },
+    mimeType: source.mimeType || item.mimeType || null,
+    durationSeconds: probe.durationSeconds || null,
+    probe,
   };
+};
+
+const steamStreamingBlocked = (error) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /not available in the Steam distribution|Streaming playback bridge is unavailable|must be an object|m3u8/iu.test(message)
+    || /Streaming provider did not return a playable URL/iu.test(message);
+};
+
+const playStreamingViaShim = async (original, event, raw, item) => {
+  // Prefer the asar-patched native streaming path (HTTPS URL + inputHeaders +
+  // remembered output). That is what carries EQ / SRC / SDM / dither the same
+  // way local files do. Only fall back to the localhost proxy when Steam still
+  // rejects non-m3u8 streaming.
+  try {
+    return await original(event, raw);
+  } catch (error) {
+    if (!steamStreamingBlocked(error)) throw error;
+    const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+    return original(event, asLocalRequest(raw, item, source));
+  }
 };
 
 const wrappedChannels = new Set();
@@ -261,21 +345,24 @@ const installStreamingPlaybackShim = (host = {}) => {
     [CHANNELS.play, async (original, event, raw) => {
       const item = streamingItem(raw);
       if (!item) return original(event, raw);
-      const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-      return original(event, asLocalRequest(raw, item, source));
+      return playStreamingViaShim(original, event, raw, item);
     }],
     [CHANNELS.resolve, async (original, event, raw) => {
       const item = streamingItem(raw);
       if (!item) return original(event, raw);
-      const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-      return asResolvedSource(item, source);
+      try {
+        return await original(event, raw);
+      } catch (error) {
+        if (!steamStreamingBlocked(error)) throw error;
+        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
+        return asResolvedSource(item, source);
+      }
     }],
     [CHANNELS.prepare, async (original, event, raw) => {
       const item = streamingItem(raw);
       if (!item) return original(event, raw);
       try {
-        const source = await resolvePlaybackRetry(item, raw?.forceRefresh);
-        return original(event, asLocalRequest(raw, item, source));
+        return await playStreamingViaShim(original, event, raw, item);
       } catch {
         return undefined;
       }

@@ -643,8 +643,17 @@ let pendingDrawerRender = false;
 let scalePending = null;
 let resizeObserver = null;
 
-const isLyricsPageVisible = () => Boolean(document.querySelector('.lyrics-page, .app-shell--lyrics'));
+const isLyricsPageVisible = () => {
+  const page = document.querySelector('.lyrics-page, .app-shell--lyrics');
+  if (!page) return false;
+  if (page.hidden) return false;
+  const style = getComputedStyle(page);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const rect = page.getBoundingClientRect();
+  return rect.width > 1 && rect.height > 1;
+};
 const lyricsPageEl = () => document.querySelector('.lyrics-page');
+const isDrawerDomOpen = () => Boolean(refs.drawerRoot?.isConnected && state.drawerOpen && state.drawerRender);
 const hideOfficialMvChrome = (page) => {
   page?.querySelectorAll('section.lyrics-mv-panel').forEach((node) => {
     node.dataset.echoMvStub = 'true';
@@ -988,7 +997,7 @@ const applyPageFlags = () => {
   hideOfficialMvChrome(page);
   page?.querySelectorAll('aside.echo-mv-panel').forEach((node) => node.remove());
   if (refs.transportBtn) {
-    const open = Boolean(state.drawerOpen && isLyricsPageVisible());
+    const open = isDrawerDomOpen();
     refs.transportBtn.classList.toggle('is-soft-active', open);
     refs.transportBtn.setAttribute('aria-pressed', String(open));
   }
@@ -1544,6 +1553,10 @@ const renderDrawer = () => {
     pendingDrawerRender = false;
     return;
   }
+  if (refs.drawerRoot && !refs.drawerRoot.isConnected) {
+    refs.drawerRoot = null;
+    lastDrawerSignature = '';
+  }
   const settings = state.settings;
   const enabled = settings.enabled !== false;
   const selected = state.selectedVideo;
@@ -2032,16 +2045,30 @@ const setViewMode = (mode, navigate) => {
 };
 
 let lastEntryToggleAt = 0;
+const reconcileDrawerState = () => {
+  // DOM can be removed by route remounts / tooling while state still says open.
+  // Without this, the next MV click only runs the close path and looks dead.
+  if ((state.drawerOpen || state.drawerRender) && !refs.drawerRoot?.isConnected) {
+    state.drawerOpen = false;
+    state.drawerMotion = false;
+    state.drawerRender = false;
+    state.sheetCollapsed = false;
+    refs.drawerRoot = null;
+    lastDrawerSignature = '';
+  }
+};
 const onMvButtonClick = (event) => {
   event?.preventDefault?.();
   event?.stopPropagation?.();
   const now = performance.now();
   if (now - lastEntryToggleAt < 250) return;
   lastEntryToggleAt = now;
-  if (!isLyricsPageVisible()) {
+  reconcileDrawerState();
+  const shouldOpen = !isDrawerDomOpen();
+  if (shouldOpen && !isLyricsPageVisible()) {
     window.dispatchEvent(new CustomEvent(NAV_LYRICS_EVENT, { detail: { mode: 'lyrics' } }));
   }
-  openDrawer(!state.drawerOpen);
+  openDrawer(shouldOpen);
 };
 
 const bindTransportButton = (button) => {
