@@ -1,6 +1,6 @@
-// Loader UI generation 22. Keep this guard in sync with
-// window.__echoExternalLoaderUi.version and ShinawaseLoader.mjs (uiVersion < 22).
-if (window.__echoExternalLoaderUi?.version >= 22) return 'already';
+// Loader UI generation 32. Keep this guard in sync with
+// window.__echoExternalLoaderUi.version and ShinawaseLoader.mjs (uiVersion < 32).
+if (window.__echoExternalLoaderUi?.version >= 32) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -15,6 +15,7 @@ const defaultUiSettings = {
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  steamLaunchReminder: false,
 };
 let uiSettings = {
   ...defaultUiSettings,
@@ -38,8 +39,20 @@ let searchQuery = '';
 let currentFilter = uiSettings.rememberFilters !== false ? (uiSettings.modFilter || 'all') : 'all';
 let currentSort = uiSettings.modSort || 'name';
 let statusTimer = 0;
-let injectPopupTimer = 0;
-let injectPopupShown = false;
+let cachedGameRoot = '';
+let steamCopyTimer = 0;
+let steamReminderShown = false;
+let steamReminderEl = null;
+const DISCLAIMER_STORAGE_KEY = 'shinawase:disclaimer-accepted';
+const readLocalDisclaimerAccepted = () => {
+  try { return localStorage.getItem(DISCLAIMER_STORAGE_KEY) === '1'; } catch { return false; }
+};
+const writeLocalDisclaimerAccepted = () => {
+  try { localStorage.setItem(DISCLAIMER_STORAGE_KEY, '1'); } catch {}
+};
+let disclaimerAccepted = (typeof DISCLAIMER_ACCEPTED !== 'undefined' && DISCLAIMER_ACCEPTED === true) || readLocalDisclaimerAccepted();
+let disclaimerOverlay = null;
+let disclaimerBusy = false;
 let modsListAnimate = true;
 let searchTimer = 0;
 let modsCache = [];
@@ -77,7 +90,7 @@ css.textContent = `
   /* Design tokens. Declared on every loader surface (not just :root) so the
      per-surface accent override from Appearance settings re-resolves them. */
   :root, .echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page,
-  .echo-config-overlay, .echo-toast-stack, .echo-toast, .echo-inject-popup,
+  .echo-config-overlay, .echo-disclaimer-overlay, .echo-toast-stack, .echo-toast, .echo-inject-popup,
   [data-echo-external-loader-group] {
     --shl-font: var(--echo-font-family, Outfit, ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif);
     --shl-mono: var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace);
@@ -566,20 +579,120 @@ css.textContent = `
   /* ---- Sidebar nav ---- */
   [data-echo-external-loader-group] .nav-icon-shell { display: grid; place-items: center; }
   [data-echo-external-loader-group] .nav-icon-shell svg { width: 21px; height: 21px; display: block; }
+  /* Many registered mods outgrow the sidebar. Keep an internal scrollport so
+     library + utility stay pinned, but NEVER paint a scrollbar on any sidebar
+     surface (wheel/touch scroll still works). */
+  .sidebar,
+  .sidebar .sidebar-groups,
+  .sidebar-groups > [data-echo-external-loader-group],
+  .sidebar-groups > [data-echo-external-loader-group] .nav-list,
+  .sidebar > [data-echo-external-loader-group],
+  .sidebar > [data-echo-external-loader-group] .nav-list {
+    scrollbar-width: none !important;
+  }
+  .sidebar::-webkit-scrollbar,
+  .sidebar .sidebar-groups::-webkit-scrollbar,
+  .sidebar-groups > [data-echo-external-loader-group]::-webkit-scrollbar,
+  .sidebar-groups > [data-echo-external-loader-group] .nav-list::-webkit-scrollbar,
+  .sidebar > [data-echo-external-loader-group]::-webkit-scrollbar,
+  .sidebar > [data-echo-external-loader-group] .nav-list::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+  }
+  .sidebar .sidebar-groups {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Never flex-shrink the loader group — a tall library list used to crush it
+     to 1px (Shinawase Loader vanished). Size to content; if many mods, the
+     nav-list becomes an internal scrollport (scrollbar still hidden).
+     Zero utility's margin-top:auto so free space stays in .sidebar-groups. */
+  .sidebar-groups:has(> [data-echo-external-loader-group]) > .sidebar-group--utility {
+    margin-top: 0;
+  }
+  .sidebar-groups > [data-echo-external-loader-group] {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    min-height: auto;
+    margin-top: auto; /* pin Loader + utility to the bottom when space allows */
+    overflow: hidden;
+  }
+  .sidebar-groups > [data-echo-external-loader-group] .nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-height: auto;
+    max-height: min(42vh, 360px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   /* Flat sidebar (echo-steam dropped .sidebar-groups): style our injected group ourselves. */
-  .sidebar > [data-echo-external-loader-group] { display: flex; flex: none; flex-direction: column; min-height: 0; margin-top: 14px; }
+  .sidebar > [data-echo-external-loader-group] {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    min-height: auto;
+    margin-top: 14px;
+    overflow: hidden;
+  }
   .sidebar > [data-echo-external-loader-group] .sidebar-group-label {
     margin: 0 0 6px; padding: 0 12px; font-size: 10.5px; font-weight: 680;
     letter-spacing: 0.1em; text-transform: uppercase;
     color: var(--theme-subtle-text, var(--theme-muted-text, #a0a4aa));
   }
-  .sidebar > [data-echo-external-loader-group] .nav-list { display: flex; flex-direction: column; gap: 5px; }
-  .app-shell--sidebar-icon-only .sidebar > [data-echo-external-loader-group] .sidebar-group-label,
-  .sidebar[data-icon-only] > [data-echo-external-loader-group] .sidebar-group-label { display: none; }
+  .sidebar > [data-echo-external-loader-group] .nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-height: auto;
+    max-height: min(42vh, 360px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Loader sits above utility; collapse the spacer. */
+  .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer {
+    flex: 0 0 0;
+    min-height: 0;
+    height: 0;
+    overflow: hidden;
+  }
+  .app-shell--sidebar-icon-only [data-echo-external-loader-group] .sidebar-group-label,
+  .sidebar[data-icon-only] [data-echo-external-loader-group] .sidebar-group-label { display: none; }
+  .app-shell--sidebar-icon-only .sidebar-groups > [data-echo-external-loader-group] .nav-list,
+  .sidebar[data-icon-only] .sidebar-groups > [data-echo-external-loader-group] .nav-list,
+  .app-shell--sidebar-icon-only .sidebar > [data-echo-external-loader-group] .nav-list,
+  .sidebar[data-icon-only] > [data-echo-external-loader-group] .nav-list {
+    max-height: none;
+  }
   @media (max-width: 980px) {
-    .sidebar > [data-echo-external-loader-group] { flex-direction: row; margin-top: 0; align-items: center; }
-    .sidebar > [data-echo-external-loader-group] .sidebar-group-label { display: none; }
+    /* Keep Loader reachable in the short icon rail even when the library
+       list overflows — stick the cluster above Settings at the bottom. */
+    .sidebar-groups > [data-echo-external-loader-group] {
+      position: sticky;
+      bottom: 0;
+      z-index: 3;
+      margin-top: auto;
+      background: var(--theme-sidebar-bg, var(--theme-panel-bg, transparent));
+    }
+    .sidebar-groups > [data-echo-external-loader-group] .nav-list,
+    .sidebar > [data-echo-external-loader-group] .nav-list {
+      max-height: none;
+      overflow: visible;
+    }
+    .sidebar > [data-echo-external-loader-group] {
+      flex-direction: row;
+      margin-top: 0;
+      align-items: center;
+    }
+    .sidebar > [data-echo-external-loader-group] .sidebar-group-label,
+    .sidebar-groups > [data-echo-external-loader-group] .sidebar-group-label { display: none; }
     .sidebar > [data-echo-external-loader-group] .nav-list { flex-direction: row; min-width: max-content; }
+    .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer { display: none; }
   }
 
   /* ---- Loader status page ---- */
@@ -718,6 +831,124 @@ css.textContent = `
   }
   .echo-debug-form input::placeholder { color: rgba(139, 147, 167, 0.5); }
 
+  /* ---- First-run disclaimer ---- */
+  .echo-disclaimer-overlay {
+    position: fixed; inset: 0; z-index: 400; display: grid; place-items: center;
+    padding: 24px;
+    background: color-mix(in srgb, #0a0d13 58%, transparent);
+    backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    animation: echoOverlayIn 200ms var(--shl-ease);
+    font-family: var(--shl-font);
+  }
+  .echo-disclaimer-overlay.is-leaving { animation: echoOverlayOut 170ms var(--shl-ease) forwards; }
+  .echo-disclaimer-card {
+    width: min(640px, calc(100vw - 48px)); max-height: calc(100vh - 72px); overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--shl-panel); color: var(--theme-page-text, inherit);
+    border: 1px solid var(--shl-border);
+    border-radius: 18px; box-shadow: var(--shl-shadow-panel);
+    animation: echoCardIn 300ms var(--shl-spring);
+  }
+  .echo-disclaimer-overlay.is-leaving .echo-disclaimer-card { animation: echoCardOut 170ms var(--shl-ease) forwards; }
+  .echo-disclaimer-card header {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 18px 20px 14px; flex: none;
+    border-bottom: 1px solid var(--shl-border);
+  }
+  .echo-disclaimer-icon {
+    display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; flex: none;
+    color: var(--shl-warning);
+    background: color-mix(in srgb, var(--shl-warning) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shl-warning) 24%, transparent);
+  }
+  .echo-disclaimer-icon svg { width: 18px; height: 18px; display: block; }
+  .echo-disclaimer-heading { display: grid; gap: 2px; min-width: 0; }
+  .echo-disclaimer-kicker {
+    font: 700 10.5px var(--shl-font); letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--shl-accent-strong);
+  }
+  .echo-disclaimer-heading strong {
+    font-size: 17px; font-weight: 650; letter-spacing: -0.01em;
+    color: var(--theme-heading-text, inherit);
+  }
+  .echo-disclaimer-body {
+    display: grid; gap: 14px; padding: 18px 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--shl-subtle) 40%, transparent) transparent;
+  }
+  .echo-disclaimer-body::-webkit-scrollbar { width: 8px; }
+  .echo-disclaimer-body::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--shl-subtle) 36%, transparent); border-radius: 99px;
+  }
+  .echo-disclaimer-intro {
+    margin: 0; font: 500 13.5px/1.65 var(--shl-font);
+    color: var(--theme-page-text, inherit);
+  }
+  .echo-disclaimer-rules {
+    margin: 0; padding: 0; list-style: none; display: grid; gap: 10px;
+  }
+  .echo-disclaimer-rules li {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start;
+    margin: 0; padding: 10px 12px;
+    border: 1px solid var(--shl-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--shl-row-hover) 55%, transparent);
+    font: 500 13px/1.6 var(--shl-font);
+    color: var(--theme-page-text, inherit);
+  }
+  .echo-disclaimer-rules li::before {
+    content: attr(data-index);
+    display: grid; place-items: center;
+    width: 28px; height: 28px; border-radius: 9px;
+    font: 700 12px/1 var(--shl-mono);
+    color: var(--shl-accent-strong);
+    background: color-mix(in srgb, var(--shl-accent-bg) 70%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shl-accent) 22%, transparent);
+  }
+  .echo-disclaimer-hint {
+    margin: 0; font: 500 12.5px/1.5 var(--shl-font); color: var(--shl-muted);
+  }
+  .echo-disclaimer-field { display: grid; gap: 6px; }
+  .echo-disclaimer-field label {
+    font: 650 13px var(--shl-font); color: var(--theme-heading-text, inherit);
+  }
+  .echo-disclaimer-field input {
+    width: 100%; min-height: 42px; padding: 10px 12px; box-sizing: border-box;
+    border: 1px solid var(--shl-field-border);
+    border-radius: 10px;
+    background: var(--shl-field-bg);
+    color: inherit; font: 14px var(--shl-font);
+    transition: border-color 160ms var(--shl-ease), box-shadow 160ms var(--shl-ease);
+  }
+  .echo-disclaimer-field input:focus {
+    outline: none; border-color: var(--shl-accent);
+    box-shadow: 0 0 0 3px var(--shl-focus-ring);
+  }
+  .echo-disclaimer-error {
+    margin: 0; min-height: 1.2em;
+    color: var(--shl-danger); font: 500 12px/1.45 var(--shl-font);
+  }
+  .echo-disclaimer-error:empty { visibility: hidden; }
+  .echo-disclaimer-card footer {
+    display: flex; align-items: center; justify-content: flex-end; gap: 9px;
+    padding: 14px 20px; flex: none;
+    border-top: 1px solid var(--shl-border);
+    background: color-mix(in srgb, var(--shl-row-hover) 55%, transparent);
+  }
+  .echo-disclaimer-card footer .echo-btn-primary {
+    background: var(--shl-accent-solid); border-color: transparent; color: var(--shl-on-accent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--shl-accent) 30%, transparent);
+    transition: filter 160ms var(--shl-ease), transform 160ms var(--shl-ease), box-shadow 160ms var(--shl-ease), opacity 160ms var(--shl-ease);
+  }
+  .echo-disclaimer-card footer .echo-btn-primary:hover:not(:disabled) { filter: brightness(1.07); color: var(--shl-on-accent); }
+  .echo-disclaimer-card footer .echo-btn-primary:active:not(:disabled) {
+    transform: translateY(1px) scale(0.99);
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--shl-accent) 26%, transparent);
+  }
+  .echo-disclaimer-card footer .echo-btn-primary:disabled {
+    opacity: 0.45; cursor: not-allowed; box-shadow: none;
+  }
+
   /* ---- Inject popup ---- */
   .echo-inject-popup {
     position: fixed; right: 20px; bottom: calc(var(--player-height, 112px) + 16px); z-index: 60;
@@ -752,6 +983,125 @@ css.textContent = `
     display: block; height: 100%; width: 0; border-radius: inherit;
     background: linear-gradient(90deg, var(--shl-accent), color-mix(in srgb, var(--shl-accent) 65%, #fff));
     animation: shinawaseInjectFill 3s linear forwards;
+  }
+
+  /* ---- Steam launch options ---- */
+  .echo-steam-banner {
+    display: grid; gap: 8px; padding: 12px 14px; border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--shl-accent) 28%, var(--shl-border));
+    background: color-mix(in srgb, var(--shl-accent) 7%, transparent);
+  }
+  .echo-steam-banner-title {
+    margin: 0; font-size: 13.5px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .echo-steam-banner p { margin: 0; font-size: 12.5px; color: var(--shl-muted); line-height: 1.45; }
+  .echo-steam-banner-hint { font-size: 11.5px; color: var(--shl-muted); opacity: .9; }
+  .echo-steam-banner-toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: 4px; padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--shl-accent) 18%, var(--shl-border));
+  }
+  .echo-steam-banner-toggle-copy { display: grid; gap: 2px; min-width: 0; }
+  .echo-steam-banner-toggle-copy strong {
+    font-size: 13px; font-weight: 650; color: var(--theme-heading-text, inherit);
+  }
+  .echo-steam-banner-toggle-copy span {
+    font-size: 12px; color: var(--shl-muted); line-height: 1.4;
+  }
+  .echo-steam-reminder {
+    position: fixed; right: 20px; bottom: calc(var(--player-height, 112px) + 18px); z-index: 280;
+    width: min(420px, calc(100vw - 40px));
+    display: grid; gap: 10px; padding: 14px 16px 14px 14px; box-sizing: border-box;
+    background: var(--shl-glass);
+    color: var(--theme-page-text, inherit);
+    border: 1px solid var(--shl-border);
+    border-radius: 16px;
+    box-shadow: var(--shl-shadow-panel);
+    backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    font-family: var(--shl-font);
+    animation: shinawaseInjectIn 300ms var(--shl-spring);
+  }
+  .echo-steam-reminder.is-leaving { animation: shinawaseInjectOut 220ms var(--shl-ease) forwards; pointer-events: none; }
+  .echo-steam-reminder-head { display: flex; align-items: flex-start; gap: 10px; }
+  .echo-steam-reminder-icon {
+    display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; flex: none;
+    font-size: 16px; line-height: 1;
+    color: var(--shl-accent-strong);
+    background: color-mix(in srgb, var(--shl-accent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shl-accent) 22%, transparent);
+  }
+  .echo-steam-reminder-title { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.3; }
+  .echo-steam-reminder-body { margin-top: 3px; font-size: 12.5px; color: var(--shl-muted); line-height: 1.5; }
+  .echo-steam-reminder-hint { font-size: 11.5px; color: var(--shl-muted); opacity: .9; }
+  .echo-steam-reminder-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .echo-steam-launch-copy {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    margin-top: 2px; padding: 10px 12px; box-sizing: border-box; border-radius: 12px;
+    border: 1px dashed color-mix(in srgb, var(--shl-accent) 40%, var(--shl-border));
+    background: color-mix(in srgb, var(--shl-accent) 8%, transparent);
+    color: inherit; font: inherit;
+  }
+  .echo-steam-launch-copy:hover {
+    border-style: solid;
+    background: color-mix(in srgb, var(--shl-accent) 14%, transparent);
+  }
+  .echo-steam-launch-copy:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--shl-accent) 55%, transparent);
+    outline-offset: 2px;
+  }
+  .echo-steam-launch-copy[data-copy-state="ok"] {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--shl-success) 40%, var(--shl-border));
+    background: color-mix(in srgb, var(--shl-success) 10%, transparent);
+  }
+  .echo-steam-launch-copy[data-copy-state="err"] {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--shl-danger) 40%, var(--shl-border));
+    background: color-mix(in srgb, var(--shl-danger) 8%, transparent);
+  }
+  .echo-steam-launch-copy code {
+    display: block; white-space: pre-wrap; word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.4;
+  }
+  .echo-steam-launch-copy small {
+    display: block; margin-top: 6px; font-size: 11px; color: var(--shl-accent); font-weight: 600;
+  }
+  .echo-steam-launch-copy[data-copy-state="ok"] small { color: var(--shl-success); }
+  .echo-steam-launch-copy[data-copy-state="err"] small { color: var(--shl-danger); }
+
+  /* ---- Titlebar Shiawase mark (CSS-only so React re-renders cannot wipe it) ---- */
+  .app-titlebar-brand > strong { order: 0; }
+  .app-titlebar-brand > strong + span { order: 1; }
+  .app-titlebar-brand::after {
+    content: "Shiawase";
+    order: 2;
+    display: inline-flex;
+    height: 18px;
+    align-items: center;
+    align-self: center;
+    padding: 0 7px;
+    border: 1px solid color-mix(in srgb, var(--shl-accent, var(--theme-accent, #4b55e8)) 32%, transparent);
+    border-radius: 999px;
+    color: var(--shl-accent-strong, var(--theme-accent-text-strong, var(--theme-accent, #4b55e8)));
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--shl-accent-bg, var(--theme-accent-bg, rgba(75, 85, 232, 0.12))) 64%, transparent),
+      color-mix(in srgb, var(--shl-panel, var(--theme-panel-bg, #fff)) 72%, transparent)
+    );
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--shl-accent, var(--theme-accent, #4b55e8)) 12%, transparent);
+    font-size: 10px;
+    font-weight: 880;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .app-titlebar-brand > .app-titlebar-pro-slot,
+  .app-titlebar-brand > .app-titlebar-version,
+  .app-titlebar-brand > .app-titlebar-update,
+  .app-titlebar-brand > button {
+    order: 3;
   }
 
   /* ---- Density: compact ---- */
@@ -853,7 +1203,7 @@ const motionCss = document.createElement('style');
 motionCss.id = 'echo-loader-ui-motion';
 document.head.append(css, accentCss, motionCss);
 
-const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-toast-stack, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group]';
+const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group]';
 const hexToRgba = (hex, alpha) => {
   const value = Number.parseInt(hex.slice(1), 16);
   return 'rgba(' + ((value >> 16) & 255) + ',' + ((value >> 8) & 255) + ',' + (value & 255) + ',' + alpha + ')';
@@ -900,6 +1250,166 @@ const ensureLegacyThemeVars = () => {
     --theme-surface: var(--color-surface, var(--theme-panel-bg, rgba(255,255,255,0.76)));
   }`;
   document.head.append(legacyThemeBridge);
+};
+
+const steamLaunchOptionsFor = (gameRoot) => {
+  const root = String(gameRoot || cachedGameRoot || '').replace(/[\\/]+$/u, '');
+  if (!root) return '';
+  return '"' + root + '\\ECHO.modded.exe" %command%';
+};
+
+const copyText = async (text) => {
+  const value = String(text || '');
+  if (!value) throw new Error('empty');
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch {}
+  const area = document.createElement('textarea');
+  area.value = value;
+  area.setAttribute('readonly', '');
+  area.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+  document.body.append(area);
+  area.select();
+  area.setSelectionRange(0, area.value.length);
+  const ok = document.execCommand('copy');
+  area.remove();
+  if (!ok) throw new Error('copy_failed');
+};
+
+const setSteamCopyFeedback = (button, state) => {
+  if (!button) return;
+  const hint = button.querySelector('small');
+  const idle = T.steamLaunchClickCopy || 'Click to copy';
+  window.clearTimeout(steamCopyTimer);
+  if (!state) {
+    button.removeAttribute('data-copy-state');
+    if (hint) hint.textContent = idle;
+    return;
+  }
+  button.dataset.copyState = state;
+  if (hint) {
+    hint.textContent = state === 'ok'
+      ? (T.steamLaunchCopied || 'Copied')
+      : (T.steamLaunchCopyFail || 'Copy failed');
+  }
+  steamCopyTimer = window.setTimeout(() => {
+    steamCopyTimer = 0;
+    if (!button.isConnected) return;
+    button.removeAttribute('data-copy-state');
+    if (hint) hint.textContent = idle;
+  }, 1800);
+};
+
+const bindSteamLaunchCopy = (button, optionsText) => {
+  if (!button) return;
+  const apply = (text) => {
+    const value = String(text || '');
+    button.dataset.launchOptions = value;
+    const code = button.querySelector('code');
+    if (code) code.textContent = value || '…\\ECHO.modded.exe" %command%';
+  };
+  apply(optionsText);
+  button.onclick = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const value = button.dataset.launchOptions || steamLaunchOptionsFor(cachedGameRoot);
+    if (!value) {
+      setSteamCopyFeedback(button, 'err');
+      return;
+    }
+    try {
+      await copyText(value);
+      setSteamCopyFeedback(button, 'ok');
+    } catch {
+      setSteamCopyFeedback(button, 'err');
+    }
+  };
+};
+
+const steamLaunchReminderEnabled = () => uiSettings.steamLaunchReminder === true;
+
+const dismissSteamLaunchReminder = () => {
+  const el = steamReminderEl;
+  steamReminderEl = null;
+  if (!el?.isConnected) return;
+  if (reduceMotion() || uiSettings.animations === false) {
+    el.remove();
+    return;
+  }
+  el.classList.add('is-leaving');
+  window.setTimeout(() => el.remove(), 220);
+};
+
+const setSteamLaunchReminderPreference = async (enabled) => {
+  const next = enabled === true;
+  await saveUiSettings({ steamLaunchReminder: next });
+  syncSteamLaunchReminderToggle();
+  if (!next) {
+    steamReminderShown = true;
+    dismissSteamLaunchReminder();
+    return;
+  }
+  steamReminderShown = false;
+  maybeShowSteamLaunchReminder();
+};
+
+const syncSteamLaunchReminderToggle = () => {
+  const button = loaderPanel?.querySelector('[data-steam-reminder-toggle]');
+  if (!button) return;
+  button.setAttribute('aria-checked', steamLaunchReminderEnabled() ? 'true' : 'false');
+};
+
+const showSteamLaunchReminder = () => {
+  if (!disclaimerAccepted || !steamLaunchReminderEnabled()) return;
+  if (steamReminderShown || steamReminderEl?.isConnected) return;
+  if (!document.querySelector('.app-shell')) return;
+  document.querySelectorAll('.echo-steam-reminder').forEach((node) => node.remove());
+  const el = document.createElement('div');
+  el.className = 'echo-steam-reminder';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-live', 'polite');
+  el.innerHTML = [
+    '<div class="echo-steam-reminder-head">',
+    '<span class="echo-steam-reminder-icon" aria-hidden="true">喵</span>',
+    '<div>',
+    '<div class="echo-steam-reminder-title"></div>',
+    '<div class="echo-steam-reminder-body"></div>',
+    '</div>',
+    '</div>',
+    '<div class="echo-steam-reminder-hint"></div>',
+    '<button type="button" class="echo-steam-launch-copy" data-steam-launch-copy>',
+    '<code></code>',
+    '<small></small>',
+    '</button>',
+    '<div class="echo-steam-reminder-actions">',
+    '<button type="button" class="settings-action-button" data-steam-disable></button>',
+    '<button type="button" class="settings-action-button echo-btn-primary" data-steam-dismiss></button>',
+    '</div>',
+  ].join('');
+  el.querySelector('.echo-steam-reminder-title').textContent = T.steamLaunchTitle || '';
+  el.querySelector('.echo-steam-reminder-body').textContent = T.steamLaunchBody || '';
+  el.querySelector('.echo-steam-reminder-hint').textContent = T.steamLaunchHint || '';
+  el.querySelector('[data-steam-dismiss]').textContent = T.steamLaunchDismiss || '知道了';
+  el.querySelector('[data-steam-disable]').textContent = T.steamLaunchDisableDefault || '以后默认不显示';
+  el.querySelector('[data-steam-dismiss]').onclick = () => {
+    steamReminderShown = true;
+    dismissSteamLaunchReminder();
+  };
+  el.querySelector('[data-steam-disable]').onclick = () => {
+    void setSteamLaunchReminderPreference(false).catch((error) => toast(error.message, 'error'));
+  };
+  bindSteamLaunchCopy(el.querySelector('[data-steam-launch-copy]'), steamLaunchOptionsFor(cachedGameRoot));
+  document.body.append(el);
+  steamReminderEl = el;
+  steamReminderShown = true;
+};
+
+const maybeShowSteamLaunchReminder = () => {
+  if (!steamLaunchReminderEnabled()) return;
+  showSteamLaunchReminder();
 };
 
 const toast = (text, type = 'info') => {
@@ -1068,7 +1578,13 @@ const ensureLoaderGroup = () => {
     if (heading) heading.textContent = T.loaderGroup || 'Shinawase Loader';
   }
   if (groups) {
-    if (group.parentElement !== groups) groups.append(group);
+    // Keep utility (Settings) pinned below us — never append after it or the
+    // loader collapses under contain:paint when the window is short.
+    const utility = groups.querySelector(':scope > .sidebar-group--utility');
+    if (group.parentElement !== groups || group.nextElementSibling !== (utility || null)) {
+      if (utility) groups.insertBefore(group, utility);
+      else groups.append(group);
+    }
   } else {
     const anchor = flatSidebar.querySelector(':scope > .sidebar-spacer') || flatSidebar.querySelector(':scope > .utility-nav');
     if (group.parentElement !== flatSidebar || (anchor && group.nextElementSibling !== anchor)) {
@@ -1098,12 +1614,20 @@ const mountPage = (className, html) => {
   return panel;
 };
 
+const refreshSteamLaunchUi = (gameRoot) => {
+  if (gameRoot) cachedGameRoot = String(gameRoot);
+  const options = steamLaunchOptionsFor(cachedGameRoot);
+  loaderPanel?.querySelectorAll('[data-steam-launch-copy]').forEach((node) => bindSteamLaunchCopy(node, options));
+};
+
 const renderStatus = async () => {
   if (!loaderPanel || loaderPanel.hidden || document.hidden) return;
   try {
     const status = await api('/api/status');
     const grid = loaderPanel.querySelector('[data-status-grid]');
     const echo = status.echoTarget || {};
+    cachedGameRoot = status.gameRoot || cachedGameRoot;
+    refreshSteamLaunchUi(cachedGameRoot);
     const echoLabel = [echo.product, echo.version].filter(Boolean).join(' ') || (T.echoHost || 'ECHO');
     const rows = [
       [T.loader, 'v' + (status.loaderVersion || LOADER_VERSION), 'ok'],
@@ -1354,6 +1878,27 @@ const openLoader = async () => {
         <div class="echo-status-grid" data-status-grid></div>
       </section>
       <section class="settings-section">
+        <h2 class="section-title">${T.steamLaunchSection || 'Steam launch options'}</h2>
+        <div class="echo-steam-banner" data-steam-banner>
+          <p class="echo-steam-banner-title">${T.steamLaunchTitle || ''}</p>
+          <p>${T.steamLaunchBody || ''}</p>
+          <p class="echo-steam-banner-hint">${T.steamLaunchHint || ''}</p>
+          <button type="button" class="echo-steam-launch-copy" data-steam-launch-copy title="${T.steamLaunchClickCopy || 'Click to copy'}">
+            <code></code>
+            <small>${T.steamLaunchClickCopy || 'Click to copy'}</small>
+          </button>
+          <div class="echo-steam-banner-toggle">
+            <div class="echo-steam-banner-toggle-copy">
+              <strong>${T.steamLaunchReminderToggle || '启动时弹出提示'}</strong>
+              <span>${T.steamLaunchReminderHint || ''}</span>
+            </div>
+            <button type="button" class="echo-switch" role="switch" data-steam-reminder-toggle aria-checked="false">
+              <span class="echo-switch-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+      <section class="settings-section">
         <h2 class="section-title">${T.appearance}</h2>
         <p class="echo-appearance-hint">${T.appearanceHint}</p>
         <div class="echo-appearance-grid" data-appearance></div>
@@ -1431,6 +1976,14 @@ const openLoader = async () => {
     void runDebugCommand(value);
   }, true);
   applyUiSettings();
+  refreshSteamLaunchUi(cachedGameRoot);
+  syncSteamLaunchReminderToggle();
+  const reminderToggle = loaderPanel.querySelector('[data-steam-reminder-toggle]');
+  if (reminderToggle) {
+    reminderToggle.onclick = () => {
+      void setSteamLaunchReminderPreference(!steamLaunchReminderEnabled()).catch((error) => toast(error.message, 'error'));
+    };
+  }
   await renderStatus();
   await refreshDebugLog();
   window.clearInterval(statusTimer);
@@ -2109,41 +2662,152 @@ const splashActive = () => {
   return Boolean(splash && document.documentElement.dataset.echoStartup !== 'ready');
 };
 
-const maybeShowInjectedPopup = () => {
-  if (injectPopupShown) return;
-  if (!document.querySelector('.app-shell')) return;
+const disclaimerPhrase = () => {
+  if (typeof DISCLAIMER_CONSENT_PHRASE === 'string' && DISCLAIMER_CONSENT_PHRASE) return DISCLAIMER_CONSENT_PHRASE;
+  return T.disclaimerConsentPhrase || '我同意';
+};
+
+const dismissDisclaimerOverlay = () => {
+  const el = disclaimerOverlay;
+  disclaimerOverlay = null;
+  if (!el?.isConnected) return;
+  if (reduceMotion() || uiSettings.animations === false) {
+    el.remove();
+    return;
+  }
+  el.classList.add('is-leaving');
+  window.setTimeout(() => el.remove(), 200);
+};
+
+const syncDisclaimerConfirm = () => {
+  if (!disclaimerOverlay) return;
+  const input = disclaimerOverlay.querySelector('[data-disclaimer-input]');
+  const confirm = disclaimerOverlay.querySelector('[data-disclaimer-confirm]');
+  if (!input || !confirm) return;
+  confirm.disabled = String(input.value || '').trim() !== disclaimerPhrase();
+};
+
+const submitDisclaimer = async () => {
+  if (!disclaimerOverlay || disclaimerBusy) return;
+  const input = disclaimerOverlay.querySelector('[data-disclaimer-input]');
+  const error = disclaimerOverlay.querySelector('[data-disclaimer-error]');
+  const confirm = disclaimerOverlay.querySelector('[data-disclaimer-confirm]');
+  const consent = String(input?.value || '').trim();
+  if (consent !== disclaimerPhrase()) {
+    if (error) error.textContent = T.disclaimerMismatch || '请准确输入「我同意」';
+    input?.focus?.();
+    input?.select?.();
+    syncDisclaimerConfirm();
+    return;
+  }
+  disclaimerBusy = true;
+  if (confirm) confirm.disabled = true;
+  if (error) error.textContent = '';
+  // Persist locally first so a dead Loader API cannot trap the user on this gate.
+  writeLocalDisclaimerAccepted();
+  disclaimerAccepted = true;
   try {
-    if (sessionStorage.getItem('shinawase:injected-popup')) {
-      injectPopupShown = true;
-      return;
-    }
-    sessionStorage.setItem('shinawase:injected-popup', '1');
-  } catch {}
-  injectPopupShown = true;
-  document.querySelectorAll('.echo-inject-popup').forEach((node) => node.remove());
+    await api('/api/disclaimer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ consent }),
+    });
+  } catch {
+    // Loader may have exited after injection; local acceptance is enough to continue.
+  } finally {
+    disclaimerBusy = false;
+  }
+  dismissDisclaimerOverlay();
+  maybeShowSteamLaunchReminder();
+};
+
+const showDisclaimerOverlay = () => {
+  if (disclaimerAccepted || disclaimerOverlay?.isConnected) return;
+  document.querySelectorAll('.echo-disclaimer-overlay').forEach((node) => node.remove());
   const el = document.createElement('div');
-  el.className = 'echo-inject-popup';
-  el.innerHTML = '<span class="echo-inject-popup-icon" aria-hidden="true">' + iconCube + '</span><div class="echo-inject-popup-body"><div class="echo-inject-popup-title"></div><div class="echo-inject-popup-track"><span class="echo-inject-popup-fill"></span></div></div>';
-  el.querySelector('.echo-inject-popup-title').textContent = T.injectedTitle || 'Shinawase Injected';
+  el.className = 'echo-disclaimer-overlay';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'echo-disclaimer-title');
+  el.innerHTML = [
+    '<section class="echo-disclaimer-card">',
+    '<header>',
+    '<span class="echo-disclaimer-icon" aria-hidden="true">' + iconWarn + '</span>',
+    '<div class="echo-disclaimer-heading">',
+    '<span class="echo-disclaimer-kicker"></span>',
+    '<strong id="echo-disclaimer-title"></strong>',
+    '</div>',
+    '</header>',
+    '<div class="echo-disclaimer-body">',
+    '<p class="echo-disclaimer-intro" data-disclaimer-intro></p>',
+    '<ol class="echo-disclaimer-rules" data-disclaimer-rules></ol>',
+    '<p class="echo-disclaimer-hint" data-disclaimer-hint></p>',
+    '<div class="echo-disclaimer-field">',
+    '<label for="echo-disclaimer-input"></label>',
+    '<input id="echo-disclaimer-input" type="text" autocomplete="off" spellcheck="false" data-disclaimer-input />',
+    '</div>',
+    '<p class="echo-disclaimer-error" data-disclaimer-error></p>',
+    '</div>',
+    '<footer>',
+    '<button class="settings-action-button echo-btn-primary" type="button" data-disclaimer-confirm disabled></button>',
+    '</footer>',
+    '</section>',
+  ].join('');
+  el.querySelector('.echo-disclaimer-kicker').textContent = T.disclaimerKicker || '使用前须知';
+  el.querySelector('#echo-disclaimer-title').textContent = T.disclaimerTitle || '免责声明';
+  const intro = Array.isArray(T.disclaimerRules) && T.disclaimerIntro
+    ? T.disclaimerIntro
+    : (T.disclaimerBody || '');
+  el.querySelector('[data-disclaimer-intro]').textContent = intro;
+  const rulesRoot = el.querySelector('[data-disclaimer-rules]');
+  const rules = Array.isArray(T.disclaimerRules) ? T.disclaimerRules : [];
+  if (rules.length) {
+    rules.forEach((rule, index) => {
+      const item = document.createElement('li');
+      item.dataset.index = String(index + 1).padStart(2, '0');
+      item.textContent = String(rule || '');
+      rulesRoot.append(item);
+    });
+  } else {
+    rulesRoot.remove();
+  }
+  el.querySelector('[data-disclaimer-hint]').textContent = T.disclaimerHint || '';
+  const label = el.querySelector('.echo-disclaimer-field label');
+  const phrase = disclaimerPhrase();
+  label.textContent = phrase;
+  const input = el.querySelector('[data-disclaimer-input]');
+  input.placeholder = T.disclaimerPlaceholder || phrase;
+  const confirm = el.querySelector('[data-disclaimer-confirm]');
+  confirm.textContent = T.disclaimerConfirm || '继续';
+  input.addEventListener('input', () => {
+    const errorNode = el.querySelector('[data-disclaimer-error]');
+    if (errorNode) errorNode.textContent = '';
+    syncDisclaimerConfirm();
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void submitDisclaimer();
+    }
+  });
+  confirm.addEventListener('click', () => void submitDisclaimer());
+  // Block backdrop clicks / Esc from dismissing — consent is required.
+  el.addEventListener('mousedown', (event) => {
+    if (event.target === el) {
+      event.preventDefault();
+      input.focus();
+    }
+  });
   document.body.append(el);
-  void api('/api/mods').then((data) => {
-    if (!el.isConnected) return;
-    const count = (data.mods || []).filter((mod) => mod.enabled).length;
-    const sub = document.createElement('div');
-    sub.className = 'echo-inject-popup-sub';
-    sub.textContent = count === 1 ? (T.injectedOne || '1 mod active') : String(T.injectedMany || '{n} mods active').replace('{n}', String(count));
-    el.querySelector('.echo-inject-popup-title').after(sub);
-  }).catch(() => {});
-  window.clearTimeout(injectPopupTimer);
-  injectPopupTimer = window.setTimeout(() => {
-    injectPopupTimer = 0;
-    if (!el.isConnected) return;
-    el.classList.add('echo-inject-popup-out');
-    injectPopupTimer = window.setTimeout(() => {
-      injectPopupTimer = 0;
-      el.remove();
-    }, reduceMotion() ? 0 : 220);
-  }, 3000);
+  disclaimerOverlay = el;
+  syncDisclaimerConfirm();
+  window.setTimeout(() => input.focus(), 40);
+};
+
+const maybeShowDisclaimer = () => {
+  if (disclaimerAccepted) return;
+  if (!document.querySelector('.app-shell')) return;
+  showDisclaimerOverlay();
 };
 
 const ensure = () => {
@@ -2156,7 +2820,8 @@ const ensure = () => {
   if (!nav) return false;
   ensureLoaderButtons(nav);
   renderSidebarButtons();
-  maybeShowInjectedPopup();
+  maybeShowDisclaimer();
+  maybeShowSteamLaunchReminder();
   return true;
 };
 
@@ -2193,7 +2858,7 @@ document.addEventListener('click', (event) => {
 }, true);
 
 window.__echoExternalLoaderUi = {
-  version: 22,
+  version: 32,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
@@ -2201,13 +2866,16 @@ window.__echoExternalLoaderUi = {
   dispose: () => {
     observer.disconnect();
     window.clearTimeout(ensureTimer);
-    window.clearTimeout(injectPopupTimer);
     window.clearTimeout(configModalTimer);
     window.clearTimeout(searchTimer);
+    window.clearTimeout(steamCopyTimer);
     window.clearInterval(statusTimer);
     window.clearInterval(consoleTimer);
-    document.querySelectorAll('.echo-inject-popup, .echo-toast-stack, .echo-toast').forEach((node) => node.remove());
+    document.querySelectorAll('.echo-inject-popup, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast').forEach((node) => node.remove());
+    disclaimerOverlay = null;
+    steamReminderEl = null;
     toastStack = null;
+    steamCopyTimer = 0;
     nativeRouteEvents.forEach((eventName) => window.removeEventListener(eventName, onNativeRoute));
     modsPanel?.remove();
     loaderPanel?.remove();

@@ -157,6 +157,8 @@ const defaultUiSettings = Object.freeze({
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  // Default off: the Steam launch reminder popup is opt-in.
+  steamLaunchReminder: false,
 });
 const sanitizeUiSettings = (value) => {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -173,6 +175,7 @@ const sanitizeUiSettings = (value) => {
     rememberFilters: bool('rememberFilters'),
     modSort: pick('modSort', ['name', 'recent', 'enabled']),
     modFilter: pick('modFilter', ['all', 'active', 'inactive']),
+    steamLaunchReminder: bool('steamLaunchReminder'),
   };
 };
 
@@ -255,6 +258,17 @@ const persistLocale = (value) => {
   writeJson(selectionPath, { ...selection, locale: localeValue });
   writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), locale: localeValue });
   return localeValue;
+};
+const DISCLAIMER_CONSENT_PHRASE = '我同意';
+const isDisclaimerAccepted = () => readJson(selectionPath, {}).disclaimerAccepted === true;
+const persistDisclaimerAccepted = () => {
+  const selection = readJson(selectionPath, {});
+  writeJson(selectionPath, {
+    ...selection,
+    disclaimerAccepted: true,
+    disclaimerAcceptedAt: new Date().toISOString(),
+  });
+  return true;
 };
 const detectLocale = () => normalizeLocale(option('--locale', process.env.ECHO_LOADER_LOCALE || loaderConfig.locale || readJson(selectionPath, {}).locale || process.env.LANG));
 let locale = detectLocale();
@@ -772,7 +786,10 @@ let uiExpressionCache = null;
 const injectLoaderUi = async (session) => {
   // The wrapper embeds locale copy and UI settings, so the cache token has to
   // cover all inputs that change the generated expression, not just the file.
-  const token = `${fileToken(loaderUiPath)}:${locale || 'zh'}:${JSON.stringify(uiSettings)}`;
+  const disclaimerAccepted = isDisclaimerAccepted();
+  // LOCALES are embedded from i18n.mjs; include its fingerprint so copy edits reinject.
+  const i18nPath = join(loaderDir, 'i18n.mjs');
+  const token = `${fileToken(loaderUiPath)}:${fileToken(i18nPath)}:${locale || 'zh'}:${JSON.stringify(uiSettings)}:${disclaimerAccepted ? 1 : 0}`;
   if (uiExpressionCache?.token !== token) {
     const uiSource = readFileSync(loaderUiPath, 'utf8');
     uiExpressionCache = {
@@ -785,6 +802,8 @@ const injectLoaderUi = async (session) => {
         `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
         `let T = LOCALES[LOADER_LOCALE] || LOCALES.zh;`,
         `const LOADER_UI_SETTINGS = ${JSON.stringify(uiSettings)};`,
+        `const DISCLAIMER_ACCEPTED = ${disclaimerAccepted ? 'true' : 'false'};`,
+        `const DISCLAIMER_CONSENT_PHRASE = ${JSON.stringify(DISCLAIMER_CONSENT_PHRASE)};`,
         uiSource,
         '})()',
       ].join('\n'),
@@ -1563,7 +1582,7 @@ const injectEnabled = async () => {
       const targetState = probe?.result?.value;
       if (targetState?.ready !== true) continue;
       lastCycleReadyCount += 1;
-      const uiReloaded = targetState.uiVersion < 22;
+      const uiReloaded = targetState.uiVersion < 32;
       if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
       if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
       if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
@@ -2185,6 +2204,23 @@ const server = createServer(async (request, response) => {
       const body = await readRequest(request);
       locale = persistLocale(body.locale);
       return jsonResponse(response, 200, { ok: true, locale });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/disclaimer') {
+      return jsonResponse(response, 200, {
+        ok: true,
+        accepted: isDisclaimerAccepted(),
+        phrase: DISCLAIMER_CONSENT_PHRASE,
+      });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/disclaimer') {
+      const body = await readRequest(request).catch(() => ({}));
+      const consent = String(body?.consent ?? body?.phrase ?? '').trim();
+      if (consent !== DISCLAIMER_CONSENT_PHRASE) {
+        return jsonResponse(response, 400, { ok: false, error: 'disclaimer_consent_mismatch', phrase: DISCLAIMER_CONSENT_PHRASE });
+      }
+      persistDisclaimerAccepted();
+      uiExpressionCache = null;
+      return jsonResponse(response, 200, { ok: true, accepted: true, phrase: DISCLAIMER_CONSENT_PHRASE });
     }
     if (request.method === 'GET' && url.pathname === '/api/ui-settings') {
       return jsonResponse(response, 200, { ok: true, ui: uiSettings, defaults: defaultUiSettings });

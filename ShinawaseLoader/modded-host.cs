@@ -17,6 +17,27 @@ internal static class EchoModdedHost
         return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
     }
 
+    // Steam launch options `"…\ECHO.modded.exe" %command%` pass the stock
+    // ECHO.exe path (and sometimes extra Steam tokens) as argv. Never forward
+    // those into the isolated runtime — always launch modded-runtime\ECHO.exe.
+    private static bool IsSteamCommandArg(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        var trimmed = value.Trim().Trim('"');
+        if (trimmed.Length == 0) return true;
+        if (string.Equals(trimmed, "%command%", StringComparison.OrdinalIgnoreCase)) return true;
+        if (trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return false;
+        string name;
+        try { name = Path.GetFileName(trimmed); }
+        catch { return false; }
+        if (string.IsNullOrEmpty(name)) return false;
+        return name.Equals("ECHO.exe", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("ECHO Steam.exe", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("ECHO NEXT.exe", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("ECHO Playtest.exe", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("ECHO.modded.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FindNode(string loaderRoot)
     {
         var bundled = Path.Combine(loaderRoot, "node.exe");
@@ -103,7 +124,7 @@ internal static class EchoModdedHost
         {
             if (!acquired) return 0;
 
-        var launchArgs = args.ToList();
+        var launchArgs = args.Where(value => !IsSteamCommandArg(value)).ToList();
         if (!launchArgs.Any(value => value.StartsWith("--remote-debugging-port=", StringComparison.OrdinalIgnoreCase)))
             launchArgs.Add("--remote-debugging-port=9229");
         if (!launchArgs.Any(value => value.StartsWith("--inspect=", StringComparison.OrdinalIgnoreCase)))

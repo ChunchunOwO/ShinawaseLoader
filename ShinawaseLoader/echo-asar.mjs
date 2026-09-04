@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 const marker = '/* shinawase-loader-bridge-v1 */';
 const nativeHostMarker = '/* shinawase-loader-native-host-v1 */';
 const preloadMarker = '/* shinawase-loader-preload-bridge-v1 */';
-const playbackMarker = '/* shinawase-loader-streaming-playback-v1 */';
+const playbackMarker = '/* shinawase-loader-streaming-playback-v2 */';
+const playbackMarkerV1 = '/* shinawase-loader-streaming-playback-v1 */';
 const MAIN_ENTRY = 'out/main/index.js';
 const PRELOAD_ENTRY = 'out/preload/index.mjs';
 const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the Steam distribution.';
@@ -329,8 +330,25 @@ const applyAuxiliaryWindowCrashFix = (text) => {
 };
 
 const steamStreamingValidation = (providerName) => `if (${providerName} !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("${STEAM_STREAMING_REJECT}");\n    }`;
+const streamingProbeEnrichment = 'const sourceSampleRate = Number(source?.sampleRate);';
+const upgradePatchedPlayback = (text) => {
+  let next = text.replace(playbackMarkerV1, playbackMarker);
+  if (next.includes(streamingProbeEnrichment)) return applyStreamingQualityPassthrough(next);
+  const oldResolveTail = 'filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");';
+  const newResolveTail = 'filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;';
+  if (!next.includes(oldResolveTail)) return applyStreamingQualityPassthrough(next);
+  next = next.replace(oldResolveTail, newResolveTail);
+  if (next.includes('let filePath;\n  let inputHeaders;\n  let probe = createProbeHintForMediaItem(')) {
+    next = next.replace('let filePath;\n  let inputHeaders;\n  let probe = createProbeHintForMediaItem(', 'let filePath;\n  let inputHeaders;\n  let mimeType = null;\n  let probe = createProbeHintForMediaItem(');
+  }
+  next = next.replace('return { filePath, inputHeaders, mimeType: null, probe, durationSeconds };', 'return { filePath, inputHeaders, mimeType, probe, durationSeconds };');
+  if (!next.includes(playbackMarker)) next = `${playbackMarker}\n${next}`;
+  return applyStreamingQualityPassthrough(next);
+};
+
 const patchPlayback = (text) => {
-  if (text.includes(playbackMarker)) return applyStreamingQualityPassthrough(text);
+  if (text.includes(playbackMarker) && text.includes(streamingProbeEnrichment)) return applyStreamingQualityPassthrough(text);
+  if (text.includes(playbackMarker) || text.includes(playbackMarkerV1)) return upgradePatchedPlayback(text);
   const validation = steamStreamingValidation('provider2');
   const validationAlt = steamStreamingValidation('provider');
   let next = text;
@@ -341,14 +359,16 @@ const patchPlayback = (text) => {
   next = next.replace(oldValidation, `if (${providerName} === "m3u8" && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Streaming playback URL must be valid.");\n    }`);
   const oldResolve = '  let filePath;\n  let probe = createProbeHintForMediaItem(';
   if (!next.includes(oldResolve)) throw new Error('asar_streaming_resolver_missing');
-  next = next.replace(oldResolve, '  let filePath;\n  let inputHeaders;\n  let probe = createProbeHintForMediaItem(');
+  next = next.replace(oldResolve, '  let filePath;\n  let inputHeaders;\n  let mimeType = null;\n  let probe = createProbeHintForMediaItem(');
   const oldPath = '  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {';
   if (!next.includes(oldPath)) throw new Error('asar_streaming_path_missing');
-  next = next.replace(oldPath, '  } else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n      filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n    }\n  } else {');
+  // Resolve non-m3u8 streaming through the Loader bridge and keep probe/mime
+  // metadata so exclusive, ASIO, and native DSP can admit HTTP sources.
+  next = next.replace(oldPath, '  } else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n      filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;\n    }\n  } else {');
   next = applyStreamingQualityPassthrough(next);
   const oldReturn = '  return { filePath, mimeType: null, probe, durationSeconds };';
   if (!next.includes(oldReturn)) throw new Error('asar_streaming_return_missing');
-  next = next.replace(oldReturn, '  return { filePath, inputHeaders, mimeType: null, probe, durationSeconds };');
+  next = next.replace(oldReturn, '  return { filePath, inputHeaders, mimeType, probe, durationSeconds };');
   return `${playbackMarker}\n${next}`;
 };
 

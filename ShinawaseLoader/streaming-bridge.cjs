@@ -161442,8 +161442,8 @@ var loginConfigs = {
     domains: ["www.kugou.com", ".kugou.com", "kugou.com"]
   },
   bilibili: {
-    url: "https://www.bilibili.com/",
-    domains: ["www.bilibili.com", ".bilibili.com", "bilibili.com"],
+    url: "https://passport.bilibili.com/login",
+    domains: ["www.bilibili.com", ".bilibili.com", "bilibili.com", "passport.bilibili.com", ".passport.bilibili.com"],
     requiredCookieNames: ["SESSDATA", "DedeUserID", "bili_jct"]
   },
   soundcloud: {
@@ -161491,6 +161491,7 @@ var startAccountLoginWindow = async (provider14, accountService2) => {
     }
   });
   let bestCookieHeader = "";
+  let autoCloseTimer = null;
   const collectCookies = async () => {
     const batches = await Promise.all(
       config.domains.map((domain) => loginSession.cookies.get({ domain }).catch(() => []))
@@ -161498,6 +161499,11 @@ var startAccountLoginWindow = async (provider14, accountService2) => {
     const cookies = batches.flat();
     if (hasUsefulLoginCookie(cookies, config)) {
       bestCookieHeader = toCookieHeader(cookies);
+      if (!autoCloseTimer && !window2.isDestroyed()) {
+        autoCloseTimer = setTimeout(() => {
+          if (!window2.isDestroyed()) window2.close();
+        }, 600);
+      }
     }
   };
   window2.webContents.setWindowOpenHandler(({ url }) => {
@@ -161516,6 +161522,7 @@ var startAccountLoginWindow = async (provider14, accountService2) => {
   const closed = new Promise((resolve37) => {
     window2.once("closed", () => {
       clearInterval(poll);
+      if (autoCloseTimer) clearTimeout(autoCloseTimer);
       resolve37();
     });
   });

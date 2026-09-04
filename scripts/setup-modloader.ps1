@@ -52,6 +52,14 @@ $script:Strings = @{
     progressLaunch = '启动 ECHO'
     progressDone = '完成'
     openingEcho = '正在打开 ECHO...'
+    steamGuideTitle = '喵！不要直接取代 Steam 原版——请用独立启动器，并设置 Steam 启动项：'
+    steamGuideStep1 = '1. Steam → 库 → ECHO → 属性 → 启动选项'
+    steamGuideStep2 = '2. 粘贴下面这一行（已尽量复制到剪贴板）喵：'
+    steamGuideStep3 = '3. 之后在 Steam 点「开始游戏」即会走 ECHO.modded.exe（隔离运行时），不会改写 Steam 的 ECHO.exe / app.asar'
+    steamGuideClipboardOk = '启动项已复制到剪贴板喵！'
+    steamGuideClipboardFail = '未能写入剪贴板喵，请手动复制上面那一行。'
+    steamGuideLaunchAsk = '现在直接启动 ECHO.modded.exe？(Y/N，默认 N)'
+    steamGuideFallback = '也可双击游戏目录下的 ECHO.modded.exe，或运行 ShinawaseLoader\start-echo-with-mods.cmd'
   }
   en = @{
     choose = 'Choose language'
@@ -86,6 +94,14 @@ $script:Strings = @{
     progressLaunch = 'start ECHO'
     progressDone = 'done'
     openingEcho = 'Opening ECHO...'
+    steamGuideTitle = 'Meow! Do not replace the Steam build — use the independent launcher and set Steam launch options:'
+    steamGuideStep1 = '1. Steam → Library → ECHO → Properties → Launch Options'
+    steamGuideStep2 = '2. Paste this line (copied to clipboard when possible):'
+    steamGuideStep3 = '3. Steam Play then runs ECHO.modded.exe (isolated runtime) without rewriting Steam ECHO.exe / app.asar'
+    steamGuideClipboardOk = 'Launch options copied to the clipboard.'
+    steamGuideClipboardFail = 'Could not write the clipboard; copy the line above manually.'
+    steamGuideLaunchAsk = 'Launch ECHO.modded.exe now? (Y/N, default N)'
+    steamGuideFallback = 'Or double-click ECHO.modded.exe in the game folder, or run ShinawaseLoader\start-echo-with-mods.cmd'
   }
 }
 function Get-LoaderLocale {
@@ -880,11 +896,61 @@ function Start-EchoWithProgress($selectedExe) {
   Write-SetupProgress 100 (T 'progressDone')
 }
 
+function Get-SteamLaunchOptions([string]$echoRoot) {
+  $modded = Join-Path $echoRoot 'ECHO.modded.exe'
+  return ('"{0}" %command%' -f $modded)
+}
+
+function Show-SteamLaunchGuide([string]$echoRoot) {
+  $launchOptions = Get-SteamLaunchOptions $echoRoot
+  $script:ProgressStarted = $false
+  Write-Host ''
+  Write-Host (T 'steamGuideTitle') -ForegroundColor Cyan
+  Write-Host (T 'steamGuideStep1')
+  Write-Host (T 'steamGuideStep2')
+  Write-Host ''
+  Write-Host "  $launchOptions" -ForegroundColor Yellow
+  Write-Host ''
+  Write-Host (T 'steamGuideStep3')
+  Write-Host (T 'steamGuideFallback') -ForegroundColor DarkGray
+  $copied = $false
+  try {
+    Set-Clipboard -Value $launchOptions -ErrorAction Stop
+    $copied = $true
+  } catch {
+    try {
+      Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+      [System.Windows.Forms.Clipboard]::SetText($launchOptions)
+      $copied = $true
+    } catch { $copied = $false }
+  }
+  if ($copied) { Write-Host (T 'steamGuideClipboardOk') -ForegroundColor Green }
+  else { Write-Host (T 'steamGuideClipboardFail') -ForegroundColor Yellow }
+  return $launchOptions
+}
+
+function Read-YesNo([string]$prompt, [bool]$DefaultNo = $true) {
+  $suffix = if ($DefaultNo) { ' [N]' } else { ' [Y]' }
+  $visible = $true
+  try { $visible = [Console]::CursorVisible; [Console]::CursorVisible = $true } catch {}
+  try {
+    $answer = Read-Host ($prompt + $suffix)
+  } finally {
+    try { [Console]::CursorVisible = $visible } catch {}
+  }
+  if ([string]::IsNullOrWhiteSpace($answer)) { return -not $DefaultNo }
+  return $answer.Trim().ToLowerInvariant() -in @('y', 'yes', '是', '好')
+}
+
 function Complete-InstallAndLaunch($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStart = $false) {
   [void](Invoke-Install $selectedExe $Update $EnableDirectAutoStart)
   $chosen = @(Choose-OptionalPackages)
   if ($chosen.Count) { Install-OptionalPackages $selectedExe $chosen }
-  Start-EchoWithProgress $selectedExe
+  $echoRoot = Split-Path -Parent $selectedExe
+  [void](Show-SteamLaunchGuide $echoRoot)
+  if (Read-YesNo (T 'steamGuideLaunchAsk') $true) {
+    Start-EchoWithProgress $selectedExe
+  }
   Exit-Setup 0
 }
 

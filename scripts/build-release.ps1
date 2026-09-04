@@ -39,15 +39,18 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'scripts\pack-echomod.mjs') -Dest
   'This folder is the portable end-user release, not the development source tree.',
   '',
   '1. Run setup-modloader.bat.',
-  '2. Let it scan for ECHO.exe or select the Steam ECHO Playtest directory.',
-  '3. Use the generated ShinawaseLoader\start-echo-with-mods.cmd beside ECHO.exe.',
+  '2. Let it scan for ECHO.exe or select the Steam ECHO directory.',
+  '3. After optional packages, set Steam launch options to:',
+  '   "<game folder>\ECHO.modded.exe" %command%',
+  '4. Or double-click ECHO.modded.exe / ShinawaseLoader\start-echo-with-mods.cmd.',
   '',
+  'ECHO.modded.exe is an independent host. It does not replace Steam ECHO.exe.',
   'The installer uses an external CDP connection and never patches Steam resources\app.asar.',
   'Install builds an isolated ShinawaseLoader\modded-runtime plus ECHO.modded.exe. -PatchApp is accepted for older callers and ignored.',
   'It downloads Node into the current user cache only when required.',
   'Drop Mod packages into Mods and Plugin packages into Plugins for automatic import.',
   'Logs are written to ShinawaseLoader\Logs\loader.log and ShinawaseLoader\Logs\errors.log.',
-  'Launchers: start-echo-with-mods.cmd, start-echo-debug.cmd, start-echo-safe.cmd, attach-to-echo.cmd.',
+  'Launchers: ECHO.modded.exe, start-echo-with-mods.cmd, start-echo-debug.cmd, start-echo-safe.cmd, attach-to-echo.cmd.',
   'Use pack-mod.bat <package-directory> <output.echo> --zip to package a Mod or Plugin.',
   'Debug mode is for developing and debugging ShinawaseLoader, Plugins, and Mods.',
   ''
@@ -57,7 +60,9 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'scripts\pack-echomod.mjs') -Dest
   "ShinawaseLoader $version",
   '',
   'This is the portable release output, not the development source tree.',
-  'Run setup-modloader.bat to scan or select ECHO and create the external-CDP launcher.',
+  'Run setup-modloader.bat to scan or select ECHO and create ECHO.modded.exe.',
+  'Do not replace Steam ECHO.exe. Set Steam launch options to:',
+  '"<game folder>\ECHO.modded.exe" %command%',
   'The installer downloads Node into the current user cache only when needed.'
 ) | Set-Content -LiteralPath (Join-Path $releaseRoot 'RELEASE.txt') -Encoding ASCII
 

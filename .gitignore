@@ -19,7 +19,14 @@ Packages/template-self-test.echomod
 /shinawaseloader-*-sourcecode.zip
 /dev-preview/
 /.tmp-asar/
+/_ref-ECHODev/
+/_patch-*.mjs
+/_inspect*.mjs
+/_verify.mjs
+/_fix-*.mjs
+/_tmp-*.txt
 /ShinawaseLoader/node_modules/
+/examples/packages/.dev/
 /examples/reference/ECHO-AudioBand/echomod/host/
 /examples/reference/ECHO-AudioBand/winui/bin/
 /examples/reference/ECHO-AudioBand/winui/obj/

@@ -20,6 +20,14 @@ Rebuild from the repository root:
 
 Every installer example ships a `config.schema.json` fallback form; most also include a custom `configUi` page (loader >= 1.6.0).
 
+## Extra packages
+
+| Name | Folder | Package |
+| --- | --- | --- |
+| ECHO Lyrics Match Whitebox | [ECHO-LyricsMatchWhitebox](ECHO-LyricsMatchWhitebox) | `examples/packages/ECHO-LyricsMatchWhitebox.echomod` |
+
+Opens the built-in lyrics candidate panel during network matching (white-box). Not in the installer optional list; import the `.echomod` yourself.
+
 ## Reference mods
 
 Other sample Mods live under [`reference/`](reference/) as archived implementations. They are **not** listed in the installer optional packages and are **not** imported by `setup-modloader`. Pack and drop them yourself if you need them. See [`reference/README.md`](reference/README.md).

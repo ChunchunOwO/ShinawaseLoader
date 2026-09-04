@@ -1,0 +1,11 @@
+{
+  "id": "echo.lyrics-match-whitebox",
+  "name": "ECHO Lyrics Match Whitebox",
+  "version": "1.0.1",
+  "minEchoVersion": "26.8.15",
+  "description": "把歌词网络匹配从黑盒改成白盒：默认自动弹出候选面板；并修复候选卡片预览撑破布局、使用按钮点不到的问题。",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "config": "config.json",
+  "configSchema": "config.schema.json"
+}

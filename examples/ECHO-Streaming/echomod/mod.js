@@ -20,9 +20,9 @@ const locale = String(config.locale || 'zh-CN');
 const chinese = locale.toLowerCase().startsWith('zh');
 const accountText = (zh, en) => chinese ? zh : en;
 const copy = chinese ? {
-  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', playlistKicker: '流媒体歌单', readingAlbum: '读取专辑', readingPlaylist: '读取歌单', playPlaylist: '播放歌单', noPlaylistTracks: '这个歌单没有可显示的歌曲。', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', more: '更多', playlistPick: '从左侧选择歌单', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，选择后同步到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。', neteaseLoginRequired: '读取这个歌单需要登录（私密歌单仅登录后可见）。请先在账号页登录网易云音乐，再重试下载。', neteaseSessionExpired: '网易云登录已过期或失效：请在账号页重新登录网易云音乐，然后重试下载。', qqLoginRequired: '读取这个歌单需要登录（账号歌单仅登录后可见）。请先在账号页登录 QQ 音乐，再重试下载。', albumDownloadTitle: '下载专辑', artistDownloadTitle: '下载热门歌曲', downloadTopTracks: '下载热门歌曲', readingAlbumTracks: '正在读取专辑曲目...', musicNoDownloadableAlbum: '这张专辑没有可下载的歌曲。', musicNoDownloadableArtist: '这个艺人没有可下载的歌曲。', batchDownloadBusy: '已有批量下载正在进行，请稍候。', dailyTitle: '每日推荐歌单', dailyHint: '扫描网易云每日推荐歌曲、每日歌单、雷达、历史日推与个性化推荐，同步到本地歌单后可刷新和下载。', dailyScan: '扫描每日歌单', dailyRefresh: '刷新每日歌单', dailyRefreshing: '正在刷新每日歌单', dailyAuto: '自动刷新', dailyManual: '手动刷新', dailyAutoOn: '自动刷新已开启：每天 6:05（北京时间）以及启动后补刷。', dailyAutoOff: '自动刷新已关闭，可手动扫描或刷新。', dailyNeedLogin: '请先登录网易云音乐后再扫描每日推荐。', dailyEmpty: '没有读到每日推荐歌单。', dailyScanned: (n) => `已扫描 ${n} 个每日推荐歌单。`, dailySynced: (ok, fail) => fail ? `每日歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `每日歌单同步完成：成功 ${ok} 个。`, dailyRefreshed: (n) => `已刷新每日歌单：${n} 个。`, dailyKindSongs: '每日推荐', dailyKindResource: '每日歌单', dailyKindRadar: '雷达', dailyKindPersonalized: '推荐歌单', dailyKindHistory: '历史日推', dailyKindNewsong: '新歌推荐', dailySyncSelected: '同步选中每日歌单', dailyOpenNative: '在歌单页打开', dailyRefreshOne: '刷新',
+  streaming: '流媒体', streamingTitle: '流媒体音乐', streamingDescription: '搜索在线曲库，并在播放前临时解析音频地址。', currentProvider: '当前来源', preparingSearch: '等待搜索', searchPlaceholder: '搜索歌曲、艺人、专辑', providers: '流媒体平台', tabs: '结果类型', track: '歌曲', album: '专辑', artist: '艺人', playlist: '歌单', quality: '音质', lossless: '无损', high: '高音质', standard: '标准', hires: 'Hi-Res', losslessDescription: '优先 FLAC', highDescription: '优先 320kbps', standardDescription: '优先兼容性', hiresDescription: '平台支持时启用', available: '可用', disabled: '已禁用', notLoggedIn: '未登录', loggedIn: (name) => `${name} 已登录`, searching: '搜索中', searchingEllipsis: '搜索中...', resultCount: (n) => `${n} 个结果`, searchHint: '输入关键词开始搜索。实际音频 URL 只在播放时解析，队列不会保存 URL。', notFoundTrack: '没有找到匹配的流媒体歌曲。', notFoundAlbum: '没有找到匹配的专辑。', notFoundArtist: '没有找到匹配的艺人。', notFoundPlaylist: '没有找到匹配的歌单。', play: '播放', queue: '加入队列', queued: '已加入队列', favorite: '收藏', unfavorite: '取消收藏', download: '下载', resolving: '正在解析播放地址...', playing: '正在播放', unavailable: '这首歌暂时不可播放', albumKicker: '流媒体专辑', artistKicker: '流媒体艺人', playlistKicker: '流媒体歌单', readingAlbum: '读取专辑', readingPlaylist: '读取歌单', playPlaylist: '播放歌单', noPlaylistTracks: '这个歌单没有可显示的歌曲。', readingArtist: '读取艺人', playNow: '立即播放', playArtist: '播放艺人', addToQueue: '加入队列', downloadAlbum: '下载专辑', downloading: '下载中', tracks: '曲目', songs: '歌曲', discography: '作品', topTracks: '热门歌曲', albums: '专辑', source: '来源', released: '发行', unknown: '未知', close: '关闭', more: '更多', playlistPick: '从左侧选择歌单', back: '流媒体', loading: '加载中...', loadMore: '加载更多', loadingMore: '加载中...', addPlaylist: '添加流媒体歌单', playlistHint: '粘贴网易云音乐、QQ 音乐或 Spotify 歌单链接，导入后会保存到本地播放列表。', playlistPlaceholder: '粘贴歌单链接，例如 https://music.163.com/#/playlist?id=...', add: '添加歌单', adding: '正在添加', cancelImport: '取消', syncPlaylists: '同步我的歌单', syncHint: '读取已登录的网易云音乐或 QQ 音乐账号歌单，一键同步全部到本地播放列表。', syncMine: '同步我的歌单', refresh: '刷新列表', reading: '读取中', restart: '重启后可用', signedIn: '已登录', preferLoggedIn: '将优先读取已登录的平台。', needLogin: '请先在账号连接中登录网易云音乐或 QQ 音乐。', noPlaylists: '没有可同步的歌单，或当前平台尚未登录。', selectAll: '全选', deselectAll: '取消全选', selected: (a, b) => `已选择 ${a} / ${b}`, syncSelected: '同步选中歌单', syncAll: '同步全部歌单', syncing: '同步中', created: '我创建的歌单', favorited: '我收藏的歌单', accountPlaylist: '账号歌单', noticeTitle: '流媒体功能须知', noticeClose: '关闭须知', noticeConfirm: '我同意并继续', noticeCancel: '取消', consentPhrase: '我同意', consentInput: (phrase) => `输入“${phrase}”以继续`, noticeBody: 'ECHO 的流媒体入口只提供搜索、账号状态、收藏、歌单导入和播放入口整合。ECHO 不拥有、托管、出售或重新分发任何第三方流媒体平台的音频、视频、封面、歌词或元数据版权。', noticeItems: ['ECHO 的代码和插件受项目许可证约束；禁止破解、绕过授权、伪造权益、移除完整性校验，或把 ECHO 用作未经授权访问付费内容的工具。', '第三方平台、商标、曲库、API、账号、订阅、Cookie、DRM、地区限制和播放授权均由对应平台及权利人控制。', 'DMCA 是美国版权法中的通知与移除机制。权利人应通过对应平台或合法渠道提交通知。', '你应只使用自己有权访问的账号、订阅和内容，不得规避平台条款、下载限制、DRM、账号风控、付费墙或版权保护。', 'ECHO 不提供绕过会员、破解试听、规避付费或损害平台及权利人利益的能力。', 'ECHO 本质上是本地音乐播放器，流媒体入口优先级最低；出现问题时请先使用本地音乐库。', '如果你认为流媒体平台会员费用过高，请停止使用本功能并卸载软件。', '免责声明：ECHO 不对第三方平台造成的账号限制、服务中断、版权争议、DMCA 通知、数据丢失或地区不可用承担责任。'], noticeAcceptance: '继续表示你理解并接受：本功能是个人本地客户端辅助入口，不构成法律意见、版权授权、平台代理关系或内容可用性承诺。', imported: (name, count) => `已添加歌单：${name}，共 ${count} 首。可在播放列表页播放。`, synced: (ok, fail) => fail ? `歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `歌单同步完成：成功 ${ok} 个。`, noBridge: '桌面桥接不可用，请在 ECHO 客户端中使用流媒体。', downloadUnavailable: '桌面下载服务不可用。', unsupportedDownload: '此平台在 ECHO 中仅支持流播放，不提供下载任务。', recentSearches: '最近搜索', trackHeaderTitle: '歌曲', trackHeaderSource: '来源 / 音质', trackHeaderDuration: '时长', trackHeaderActions: '操作', accounts: '账号登录', searchSubmit: '搜索', downloadToMusic: '下载到音乐文件夹', downloadPlaylistToMusic: '下载整个歌单', musicSaveHint: (dir) => `保存到 ${dir}`, musicDownloadStarted: (title) => `开始下载：${title}`, musicDownloadDone: (title, path, quality) => `已保存：${title}${quality ? `（${quality}）` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `下载失败：${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: '选择下载音质', probingQualities: '正在检测可用音质...', qualityCount: (n) => `${n} 种可用音质`, startDownload: '下载', cancelAction: '取消', playlistDownloadTitle: '下载歌单', readingPlaylistTracks: '正在读取歌单曲目...', applyAllQuality: '一键全部设置音质', perTrackQualityHint: '单独设置：点击歌曲行里的音质标签，可为单曲选择不同音质。', qualityFallbackNote: '不可用的音质会自动降级为该歌曲的最高可用音质。', probeProgress: (n, total) => `已检测音质 ${n}/${total}`, probeFailed: '无法检测该歌曲的音质，下载时将自动使用账号可用的最高音质。', probeFailedShort: '检测失败', skippedTracks: (n) => `已跳过 ${n} 个无法下载的项目（本地曲目或仅支持流播放的平台）。`, startPlaylistDownload: (n) => `开始下载（${n} 首）`, cancelDownload: '取消下载', downloadCancelled: (name) => `已取消歌单下载：${name}`, playlistDownloadBusy: '已有歌单正在下载，请稍候。', musicPlaylistReading: (name) => `正在读取歌单：${name}...`, musicPlaylistProgress: (name, done, total) => `正在下载歌单：${name}（${done}/${total}）`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `歌单下载完成：${name}，成功 ${ok}，失败 ${failed}${dir ? ` → ${dir}` : ''}` : `歌单下载完成：${name}（${ok} 首）${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: '这个歌单没有可下载的歌曲。', mainBridgeUnavailable: '主进程下载桥接不可用，请用 ShinawaseLoader 重新启动 ECHO。', playlistItemsUnavailable: '无法读取歌单曲目，请更新 ECHO 后重试。', neteaseLoginRequired: '读取这个歌单需要登录（私密歌单仅登录后可见）。请先在账号页登录网易云音乐，再重试下载。', neteaseSessionExpired: '网易云登录已过期或失效：请在账号页重新登录网易云音乐，然后重试下载。', qqLoginRequired: '读取这个歌单需要登录（账号歌单仅登录后可见）。请先在账号页登录 QQ 音乐，再重试下载。', albumDownloadTitle: '下载专辑', artistDownloadTitle: '下载热门歌曲', downloadTopTracks: '下载热门歌曲', readingAlbumTracks: '正在读取专辑曲目...', musicNoDownloadableAlbum: '这张专辑没有可下载的歌曲。', musicNoDownloadableArtist: '这个艺人没有可下载的歌曲。', batchDownloadBusy: '已有批量下载正在进行，请稍候。', dailyTitle: '每日推荐歌单', dailyHint: '扫描网易云每日推荐歌曲、每日歌单、雷达、历史日推与个性化推荐，同步到本地歌单后可刷新和下载。', dailyScan: '扫描每日歌单', dailyRefresh: '刷新每日歌单', dailyRefreshing: '正在刷新每日歌单', dailyAuto: '自动刷新', dailyManual: '手动刷新', dailyAutoOn: '自动刷新已开启：每天 6:05（北京时间）以及启动后补刷。', dailyAutoOff: '自动刷新已关闭，可手动扫描或刷新。', dailyNeedLogin: '请先登录网易云音乐后再扫描每日推荐。', dailyEmpty: '没有读到每日推荐歌单。', dailyScanned: (n) => `已扫描 ${n} 个每日推荐歌单。`, dailySynced: (ok, fail) => fail ? `每日歌单同步完成：成功 ${ok} 个，失败 ${fail} 个。` : `每日歌单同步完成：成功 ${ok} 个。`, dailyRefreshed: (n) => `已刷新每日歌单：${n} 个。`, dailyKindSongs: '每日推荐', dailyKindResource: '每日歌单', dailyKindRadar: '雷达', dailyKindPersonalized: '推荐歌单', dailyKindHistory: '历史日推', dailyKindNewsong: '新歌推荐', dailySyncSelected: '同步选中每日歌单', dailyOpenNative: '在歌单页打开', dailyRefreshOne: '刷新',
 } : {
-  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', playlistKicker: 'Streaming Playlist', readingAlbum: 'Reading album', readingPlaylist: 'Reading playlist', playPlaylist: 'Play playlist', noPlaylistTracks: 'This playlist has no tracks to display.', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', more: 'More', playlistPick: 'Choose a playlist', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and add selected playlists to local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.', neteaseLoginRequired: 'Reading this playlist requires a signed-in account (private playlists are only visible after login). Connect NetEase Cloud Music on the accounts page and retry.', neteaseSessionExpired: 'The NetEase Cloud Music session has expired. Sign in again on the accounts page and retry the download.', qqLoginRequired: 'Reading this playlist requires a signed-in account. Connect QQ Music on the accounts page and retry.', albumDownloadTitle: 'Download album', artistDownloadTitle: 'Download top tracks', downloadTopTracks: 'Download top tracks', readingAlbumTracks: 'Reading album tracks...', musicNoDownloadableAlbum: 'This album has no downloadable tracks.', musicNoDownloadableArtist: 'This artist has no downloadable tracks.', batchDownloadBusy: 'A batch download is already running.', dailyTitle: 'Daily recommendation playlists', dailyHint: 'Scan NetEase daily songs, daily playlists, radar, history, and personalized lists, then sync, refresh, or download them.', dailyScan: 'Scan daily playlists', dailyRefresh: 'Refresh daily playlists', dailyRefreshing: 'Refreshing daily playlists', dailyAuto: 'Auto refresh', dailyManual: 'Manual refresh', dailyAutoOn: 'Auto refresh is on: 06:05 Beijing time each day, plus a catch-up after launch.', dailyAutoOff: 'Auto refresh is off. Scan or refresh manually.', dailyNeedLogin: 'Connect a NetEase Cloud Music account before scanning daily recommendations.', dailyEmpty: 'No daily recommendation playlists were returned.', dailyScanned: (n) => `Scanned ${n} daily recommendation playlists.`, dailySynced: (ok, fail) => fail ? `Daily playlist sync finished: ${ok} succeeded, ${fail} failed.` : `Daily playlist sync finished: ${ok} succeeded.`, dailyRefreshed: (n) => `Refreshed ${n} daily playlists.`, dailyKindSongs: 'Daily songs', dailyKindResource: 'Daily playlists', dailyKindRadar: 'Radar', dailyKindPersonalized: 'Recommended', dailyKindHistory: 'History', dailyKindNewsong: 'New songs', dailySyncSelected: 'Sync selected daily playlists', dailyOpenNative: 'Open on Playlists page', dailyRefreshOne: 'Refresh',
+  streaming: 'Streaming', streamingTitle: 'Streaming music', streamingDescription: 'Search online catalogs and resolve audio only when playback starts.', currentProvider: 'Current source', preparingSearch: 'Waiting for search', searchPlaceholder: 'Search songs, artists, or albums', providers: 'Streaming platforms', tabs: 'Result type', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists', quality: 'Quality', lossless: 'Lossless', high: 'High quality', standard: 'Standard', hires: 'Hi-Res', losslessDescription: 'Prefer FLAC', highDescription: 'Prefer 320kbps', standardDescription: 'Prefer compatibility', hiresDescription: 'Use when supported by the platform', available: 'Available', disabled: 'Disabled', notLoggedIn: 'Not logged in', loggedIn: (name) => `${name} logged in`, searching: 'Searching', searchingEllipsis: 'Searching...', resultCount: (n) => `${n} results`, searchHint: 'Enter a keyword to begin. Audio URLs are resolved only for playback and are never stored in the queue.', notFoundTrack: 'No streaming tracks found.', notFoundAlbum: 'No streaming albums found.', notFoundArtist: 'No streaming artists found.', notFoundPlaylist: 'No streaming playlists found.', play: 'Play', queue: 'Add to queue', queued: 'Added to queue', favorite: 'Favorite', unfavorite: 'Remove favorite', download: 'Download', resolving: 'Resolving playback address...', playing: 'Playing', unavailable: 'This track is not currently playable', albumKicker: 'Streaming Album', artistKicker: 'Streaming Artist', playlistKicker: 'Streaming Playlist', readingAlbum: 'Reading album', readingPlaylist: 'Reading playlist', playPlaylist: 'Play playlist', noPlaylistTracks: 'This playlist has no tracks to display.', readingArtist: 'Reading artist', playNow: 'Play Now', playArtist: 'Play Artist', addToQueue: 'Add to Queue', downloadAlbum: 'Download album', downloading: 'Downloading', tracks: 'Tracks', songs: 'Songs', discography: 'Discography', topTracks: 'Top Tracks', albums: 'Albums', source: 'Source', released: 'Released', unknown: 'Unknown', close: 'Close', more: 'More', playlistPick: 'Choose a playlist', back: 'Streaming', loading: 'Loading...', loadMore: 'Load more', loadingMore: 'Loading...', addPlaylist: 'Add streaming playlist', playlistHint: 'Paste a NetEase, QQ Music, or Spotify playlist URL to save it to the local playlists.', playlistPlaceholder: 'Paste a playlist URL, for example https://music.163.com/#/playlist?id=...', add: 'Add playlist', adding: 'Adding', cancelImport: 'Cancel', syncPlaylists: 'Sync my playlists', syncHint: 'Read playlists from a connected NetEase or QQ Music account and sync all of them into local playback.', syncMine: 'Sync my playlists', refresh: 'Refresh list', reading: 'Reading', restart: 'Available after restart', signedIn: 'Signed in', preferLoggedIn: 'A connected platform will be preferred.', needLogin: 'Connect a NetEase or QQ Music account first.', noPlaylists: 'No playlists available or the platform is not connected.', selectAll: 'Select all', deselectAll: 'Deselect all', selected: (a, b) => `Selected ${a} / ${b}`, syncSelected: 'Sync selected playlists', syncAll: 'Sync all playlists', syncing: 'Syncing', created: 'Created by me', favorited: 'Favorited by me', accountPlaylist: 'Account playlist', noticeTitle: 'Streaming Feature Notice', noticeClose: 'Close notice', noticeConfirm: 'I agree and continue', noticeCancel: 'Cancel', consentPhrase: 'I agree', consentInput: (phrase) => `Type "${phrase}" to continue`, noticeBody: 'The ECHO streaming entry only integrates search, account status, favorites, playlist import, and playback entry points. ECHO does not own, host, sell, or redistribute copyrights to third-party streaming audio, video, artwork, lyrics, or metadata.', noticeItems: ['ECHO code and plugins are governed by the project license; cracking, bypassing authorization, forging entitlements, removing integrity checks, or unauthorized access to paid content is prohibited.', 'Third-party platforms, trademarks, catalogs, APIs, accounts, subscriptions, cookies, DRM, regional restrictions, and playback authorization are controlled by the relevant platforms and rightsholders.', 'DMCA is a notice-and-takedown mechanism; rightsholders should use the relevant platform or lawful channel.', 'Use only accounts, subscriptions, and content you are authorized to access. Do not bypass platform terms, download limits, DRM, risk controls, paywalls, or copyright protections.', 'ECHO will not provide membership bypass, preview cracking, payment evasion, or anything that harms platforms or rightsholders.', 'ECHO is fundamentally a local music player; use the local library first when streaming has problems.', 'If streaming memberships are too expensive, stop using this feature and uninstall the software.', 'Disclaimer: ECHO is not liable for account restrictions, service interruptions, copyright disputes, DMCA notices, data loss, or regional unavailability.'], noticeAcceptance: 'Continuing means you understand and accept that this feature is a personal local-client helper, not legal advice, a copyright license, a platform agency relationship, or a promise that content will be available.', imported: (name, count) => `Added playlist: ${name}, ${count} tracks.`, synced: (ok, fail) => fail ? `Playlist sync complete: ${ok} succeeded, ${fail} failed.` : `Playlist sync complete: ${ok} succeeded.`, noBridge: 'The desktop bridge is unavailable. Open ECHO to use streaming.', downloadUnavailable: 'The desktop download service is unavailable.', unsupportedDownload: 'This platform supports streaming only in ECHO and does not provide download jobs.', recentSearches: 'Recent searches', trackHeaderTitle: 'Song', trackHeaderSource: 'Source / Quality', trackHeaderDuration: 'Duration', trackHeaderActions: 'Actions', accounts: 'Accounts', searchSubmit: 'Search', downloadToMusic: 'Download to Music folder', downloadPlaylistToMusic: 'Download entire playlist', musicSaveHint: (dir) => `Save to ${dir}`, musicDownloadStarted: (title) => `Downloading: ${title}`, musicDownloadDone: (title, path, quality) => `Saved: ${title}${quality ? ` (${quality})` : ''}${path ? ` → ${path}` : ''}`, musicDownloadFailed: (title, message) => `Download failed: ${title}${message ? ` - ${message}` : ''}`, downloadQualityTitle: 'Choose download quality', probingQualities: 'Detecting available qualities...', qualityCount: (n) => `${n} available ${n === 1 ? 'quality' : 'qualities'}`, startDownload: 'Download', cancelAction: 'Cancel', playlistDownloadTitle: 'Download playlist', readingPlaylistTracks: 'Reading playlist tracks...', applyAllQuality: 'Set one quality for all', perTrackQualityHint: 'Per-song: click the quality tags on a row to override individual songs.', qualityFallbackNote: 'Unavailable qualities fall back to the best quality each song offers.', probeProgress: (n, total) => `Probed ${n}/${total}`, probeFailed: 'Quality detection failed; the best quality your account can access will be used at download time.', probeFailedShort: 'Probe failed', skippedTracks: (n) => `Skipped ${n} item${n === 1 ? '' : 's'} that cannot be downloaded (local tracks or streaming-only platforms).`, startPlaylistDownload: (n) => `Download ${n} ${n === 1 ? 'track' : 'tracks'}`, cancelDownload: 'Cancel download', downloadCancelled: (name) => `Playlist download cancelled: ${name}`, playlistDownloadBusy: 'A playlist download is already running.', musicPlaylistReading: (name) => `Reading playlist: ${name}...`, musicPlaylistProgress: (name, done, total) => `Downloading playlist: ${name} (${done}/${total})`, musicPlaylistDone: (name, ok, failed, dir) => failed ? `Playlist download finished: ${name}, ${ok} saved, ${failed} failed${dir ? ` → ${dir}` : ''}` : `Playlist download finished: ${name} (${ok} tracks)${dir ? ` → ${dir}` : ''}`, musicNoDownloadableTracks: 'This playlist has no downloadable tracks.', mainBridgeUnavailable: 'The main-process download bridge is unavailable. Relaunch ECHO with ShinawaseLoader.', playlistItemsUnavailable: 'Could not read the playlist tracks. Update ECHO and try again.', neteaseLoginRequired: 'Reading this playlist requires a signed-in account (private playlists are only visible after login). Connect NetEase Cloud Music on the accounts page and retry.', neteaseSessionExpired: 'The NetEase Cloud Music session has expired. Sign in again on the accounts page and retry the download.', qqLoginRequired: 'Reading this playlist requires a signed-in account. Connect QQ Music on the accounts page and retry.', albumDownloadTitle: 'Download album', artistDownloadTitle: 'Download top tracks', downloadTopTracks: 'Download top tracks', readingAlbumTracks: 'Reading album tracks...', musicNoDownloadableAlbum: 'This album has no downloadable tracks.', musicNoDownloadableArtist: 'This artist has no downloadable tracks.', batchDownloadBusy: 'A batch download is already running.', dailyTitle: 'Daily recommendation playlists', dailyHint: 'Scan NetEase daily songs, daily playlists, radar, history, and personalized lists, then sync, refresh, or download them.', dailyScan: 'Scan daily playlists', dailyRefresh: 'Refresh daily playlists', dailyRefreshing: 'Refreshing daily playlists', dailyAuto: 'Auto refresh', dailyManual: 'Manual refresh', dailyAutoOn: 'Auto refresh is on: 06:05 Beijing time each day, plus a catch-up after launch.', dailyAutoOff: 'Auto refresh is off. Scan or refresh manually.', dailyNeedLogin: 'Connect a NetEase Cloud Music account before scanning daily recommendations.', dailyEmpty: 'No daily recommendation playlists were returned.', dailyScanned: (n) => `Scanned ${n} daily recommendation playlists.`, dailySynced: (ok, fail) => fail ? `Daily playlist sync finished: ${ok} succeeded, ${fail} failed.` : `Daily playlist sync finished: ${ok} succeeded.`, dailyRefreshed: (n) => `Refreshed ${n} daily playlists.`, dailyKindSongs: 'Daily songs', dailyKindResource: 'Daily playlists', dailyKindRadar: 'Radar', dailyKindPersonalized: 'Recommended', dailyKindHistory: 'History', dailyKindNewsong: 'New songs', dailySyncSelected: 'Sync selected daily playlists', dailyOpenNative: 'Open on Playlists page', dailyRefreshOne: 'Refresh',
 };
 
 const lyricsCopy = chinese ? {
@@ -85,7 +85,7 @@ const ncmUi = {
   lastSongId: null,
 };
 const state = {
-  ready: false, accepted: false, noticeOpen: false, noticeConsent: '', pendingAccountSync: null, providers: [], provider: String(stored.provider || config.defaultProvider || 'netease'), quality: qualities.includes(stored.quality) ? stored.quality : (qualities.includes(config.defaultQuality) ? config.defaultQuality : 'lossless'), qualityMenuOpen: false, activeTab: ['track', 'album', 'artist', 'playlist'].includes(stored.activeTab) ? stored.activeTab : 'track', input: String(stored.input || stored.query || ''), query: String(stored.query || ''), result: stored.result || null, loading: false, requestId: 0, error: null, actionError: null, actionMessage: null, selectedAlbum: null, selectedAlbumDetail: null, albumLoading: false, albumError: null, albumTrackLimit: albumInitialTrackCount, selectedArtist: null, selectedArtistDetail: null, artistLoading: false, artistError: null, selectedPlaylist: null, selectedPlaylistDetail: null, playlistLoading: false, playlistError: null, playlistTrackLimit: albumInitialTrackCount, playlistUrl: '', accountPlaylistProvider: 'netease', accountPlaylists: [], selectedAccountPlaylistIds: {}, accountPanelOpen: false, accountPageOpen: false, loadingAccountPlaylists: false, syncingAccountPlaylistIds: {}, importingPlaylistKey: null, resolvingTrackKey: null, queuedTrackKey: null, downloadingTrackKey: null, downloadEnabled: false, downloadJobs: [], downloadJobIdsByTrackKey: {}, albumDownload: null, favoriteTrackIds: {}, favoriteTrackKey: null, failedCoverUrls: stored.failedCoverUrls || {}, currentStableKey: '', scrollTop: Number(stored.scrollTop) || 0, recentSearches: Array.isArray(stored.recentSearches) && stored.recentSearches.length ? stored.recentSearches.filter((item) => typeof item === 'string' && item.trim()).slice(0, 8) : searchShortcuts.slice(),
+  ready: false, accepted: false, noticeOpen: false, noticeConsent: '', pendingAccountSync: null, providers: [], provider: String(stored.provider || config.defaultProvider || 'netease'), quality: qualities.includes(stored.quality) ? stored.quality : (qualities.includes(config.defaultQuality) ? config.defaultQuality : 'lossless'), qualityMenuOpen: false, activeTab: ['track', 'album', 'artist', 'playlist'].includes(stored.activeTab) ? stored.activeTab : 'track', input: String(stored.input || stored.query || ''), query: String(stored.query || ''), result: stored.result || null, loading: false, requestId: 0, error: null, actionError: null, actionMessage: null, selectedAlbum: null, selectedAlbumDetail: null, albumLoading: false, albumError: null, albumTrackLimit: albumInitialTrackCount, selectedArtist: null, selectedArtistDetail: null, artistLoading: false, artistError: null, selectedPlaylist: null, selectedPlaylistDetail: null, playlistLoading: false, playlistError: null, playlistTrackLimit: albumInitialTrackCount, playlistUrl: '', accountPlaylistProvider: 'netease', accountPlaylists: [], selectedAccountPlaylistIds: {}, accountPanelOpen: false, selectedAccountProvider: "netease", accountAdvancedOpen: false, loadingAccountPlaylists: false, syncingAccountPlaylistIds: {}, importingPlaylistKey: null, resolvingTrackKey: null, queuedTrackKey: null, downloadingTrackKey: null, downloadEnabled: false, downloadJobs: [], downloadJobIdsByTrackKey: {}, albumDownload: null, favoriteTrackIds: {}, favoriteTrackKey: null, failedCoverUrls: stored.failedCoverUrls || {}, currentStableKey: '', scrollTop: Number(stored.scrollTop) || 0, recentSearches: Array.isArray(stored.recentSearches) && stored.recentSearches.length ? stored.recentSearches.filter((item) => typeof item === 'string' && item.trim()).slice(0, 8) : searchShortcuts.slice(),
 };
 state.selectedLyricsTrack = null;
 state.selectedLyrics = null;
@@ -126,17 +126,197 @@ state.neteasePassword = '';
 state.neteaseCountry = '86';
 const accountStatusFor = (provider) => state.accountStatuses.find((item) => item.provider === provider) || { provider, connected: false, username: null, displayName: null, avatarUrl: null, error: null };
 const mergeAccountStatus = (status) => { if (!status?.provider) return; state.accountStatuses = [...state.accountStatuses.filter((item) => item.provider !== status.provider), status]; };
-const refreshAccountPage = () => { if (accountRoot && !accountDisposed) accountRoot.replaceChildren(renderAccountPage()); else if (!disposed && state.accountPageOpen) render(); };
+const refreshAccountPage = () => { if (accountRoot && !accountDisposed) accountRoot.replaceChildren(renderAccountPage()); else if (!disposed) render(); };
 const loadAccountStatuses = async () => { const api = accountApi(); if (!api?.getStatuses) throw new Error(accountText('桌面账号桥接不可用，请重启 ECHO。', 'Desktop account bridge is unavailable. Restart ECHO.')); state.accountStatuses = await api.getStatuses(); refreshAccountPage(); return state.accountStatuses; };
 const accountAction = async (provider, action, work) => { state.accountBusy[provider] = action; state.accountErrors[provider] = null; state.accountMessages[provider] = null; refreshAccountPage(); try { const result = await work(); if (result?.status) mergeAccountStatus(result.status); else if (result?.provider) mergeAccountStatus(result); if (result?.message) state.accountMessages[provider] = result.message; await loadAccountStatuses(); await loadProviders(true).catch(() => undefined); } catch (error) { state.accountErrors[provider] = error instanceof Error ? error.message : String(error); refreshAccountPage(); } finally { delete state.accountBusy[provider]; refreshAccountPage(); } };
 const setAccountBrowser = (provider, browser) => void accountAction(provider, 'browser', async () => { state.accountBrowsers[provider] = browser; const result = await accountApi().setBrowser(provider, browser); mergeAccountStatus(result); return result; });
 const saveAccountCookie = (provider) => void accountAction(provider, 'save', async () => { const cookie = String(state.accountCookies[provider] || '').trim(); if (!cookie) throw new Error(accountText('请先填写 Cookie。', 'Enter a Cookie first.')); const result = await accountApi().saveCookie(provider, cookie); state.accountCookies[provider] = ''; mergeAccountStatus(result); return result; });
-const loginAccount = (provider) => void accountAction(provider, 'login', async () => { if (provider === 'qobuz') { const api = qobuzApi(); const token = String(state.qobuzToken || '').trim(); if (!api?.login) throw new Error(accountText('Qobuz 登录桥接不可用。', 'Qobuz login bridge is unavailable.')); if (!token) throw new Error(accountText('请先填写 Qobuz user_auth_token。', 'Enter the Qobuz user_auth_token first.')); const result = await api.login({ userAuthToken: token }); if (!result?.success) throw new Error(result?.error || accountText('Qobuz 登录失败。', 'Qobuz login failed.')); state.qobuzToken = ''; return { message: result.error || accountText('Qobuz 已登录。', 'Qobuz signed in.') }; } const api = accountApi(); if (!api?.startLogin) throw new Error(accountText('登录桥接不可用。', 'Login bridge is unavailable.')); if ((provider === 'youtube' || provider === 'soundcloud') && state.accountBrowsers[provider] && state.accountBrowsers[provider] !== 'none') await api.setBrowser(provider, state.accountBrowsers[provider]); return (await api.startLogin(provider)) || {}; });
+const loginAccount = (provider) => void accountAction(provider, 'login', async () => { if (provider === 'qobuz') { const api = qobuzApi(); const token = String(state.qobuzToken || '').trim(); if (!api?.login) throw new Error(accountText('Qobuz 登录桥接不可用。', 'Qobuz login bridge is unavailable.')); if (!token) throw new Error(accountText('请先填写 Qobuz user_auth_token。', 'Enter the Qobuz user_auth_token first.')); const result = await api.login({ userAuthToken: token }); if (!result?.success) throw new Error(result?.error || accountText('Qobuz 登录失败。', 'Qobuz login failed.')); state.qobuzToken = ''; return { message: result.error || accountText('Qobuz 已登录。', 'Qobuz signed in.') }; } const api = accountApi(); if (!api?.startLogin) throw new Error(accountText('登录桥接不可用。', 'Login bridge is unavailable.')); if (provider === 'youtube' || provider === 'soundcloud') { const browser = state.accountBrowsers[provider] || (provider === 'youtube' ? 'edge' : 'none'); state.accountBrowsers[provider] = browser; if (browser !== 'none') await api.setBrowser(provider, browser); } return (await api.startLogin(provider)) || {}; });
 const checkAccount = (provider) => void accountAction(provider, 'check', () => accountApi().check(provider));
 const clearAccount = (provider) => void accountAction(provider, 'clear', () => accountApi().clear(provider));
-const startNeteaseQrLogin = async () => { const api = accountApi(); if (!api?.startNeteaseQrLogin || !api?.pollNeteaseQrLogin) return loginAccount('netease'); state.accountErrors.netease = null; state.accountQr = await api.startNeteaseQrLogin(); refreshAccountPage(); window.clearTimeout(accountQrTimer); const poll = async () => { if (disposed || !state.accountQr || accountDisposed || !state.accountPageOpen) return; try { const result = await api.pollNeteaseQrLogin(state.accountQr.key); if (disposed || !state.accountQr) return; if (result?.status) mergeAccountStatus(result.status); if (['confirmed', 'expired', 'failed'].includes(result?.state)) { state.accountMessages.netease = result.message || result.state; state.accountQr = null; await loadAccountStatuses(); return; } state.accountQr = { ...state.accountQr, state: result?.state || state.accountQr.state, message: result?.message || state.accountQr.message }; refreshAccountPage(); accountQrTimer = window.setTimeout(poll, 2000); } catch (error) { state.accountErrors.netease = error instanceof Error ? error.message : String(error); state.accountQr = null; refreshAccountPage(); } }; void poll(); };
-const renderAccountPage = () => { const page = make('div', 'streaming-page streaming-account-page'); const hero = make('header', 'streaming-hero'); const heroCopy = make('div', 'streaming-hero-copy'); heroCopy.append(make('span', 'streaming-kicker', accountText('账号连接', 'Account connections')), make('h1', '', accountText('流媒体账号', 'Streaming accounts')), make('p', '', accountText('登录、检查或退出第三方平台账号。登录信息由 ECHO 本地保存。', 'Sign in, check, or sign out of third-party platforms. Credentials stay local to ECHO.'))); hero.append(heroCopy); const actions = make('div', 'streaming-hero-meter'); actions.append(actionButton(accountText('刷新状态', 'Refresh'), 'refresh', () => loadAccountStatuses().catch((error) => { state.accountErrors.__global = error.message; refreshAccountPage(); }), { className: 'settings-action-button', title: accountText('刷新账号状态', 'Refresh account status') }), actionButton(accountText('检查全部', 'Check all'), 'check', () => accountAction('__global', 'check', () => accountApi().checkAll()), { className: 'settings-action-button', title: accountText('检查全部账号', 'Check all accounts') })); hero.append(actions); page.append(hero); if (state.accountErrors.__global) page.append(make('div', 'streaming-state streaming-state--error', state.accountErrors.__global)); const list = make('div', 'settings-account-list'); accountProviderOrder.forEach((provider) => { const status = accountStatusFor(provider); const row = make('article', 'settings-account-row streaming-account-row'); const summary = make('div', 'settings-account-summary'); const badge = make(status.connected ? 'span' : 'button', `${status.connected ? 'list-filter-chip active' : 'list-filter-chip settings-account-status-link'}`, status.connected ? accountText('已登录', 'Connected') : accountText('点击登录', 'Click to sign in')); badge.dataset.connected = String(status.connected); if (!status.connected) { badge.type = 'button'; badge.addEventListener('click', () => loginAccount(provider)); } summary.append(badge, make('div', '', make('h3', '', accountProviderLabels[provider] || provider)), make('p', '', accountText('使用 ECHO 本地账号桥接登录。', 'Sign in through ECHO local account bridge.'))); row.append(summary); const meta = make('div', 'settings-account-meta'); meta.append(make('span', '', status.displayName || status.username || accountText('未设置账号', 'No account connected'))); if (status.lastCheckedAt) meta.append(make('span', '', `${accountText('最近检查', 'Checked')} ${status.lastCheckedAt}`)); row.append(meta); const controls = make('div', 'settings-account-actions'); if (provider !== 'osu') controls.append(actionButton(state.accountBusy[provider] === 'login' ? accountText('登录中...', 'Opening...') : accountText('登录', 'Sign in'), 'link', provider === 'netease' ? startNeteaseQrLogin : () => loginAccount(provider), { className: 'settings-action-button settings-account-login-button', disabled: Boolean(state.accountBusy[provider]) })); controls.append(actionButton(state.accountBusy[provider] === 'check' ? accountText('检查中...', 'Checking...') : accountText('检查', 'Check'), 'refresh', () => checkAccount(provider), { className: 'settings-action-button', disabled: Boolean(state.accountBusy[provider]) })); controls.append(actionButton(accountText('退出', 'Sign out'), 'close', () => clearAccount(provider), { className: 'settings-danger-button', disabled: Boolean(state.accountBusy[provider]) })); row.append(controls); if (provider === 'youtube' || provider === 'soundcloud') { const browserLabel = make('label', 'settings-select-field settings-account-browser-field'); browserLabel.append(make('span', '', accountText('登录浏览器', 'Login browser'))); const browser = document.createElement('select'); ['none', 'edge', 'chrome', 'firefox'].forEach((value) => { const option = document.createElement('option'); option.value = value; option.textContent = value === 'none' ? accountText('不使用浏览器登录', 'No browser login') : value; option.selected = (state.accountBrowsers[provider] || 'none') === value; browser.append(option); }); browser.addEventListener('change', () => setAccountBrowser(provider, browser.value)); browserLabel.append(browser); row.append(browserLabel); } if (provider === 'qobuz') { const tokenLabel = make('label', 'settings-account-cookie-field'); const token = document.createElement('input'); token.type = 'password'; token.placeholder = 'Qobuz user_auth_token'; token.value = state.qobuzToken; token.addEventListener('input', () => { state.qobuzToken = token.value; }); tokenLabel.append(token); row.append(tokenLabel); } else if (provider !== 'osu') { const cookieLabel = make('label', 'settings-account-cookie-field'); const cookie = document.createElement('input'); cookie.type = 'password'; cookie.placeholder = accountText('粘贴 Cookie（可选）', 'Paste Cookie (optional)'); cookie.value = state.accountCookies[provider] || ''; cookie.addEventListener('input', () => { state.accountCookies[provider] = cookie.value; }); cookieLabel.append(cookie); row.append(cookieLabel, actionButton(accountText('保存 Cookie', 'Save Cookie'), 'check', () => saveAccountCookie(provider), { className: 'settings-action-button', disabled: Boolean(state.accountBusy[provider]) })); } if (provider === 'netease') row.append(renderNeteasePhoneLogin()); if (status.error) row.append(make('p', 'settings-inline-error settings-account-note', status.error)); if (state.accountMessages[provider]) row.append(make('p', 'settings-inline-note settings-account-note', state.accountMessages[provider])); if (state.accountErrors[provider]) row.append(make('p', 'settings-inline-error settings-account-note', state.accountErrors[provider])); list.append(row); }); page.append(list); if (state.accountQr) { const qr = make('section', 'streaming-account-qr settings-account-row'); qr.append(make('h2', '', accountText('网易云扫码登录', 'NetEase QR login'))); const image = document.createElement('img'); image.src = state.accountQr.qrUrl; image.alt = accountText('网易云登录二维码', 'NetEase login QR code'); image.width = 220; image.height = 220; qr.append(image, make('p', 'settings-inline-note', state.accountQr.message || accountText('请扫码登录。', 'Scan to sign in.')), actionButton(accountText('关闭二维码', 'Close QR'), 'close', () => { state.accountQr = null; window.clearTimeout(accountQrTimer); refreshAccountPage(); }, { className: 'settings-action-button' })); page.append(qr); } return page; };
-let pageRoot = null; let disposed = false; let searchTimer = 0; let statusTimer = 0; let accountUnsubscribe = null; let downloadUnsubscribe = null; let playlistPageUnsubscribe = null; let dailyRefreshTimer = 0; let dailyRefreshInFlight = false; let paintNativeDailyPanel = () => {};
+const startNeteaseQrLogin = async () => { const api = accountApi(); if (!api?.startNeteaseQrLogin || !api?.pollNeteaseQrLogin) return loginAccount('netease'); state.accountErrors.netease = null; state.accountQr = await api.startNeteaseQrLogin(); refreshAccountPage(); window.clearTimeout(accountQrTimer); const poll = async () => { if (disposed || !state.accountQr || accountDisposed || !accountRoot) return; try { const result = await api.pollNeteaseQrLogin(state.accountQr.key); if (disposed || !state.accountQr) return; if (result?.status) mergeAccountStatus(result.status); if (result?.state === 'confirmed') { state.accountMessages.netease = result.message || result.state; dismissNeteaseQrLogin(); await loadAccountStatuses(); return; } if (result?.state === 'expired' || result?.state === 'failed') { state.accountMessages.netease = result.message || result.state; state.accountQr = { ...state.accountQr, state: result.state, message: result.message || state.accountQr.message }; refreshAccountPage(); return; } state.accountQr = { ...state.accountQr, state: result?.state || state.accountQr.state, message: result?.message || state.accountQr.message }; refreshAccountPage(); accountQrTimer = window.setTimeout(poll, 2000); } catch (error) { state.accountErrors.netease = error instanceof Error ? error.message : String(error); state.accountQr = null; refreshAccountPage(); } }; void poll(); };
+const cookieAccountProviders = new Set(['netease', 'qqmusic', 'kugou', 'bilibili', 'soundcloud', 'osu']);
+const accountStatusLabel = (status) => {
+  if (!status) return accountText('检查中', 'Checking');
+  if (status.connected && status.error) return accountText('登录失效', 'Expired');
+  return status.connected ? accountText('已登录', 'Connected') : accountText('未登录', 'Signed out');
+};
+const accountStatusTone = (status) => {
+  if (!status) return 'checking';
+  if (status.connected && status.error) return 'expired';
+  return status.connected ? 'connected' : 'disconnected';
+};
+const renderAccountDetailBody = (provider) => {
+  const status = accountStatusFor(provider);
+  const busy = state.accountBusy[provider];
+  const body = make('div', 'settings-account-detail-body streaming-account-detail-body');
+  const actions = make('div', 'settings-account-actions');
+  if (status.connected) {
+    actions.append(
+      actionButton(busy === 'check' ? accountText('检查中...', 'Checking...') : accountText('检查', 'Check'), 'refresh', () => checkAccount(provider), { className: 'settings-action-button', disabled: Boolean(busy) }),
+      actionButton(accountText('退出', 'Sign out'), 'close', () => clearAccount(provider), { className: 'settings-danger-button', disabled: Boolean(busy) }),
+    );
+  } else if (provider === 'netease') {
+    actions.append(
+      actionButton(busy === 'login' ? accountText('准备扫码...', 'Starting...') : accountText('扫码登录', 'Scan QR'), 'link', startNeteaseQrLogin, { className: 'settings-action-button settings-account-login-button', disabled: Boolean(busy) }),
+      actionButton(accountText('网页登录', 'Web login'), 'link', () => loginAccount('netease'), { className: 'settings-action-button', disabled: Boolean(busy) }),
+    );
+  } else if (provider === 'qobuz') {
+    const tokenLabel = make('label', 'settings-account-cookie-field');
+    const token = document.createElement('input');
+    token.type = 'password';
+    token.placeholder = 'Qobuz user_auth_token';
+    token.value = state.qobuzToken;
+    token.dataset.echoQobuzToken = 'true';
+    token.addEventListener('input', () => { state.qobuzToken = token.value; });
+    tokenLabel.append(token);
+    body.append(tokenLabel, make('p', 'settings-inline-note settings-account-note', accountText('从 Qobuz 网页开发者工具复制 user_auth_token 后登录。', 'Paste the Qobuz user_auth_token from browser DevTools, then sign in.')));
+    actions.append(
+      actionButton(busy === 'login' ? accountText('登录中...', 'Signing in...') : accountText('登录', 'Sign in'), 'link', () => loginAccount('qobuz'), { className: 'settings-action-button settings-account-login-button', disabled: Boolean(busy) || !String(state.qobuzToken || '').trim() }),
+    );
+  } else if (provider === 'bilibili') {
+    body.append(make('p', 'settings-inline-note settings-account-note', accountText(
+      '点登录后会打开 B 站通行证页，用 App 扫码或账号密码登录即可；检测到 Cookie 后窗口会自动关闭。也可展开下方粘贴 SESSDATA / DedeUserID / bili_jct。',
+      'Sign-in opens the Bilibili passport page. Scan with the app or use password login; the window closes once cookies are detected. Or expand below to paste SESSDATA / DedeUserID / bili_jct.',
+    )));
+    actions.append(
+      actionButton(busy === 'login' ? accountText('登录中...', 'Opening...') : accountText('登录', 'Sign in'), 'link', () => loginAccount(provider), { className: 'settings-action-button settings-account-login-button', disabled: Boolean(busy) }),
+    );
+  } else if (provider === 'youtube' || provider === 'soundcloud') {
+    const browserLabel = make('label', 'settings-select-field settings-account-browser-field');
+    browserLabel.append(make('span', '', accountText('登录浏览器', 'Login browser')));
+    const browser = document.createElement('select');
+    ['edge', 'chrome', 'firefox', 'none'].forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value === 'none' ? accountText('不使用浏览器登录', 'No browser login') : value;
+      option.selected = (state.accountBrowsers[provider] || (provider === 'youtube' ? 'edge' : 'none')) === value;
+      browser.append(option);
+    });
+    browser.addEventListener('change', () => setAccountBrowser(provider, browser.value));
+    browserLabel.append(browser);
+    body.append(browserLabel);
+    actions.append(
+      actionButton(busy === 'login' ? accountText('打开中...', 'Opening...') : accountText('打开浏览器登录', 'Open browser login'), 'link', () => loginAccount(provider), { className: 'settings-action-button settings-account-login-button', disabled: Boolean(busy) }),
+    );
+  } else {
+    actions.append(
+      actionButton(busy === 'login' ? accountText('登录中...', 'Opening...') : accountText('登录', 'Sign in'), 'link', () => loginAccount(provider), { className: 'settings-action-button settings-account-login-button', disabled: Boolean(busy) }),
+    );
+  }
+  body.append(actions);
+
+  const showCookie = cookieAccountProviders.has(provider) && provider !== 'osu';
+  const showPhone = provider === 'netease';
+  const showAdvanced = showCookie || showPhone;
+  if (showAdvanced) {
+    const details = document.createElement('details');
+    details.className = 'streaming-account-advanced';
+    details.open = state.accountAdvancedOpen === true;
+    details.addEventListener('toggle', () => { state.accountAdvancedOpen = details.open; });
+    details.append(Object.assign(document.createElement('summary'), { textContent: accountText('其他登录方式', 'Other sign-in options') }));
+    const advanced = make('div', 'streaming-account-advanced-body');
+    if (showCookie) {
+      const cookieLabel = make('label', 'settings-account-cookie-field');
+      const cookie = document.createElement('input');
+      cookie.type = 'password';
+      cookie.placeholder = accountText('粘贴 Cookie（可选）', 'Paste Cookie (optional)');
+      cookie.value = state.accountCookies[provider] || '';
+      cookie.addEventListener('input', () => { state.accountCookies[provider] = cookie.value; });
+      cookieLabel.append(cookie);
+      advanced.append(
+        cookieLabel,
+        actionButton(accountText('保存 Cookie', 'Save Cookie'), 'check', () => saveAccountCookie(provider), { className: 'settings-action-button', disabled: Boolean(busy) }),
+      );
+    }
+    if (showPhone) advanced.append(renderNeteasePhoneLogin());
+    details.append(advanced);
+    body.append(details);
+  }
+
+  if (status.error) body.append(make('p', 'settings-inline-error settings-account-note', status.error));
+  if (state.accountMessages[provider]) body.append(make('p', 'settings-inline-note settings-account-note', state.accountMessages[provider]));
+  if (state.accountErrors[provider]) body.append(make('p', 'settings-inline-error settings-account-note', state.accountErrors[provider]));
+  return body;
+};
+const renderAccountPage = () => {
+  if (!accountProviderOrder.includes(state.selectedAccountProvider)) state.selectedAccountProvider = accountProviderOrder[0];
+  const page = make('div', 'streaming-page streaming-account-page');
+  const hero = make('header', 'streaming-hero streaming-account-hero');
+  const heroCopy = make('div', 'streaming-hero-copy');
+  heroCopy.append(
+    make('span', 'streaming-kicker', accountText('账号连接', 'Account connections')),
+    make('h1', '', accountText('流媒体账号', 'Streaming accounts')),
+    make('p', '', accountText('在这里统一登录各平台账号。默认一点登录；Cookie / 手机号等进阶方式可展开。', 'Sign in to every platform here. One-click login by default; Cookie / phone options stay collapsed.')),
+  );
+  hero.append(heroCopy);
+  const overview = make('div', 'settings-account-overview');
+  const connected = state.accountStatuses.filter((item) => item.connected).length;
+  const checking = Object.values(state.accountBusy).filter(Boolean).length;
+  const disconnected = Math.max(0, accountProviderOrder.length - connected);
+  overview.append(
+    make('span', 'settings-account-overview-stat is-connected', `${connected} ${accountText('已登录', 'connected')}`),
+    make('span', 'settings-account-overview-stat is-checking', `${checking} ${accountText('处理中', 'busy')}`),
+    make('span', 'settings-account-overview-stat', `${disconnected} ${accountText('未登录', 'signed out')}`),
+  );
+  const actions = make('div', 'streaming-hero-meter settings-service-account-header-side');
+  actions.append(
+    overview,
+    actionButton(accountText('刷新状态', 'Refresh'), 'refresh', () => loadAccountStatuses().catch((error) => { state.accountErrors.__global = error.message; refreshAccountPage(); }), { className: 'settings-action-button', title: accountText('刷新账号状态', 'Refresh account status') }),
+    actionButton(accountText('检查全部', 'Check all'), 'check', () => accountAction('__global', 'check', () => accountApi().checkAll()), { className: 'settings-action-button', title: accountText('检查全部账号', 'Check all accounts') }),
+  );
+  hero.append(actions);
+  page.append(hero);
+  if (state.accountErrors.__global) page.append(make('div', 'streaming-state streaming-state--error', state.accountErrors.__global));
+
+  const workspace = make('div', 'settings-account-workspace streaming-account-workspace');
+  const list = make('nav', 'settings-account-service-list');
+  list.setAttribute('aria-label', accountText('流媒体账号', 'Streaming accounts'));
+  accountProviderOrder.forEach((provider) => {
+    const status = accountStatusFor(provider);
+    const tone = accountStatusTone(status);
+    const button = make('button', `settings-account-service-button${provider === state.selectedAccountProvider ? ' is-active' : ''}`);
+    button.type = 'button';
+    if (provider === state.selectedAccountProvider) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => {
+      state.selectedAccountProvider = provider;
+      state.accountAdvancedOpen = false;
+      refreshAccountPage();
+    });
+    const logo = make('span', 'settings-account-service-logo streaming-account-service-logo', (accountProviderLabels[provider] || provider).slice(0, 1));
+    const copyBox = make('span', 'settings-account-service-copy');
+    copyBox.append(
+      make('strong', '', accountProviderLabels[provider] || provider),
+      make('span', `settings-account-service-state is-${tone}`, status.displayName || status.username || accountStatusLabel(status)),
+    );
+    button.append(logo, copyBox, makeIcon('chevron', 16));
+    list.append(button);
+  });
+  workspace.append(list);
+
+  const provider = state.selectedAccountProvider;
+  const status = accountStatusFor(provider);
+  const detail = make('section', 'settings-account-detail');
+  detail.setAttribute('aria-label', accountProviderLabels[provider] || provider);
+  const detailHeader = make('header', 'settings-account-detail-header');
+  detailHeader.append(
+    make('span', 'settings-account-detail-logo streaming-account-service-logo', (accountProviderLabels[provider] || provider).slice(0, 1)),
+  );
+  const detailTitle = make('div', '');
+  detailTitle.append(
+    make('h3', '', accountProviderLabels[provider] || provider),
+    make('span', `list-filter-chip${status.connected ? ' active' : ''}`, accountStatusLabel(status)),
+  );
+  detailHeader.append(detailTitle);
+  detail.append(detailHeader, renderAccountDetailBody(provider));
+  workspace.append(detail);
+  page.append(workspace);
+
+  if (state.accountQr) window.setTimeout(() => { if (!accountDisposed && state.accountQr) mountNeteaseQrDialog(); }, 0);
+  else removeNeteaseQrBackdrop();
+  return page;
+};
+let pageRoot = null; let disposed = false; let searchTimer = 0; let statusTimer = 0; let accountUnsubscribe = null; let downloadUnsubscribe = null; let playlistPageUnsubscribe = null; let artistStreamingAlbumsUnsubscribe = null; let dailyRefreshTimer = 0; let dailyRefreshInFlight = false; let paintNativeDailyPanel = () => {};
 let searchComposing = false;
 let searchRenderPending = false;
 let searchCompositionEndedAt = 0;
@@ -151,9 +331,92 @@ const appApi = () => external.echo?.app || window.echo?.app;
 const accountApi = () => external.echo?.accounts || window.echo?.accounts || shinawaseBridge().accounts;
 const qobuzApi = () => external.echo?.qobuz || window.echo?.qobuz || shinawaseBridge().qobuz;
 const libraryApi = () => external.echo?.library || window.echo?.library;
-const openAccountPage = () => { state.accountPageOpen = !state.accountPageOpen; if (state.accountPageOpen && !state.accountStatuses.length) void loadAccountStatuses().catch((error) => { state.accountErrors.__global = error.message; render(); }); render(); };
-const normalizeAccountQr = (page) => { const section = page.querySelector('.streaming-account-qr'); if (!section || !state.accountQr) return page; document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); const backdrop = make('div', 'settings-qr-login-backdrop'); backdrop.dataset.echoStreamingQr = 'true'; backdrop.style.cssText = 'position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:rgba(8,10,14,0.55)'; backdrop.addEventListener('mousedown', () => { state.accountQr = null; window.clearTimeout(accountQrTimer); render(); }); const dialog = make('section', 'settings-qr-login-dialog'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.addEventListener('mousedown', (event) => event.stopPropagation()); while (section.firstChild) dialog.append(section.firstChild); section.remove(); backdrop.append(dialog); document.body.append(backdrop); return page; };
-const renderAccountView = () => { const page = make('div', 'streaming-page streaming-hub streaming-account-view'); page.style.position = 'relative'; page.style.display = 'grid'; page.style.gap = '18px'; page.style.padding = '52px 42px 24px'; page.style.overflow = 'auto'; const back = actionButton(accountText('返回流媒体', 'Back to Streaming'), 'arrow', openAccountPage, { className: 'album-back-button', title: accountText('返回流媒体', 'Back to Streaming') }); back.style.position = 'absolute'; back.style.top = '16px'; back.style.left = '42px'; back.style.zIndex = '2'; page.append(back); page.append(normalizeAccountQr(renderAccountPage())); return page; };
+const accountsSidebarIdSuffix = ':accounts';
+const findAccountsSidebarButton = () => document.querySelector('[data-echo-external-sidebar$="' + accountsSidebarIdSuffix + '"]')
+  || document.querySelector('[data-echo-external-sidebar="accounts"]');
+const openAccountsSidebar = (options = {}) => {
+  if (options.provider) state.selectedAccountProvider = options.provider;
+  const tryOpen = (attempt = 0) => {
+    const button = findAccountsSidebarButton();
+    if (button) {
+      button.click();
+      void loadAccountStatuses().catch((error) => {
+        state.accountErrors.__global = error instanceof Error ? error.message : String(error);
+        refreshAccountPage();
+      });
+      return;
+    }
+    if (attempt < 12) window.setTimeout(() => tryOpen(attempt + 1), 120);
+  };
+  tryOpen();
+};
+const openAccountPage = (provider) => openAccountsSidebar(provider ? { provider } : {});
+const removeNeteaseQrBackdrop = () => {
+  document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove());
+};
+const dismissNeteaseQrLogin = () => {
+  state.accountQr = null;
+  window.clearTimeout(accountQrTimer);
+  accountQrTimer = 0;
+  removeNeteaseQrBackdrop();
+  refreshAccountPage();
+};
+const mountNeteaseQrDialog = () => {
+  removeNeteaseQrBackdrop();
+  if (!state.accountQr) return;
+  const qr = state.accountQr;
+  const canRetry = qr.state === 'expired' || qr.state === 'failed';
+  const backdrop = make('div', 'settings-qr-login-backdrop');
+  backdrop.dataset.echoStreamingQr = 'true';
+  backdrop.addEventListener('mousedown', (event) => {
+    if (event.target === backdrop) dismissNeteaseQrLogin();
+  });
+  const dialog = make('section', 'settings-qr-login-dialog');
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-labelledby', 'echo-streaming-netease-qr-title');
+  if (qr.state) dialog.dataset.state = String(qr.state);
+  dialog.addEventListener('mousedown', (event) => event.stopPropagation());
+
+  const header = make('header', 'settings-qr-login-header');
+  const titleBox = make('div', '');
+  const title = make('h3', '', accountText('网易云扫码登录', 'NetEase QR login'));
+  title.id = 'echo-streaming-netease-qr-title';
+  titleBox.append(
+    title,
+    make('p', '', accountText('打开网易云 App 扫一扫，确认后自动登录。', 'Scan with the NetEase Cloud Music app to sign in.')),
+  );
+  const closeBtn = actionButton(accountText('关闭', 'Close'), 'close', dismissNeteaseQrLogin, {
+    className: 'settings-icon-button settings-qr-login-close',
+    iconOnly: true,
+    title: accountText('关闭二维码', 'Close QR'),
+    ariaLabel: accountText('关闭二维码', 'Close QR'),
+  });
+  header.append(titleBox, closeBtn);
+
+  const code = make('div', 'settings-qr-login-code');
+  code.dataset.empty = String(!qr.qrUrl);
+  if (qr.qrUrl) {
+    const image = document.createElement('img');
+    image.src = qr.qrUrl;
+    image.alt = accountText('网易云登录二维码', 'NetEase login QR code');
+    image.draggable = false;
+    image.width = 220;
+    image.height = 220;
+    code.append(image);
+  }
+  const status = make('p', 'settings-qr-login-status', qr.message || accountText('请扫码登录。', 'Scan to sign in.'));
+  const actions = make('div', 'settings-qr-login-actions');
+  if (canRetry) {
+    actions.append(actionButton(accountText('重试', 'Retry'), 'refresh', () => { void startNeteaseQrLogin(); }, { className: 'settings-action-button' }));
+  }
+  actions.append(actionButton(accountText('关闭', 'Close'), 'close', dismissNeteaseQrLogin, { className: 'settings-action-button' }));
+
+  dialog.append(header, code, status, actions);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+};
+
 const accountProviderOrder = ['netease', 'qqmusic', 'kugou', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'tidal', 'qobuz', 'osu'];
 const accountProviderLabels = { netease: '网易云音乐', qqmusic: 'QQ 音乐', kugou: '酷狗音乐', bilibili: '哔哩哔哩', youtube: 'YouTube', soundcloud: 'SoundCloud', spotify: 'Spotify', tidal: 'TIDAL', qobuz: 'Qobuz', osu: 'osu!' };
 const iconPaths = { play: '<path d="m6 4 14 8-14 8z" fill="currentColor"/>', list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>', check: '<path d="m5 12 4 4L19 6"/>', heart: '<path d="M20.8 8.7c0 5.5-8.8 10.2-8.8 10.2S3.2 14.2 3.2 8.7A4.7 4.7 0 0 1 12 6.2a4.7 4.7 0 0 1 8.8 2.5Z"/>', download: '<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/>', arrow: '<path d="m15 18-6-6 6-6"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>', radio: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor"/>', disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="m12 3 2 7"/>', user: '<circle cx="12" cy="8" r="3"/><path d="M5 20c.8-3.3 3.1-5 7-5s6.2 1.7 7 5"/>', link: '<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/>', refresh: '<path d="M20 11a8 8 0 0 0-14.7-4L3 10m0-4v4h4M4 13a8 8 0 0 0 14.7 4L21 14m0 4v-4h-4"/>', chevron: '<path d="m6 9 6 6 6-6"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', shield: '<path d="M12 3 20 6v5c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/>' };
@@ -479,8 +742,40 @@ const appendPlaylistCard = (parent, playlist) => {
   appendPlaylistPickRow(parent, playlist, `${playlist.creator || playlist.provider || ''} · ${formatTrackCount(playlist.trackCount)}`);
 };
 const appendAccountPlaylistRow = (parent, playlist) => {
+  const id = String(playlist.providerPlaylistId || '').trim();
   const ownership = playlist.ownership === 'created' ? copy.created : playlist.ownership === 'favorited' ? copy.favorited : copy.accountPlaylist;
-  appendPlaylistPickRow(parent, playlist, `${ownership} · ${formatTrackCount(playlist.trackCount)}`);
+  const row = make('div', 'streaming-account-playlist-row streaming-account-playlist-row--sync');
+  row.dataset.active = String(playlistIdentity(state.selectedPlaylist) === playlistIdentity(playlist));
+  row.dataset.syncing = String(Boolean(state.syncingAccountPlaylistIds[id]));
+
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.checked = state.selectedAccountPlaylistIds[id] === true;
+  check.disabled = Boolean(state.syncingAccountPlaylistIds[id]) || Object.keys(state.syncingAccountPlaylistIds).length > 0;
+  check.addEventListener('click', (event) => event.stopPropagation());
+  check.addEventListener('change', () => {
+    if (check.checked) state.selectedAccountPlaylistIds[id] = true;
+    else delete state.selectedAccountPlaylistIds[id];
+    render();
+  });
+
+  const open = make('button', 'streaming-account-playlist-open');
+  open.type = 'button';
+  appendCover(open, playlist.coverThumb || playlist.coverUrl || defaultCover, playlist.id || playlistIdentity(playlist));
+  const main = make('span', 'streaming-account-playlist-main');
+  main.append(
+    make('strong', '', playlist.title || playlist.name || 'Untitled'),
+    make('small', '', `${ownership} · ${formatTrackCount(playlist.trackCount)}`),
+  );
+  open.append(main);
+  open.addEventListener('click', () => void openPlaylist(playlist).catch(reportError));
+  open.addEventListener('contextmenu', (event) => openStreamMenu(event, [
+    { label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || playlist.name || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(playlist) },
+    { label: copy.syncSelected, hint: playlist.title || playlist.name || '', icon: 'list', disabled: Object.keys(state.syncingAccountPlaylistIds).length > 0, onSelect: () => requestAccountPlaylistSync([playlist]) },
+  ]));
+
+  row.append(check, open);
+  parent.append(row);
 };
 
 const renderNoticeModal = () => { if (!state.noticeOpen) return null; const backdrop = make('div', 'settings-modal-backdrop settings-streaming-notice-backdrop'); backdrop.dataset.state = 'open'; backdrop.addEventListener('mousedown', () => cancelNotice()); const dialog = make('section', 'settings-font-modal settings-streaming-notice-modal'); dialog.dataset.state = 'open'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'settings-streaming-notice-title'); dialog.addEventListener('mousedown', (event) => event.stopPropagation()); const header = make('header', 'settings-font-modal-header'); const heading = make('div', 'settings-streaming-notice-heading'); heading.append(makeIcon('shield', 18), make('h3', '', copy.noticeTitle)); header.append(heading, actionButton(copy.close, 'close', cancelNotice, { iconOnly: true, className: 'settings-icon-button', title: copy.noticeClose })); dialog.append(header); const body = make('div', 'settings-streaming-notice-body'); body.append(make('p', '', copy.noticeBody)); const list = make('ul'); copy.noticeItems.forEach((item) => list.append(make('li', '', item))); body.append(list, make('p', '', copy.noticeAcceptance)); dialog.append(body); const label = make('label', 'settings-danger-confirm-field settings-streaming-notice-confirm'); label.append(make('span', '', copy.consentInput(copy.consentPhrase))); const input = document.createElement('input'); input.value = state.noticeConsent; input.autofocus = true; input.addEventListener('input', () => { state.noticeConsent = input.value; confirm.disabled = input.value.trim() !== copy.consentPhrase; }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && input.value.trim() === copy.consentPhrase) confirmNotice(); }); label.append(input); dialog.append(label); const actions = make('div', 'settings-streaming-notice-actions'); actions.append(actionButton(copy.noticeCancel, null, cancelNotice, { className: 'settings-action-button' })); const confirm = actionButton(copy.noticeConfirm, null, confirmNotice, { className: 'settings-danger-button', disabled: state.noticeConsent.trim() !== copy.consentPhrase }); actions.append(confirm); dialog.append(actions); backdrop.append(dialog); return backdrop; };
@@ -761,10 +1056,14 @@ const renderPlaylistPanel = (playlists) => {
   }));
   form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); });
   sidebar.append(form);
-  const stale = typeof streamApi()?.listAccountPlaylists !== 'function';
+  const stale = typeof streamApi()?.listAccountPlaylists !== 'function' && typeof invokeMain !== 'function';
+  const syncBusy = Object.keys(state.syncingAccountPlaylistIds).length > 0;
   const accountTools = [
     actionButton(copy.refresh, 'refresh', () => state.accountPanelOpen ? loadAccountPlaylists(state.accountPlaylistProvider) : openAccountPlaylistSync(), {
-      iconOnly: true, className: 'tool-button', disabled: stale || state.loadingAccountPlaylists, title: copy.syncMine,
+      iconOnly: true, className: 'tool-button', disabled: stale || state.loadingAccountPlaylists || syncBusy, title: copy.refresh,
+    }),
+    actionButton(copy.syncAll, 'list', () => void syncAllAccountPlaylists().catch(reportError), {
+      iconOnly: true, className: 'tool-button', disabled: stale || state.loadingAccountPlaylists || syncBusy, title: copy.syncAll,
     }),
   ];
   sidebar.append(renderFoldSection(copy.syncPlaylists, state.accountSectionOpen, () => {
@@ -773,13 +1072,14 @@ const renderPlaylistPanel = (playlists) => {
     if (state.accountSectionOpen && !state.accountPanelOpen) openAccountPlaylistSync();
     render();
   }, accountTools, (body) => {
+    body.append(make('p', 'streaming-account-sync-hint', copy.syncHint));
     const tabs = make('nav', 'album-detail-tabs streaming-account-provider-tabs');
     ['netease', 'qqmusic'].forEach((name) => {
       const descriptor = state.providers.find((item) => item.name === name);
       const tab = make('button', 'album-detail-tab', descriptor?.displayName || name);
       tab.type = 'button';
       if (name === state.accountPlaylistProvider) tab.setAttribute('aria-current', 'page');
-      tab.disabled = state.loadingAccountPlaylists;
+      tab.disabled = state.loadingAccountPlaylists || syncBusy;
       tab.addEventListener('click', () => {
         state.accountPlaylistProvider = name;
         state.accountPlaylists = [];
@@ -789,9 +1089,29 @@ const renderPlaylistPanel = (playlists) => {
     });
     body.append(tabs);
     if (!state.accountPlaylists.length) {
-      body.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.loading : copy.noPlaylists));
+      body.append(make('div', 'streaming-results-empty', state.loadingAccountPlaylists ? copy.reading : copy.noPlaylists));
       return;
     }
+    const selectedCount = state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true).length;
+    const toolbar = make('div', 'streaming-account-sync-toolbar');
+    toolbar.append(make('small', '', copy.selected(selectedCount, state.accountPlaylists.length)));
+    toolbar.append(actionButton(selectedCount === state.accountPlaylists.length ? copy.deselectAll : copy.selectAll, null, () => {
+      if (selectedCount === state.accountPlaylists.length) state.selectedAccountPlaylistIds = {};
+      else {
+        state.selectedAccountPlaylistIds = Object.fromEntries(
+          state.accountPlaylists.map((item) => [String(item.providerPlaylistId), true]),
+        );
+      }
+      render();
+    }, { className: 'streaming-text-button', disabled: syncBusy }));
+    toolbar.append(actionButton(syncBusy ? copy.syncing : copy.syncSelected, 'list', () => {
+      const items = state.accountPlaylists.filter((item) => state.selectedAccountPlaylistIds[item.providerPlaylistId] === true);
+      requestAccountPlaylistSync(items);
+    }, { className: 'streaming-text-button', disabled: syncBusy || selectedCount === 0 }));
+    toolbar.append(actionButton(syncBusy ? copy.syncing : copy.syncAll, 'list', () => void syncAllAccountPlaylists().catch(reportError), {
+      className: 'streaming-text-button', disabled: syncBusy || state.loadingAccountPlaylists,
+    }));
+    body.append(toolbar);
     const list = make('div', 'streaming-account-playlist-list');
     state.accountPlaylists.forEach((item) => appendAccountPlaylistRow(list, item));
     body.append(list);
@@ -872,6 +1192,7 @@ const renderMain = () => {
   state.providers.forEach((provider) => {
     const tab = actionButton('', null, () => {
       if (!provider.enabled) return;
+      if (providerRailState(provider) === 'signedOut') { openAccountsSidebar({ provider: provider.name }); return; }
       state.provider = provider.name;
       state.failedCoverUrls = {};
       void runSearch(1, 'replace');
@@ -992,8 +1313,10 @@ const renderMain = () => {
     header.append(make('span', '', '#'), make('span', '', copy.trackHeaderTitle), make('span', '', copy.trackHeaderSource), make('span', '', copy.trackHeaderDuration), make('span', '', copy.trackHeaderActions));
     shell.append(header);
   }
-  if (emptyMessage) shell.append(make('div', 'streaming-results-empty', emptyMessage));
-  else if (state.activeTab === 'playlist') shell.append(renderPlaylistPanel(state.result?.playlists || []));
+  // Playlist tab always mounts the workspace (account sync + URL import). Search
+  // empties for other tabs still use the shared emptyMessage path.
+  if (state.activeTab === 'playlist') shell.append(renderPlaylistPanel(state.result?.playlists || []));
+  else if (emptyMessage) shell.append(make('div', 'streaming-results-empty', emptyMessage));
   else if (state.activeTab === 'album') {
     const list = make('div', 'streaming-discovery-list');
     (state.result?.albums || []).forEach((item) => appendAlbumCard(list, item));
@@ -1021,7 +1344,7 @@ const renderAccountEntry = () => {
   if (!pageRoot || state.selectedLyricsTrack || state.selectedAlbum || state.selectedArtist) return;
   const heading = pageRoot.querySelector('.streaming-source-rail-heading');
   if (!heading || heading.querySelector('[data-echo-account-entry]')) return;
-  const button = actionButton(copy.accounts, 'user', openAccountPage, { className: 'settings-action-button streaming-account-toggle' });
+  const button = actionButton(copy.accounts, 'user', () => openAccountsSidebar(), { className: 'settings-action-button streaming-account-toggle' });
   button.dataset.echoAccountEntry = 'true';
   heading.append(button);
 };
@@ -1034,8 +1357,8 @@ const render = () => {
   persistMemory();
   const search = liveSearchInput && pageRoot.contains(liveSearchInput) ? liveSearchInput : pageRoot.querySelector?.('.streaming-search-box input');
   const keepSearch = Boolean(search && document.activeElement === search);
-  pageRoot.replaceChildren(state.ready ? (state.accountPageOpen ? renderAccountView() : state.selectedAlbum ? renderAlbumDetail() : state.selectedArtist ? renderArtistDetail() : state.accepted ? renderMain() : renderGate()) : make('div', 'streaming-page streaming-hub', make('div', 'streaming-results-empty', copy.loading)));
-  if (!state.accountPageOpen) renderAccountEntry();
+  pageRoot.replaceChildren(state.ready ? (state.selectedAlbum ? renderAlbumDetail() : state.selectedArtist ? renderArtistDetail() : state.accepted ? renderMain() : renderGate()) : make('div', 'streaming-page streaming-hub', make('div', 'streaming-results-empty', copy.loading)));
+  renderAccountEntry();
   attachLyricsActions();
   attachNeteaseTrackActions();
   if (!keepSearch) return;
@@ -2550,7 +2873,11 @@ const mergeAccountPlaylists = (primary, extra) => {
 };
 const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) => {
   const stream = streamApi();
-  if (!stream?.listAccountPlaylists) throw new Error(chinese ? '当前窗口尚未加载歌单同步桥接，请重启 ECHO。' : 'Playlist sync is unavailable in this window. Restart ECHO.');
+  const canBridge = typeof stream?.listAccountPlaylists === 'function';
+  const canMain = typeof invokeMain === 'function';
+  if (!canBridge && !canMain) {
+    throw new Error(chinese ? '当前窗口尚未加载歌单同步桥接，请重启 ECHO。' : 'Playlist sync is unavailable in this window. Restart ECHO.');
+  }
   state.accountPlaylistProvider = provider;
   state.accountPanelOpen = true;
   state.loadingAccountPlaylists = true;
@@ -2559,20 +2886,39 @@ const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) =>
   try {
     let playlists = [];
     let lastError = null;
-    try {
-      const result = await stream.listAccountPlaylists(provider);
-      playlists = result.playlists || [];
-    } catch (error) {
-      lastError = error;
+    if (canBridge) {
+      try {
+        const result = await stream.listAccountPlaylists(provider);
+        playlists = result.playlists || [];
+      } catch (error) {
+        lastError = error;
+      }
     }
     if (provider === 'qqmusic') {
       const extra = await invokeMain('qqAccountPlaylists', {}).catch(() => null);
       if (extra?.ok === false && !playlists.length) throw new Error(extra.error || copy.noPlaylists);
       playlists = mergeAccountPlaylists(playlists, extra?.playlists);
     }
+    if (provider === 'netease') {
+      const extra = await invokeMain('neteaseAccountPlaylists', {}).catch(() => null);
+      if (extra?.ok === false && !playlists.length) {
+        const code = String(extra.error || '');
+        throw new Error(
+          code === 'netease_login_required'
+            ? (chinese ? '请先在账号连接中登录网易云音乐。' : 'Connect a NetEase Cloud Music account first.')
+            : (extra.error || copy.noPlaylists),
+        );
+      }
+      playlists = mergeAccountPlaylists(playlists, extra?.playlists);
+    }
     state.accountPlaylists = playlists;
-    state.selectedAccountPlaylistIds = {};
-    state.actionMessage = playlists.length ? `已读取 ${playlists.length} 个歌单。` : copy.noPlaylists;
+    // Default: select every playlist so one click can sync the whole account.
+    state.selectedAccountPlaylistIds = Object.fromEntries(
+      playlists.map((item) => [String(item.providerPlaylistId), true]),
+    );
+    state.actionMessage = playlists.length
+      ? (chinese ? `已读取 ${playlists.length} 个歌单，可同步全部或勾选后同步。` : `Loaded ${playlists.length} playlists. Sync all, or pick some.`)
+      : copy.noPlaylists;
     if (!playlists.length && lastError) throw lastError;
   } catch (error) {
     if (!state.accountPlaylists.length) {
@@ -2585,9 +2931,59 @@ const loadAccountPlaylists = async (provider = state.accountPlaylistProvider) =>
     render();
   }
 };
-const openAccountPlaylistSync = () => { const connected = state.providers.find((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected); state.accountPlaylistProvider = connected?.name || state.accountPlaylistProvider; void loadAccountPlaylists(state.accountPlaylistProvider).catch(reportError); };
-const syncAccountPlaylists = async (items) => { if (!items?.length || Object.keys(state.syncingAccountPlaylistIds).length) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); let ok = 0; let failed = 0; for (const playlist of items) { state.syncingAccountPlaylistIds[playlist.providerPlaylistId] = true; render(); try { await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist)); ok += 1; } catch { failed += 1; } finally { delete state.syncingAccountPlaylistIds[playlist.providerPlaylistId]; } } state.selectedAccountPlaylistIds = {}; await openImportedPlaylist({ playlistId: true }); state.actionMessage = copy.synced(ok, failed); render(); };
-const requestAccountPlaylistSync = (items) => { if (!items?.length) return; if (!state.accepted) { state.pendingAccountSync = items; state.noticeOpen = true; render(); return; } void syncAccountPlaylists(items).catch(reportError); };
+const openAccountPlaylistSync = () => {
+  const connected = state.providers.find((item) => (item.name === 'netease' || item.name === 'qqmusic') && item.accountConnected);
+  state.accountPlaylistProvider = connected?.name || state.accountPlaylistProvider || 'netease';
+  void loadAccountPlaylists(state.accountPlaylistProvider).catch(reportError);
+};
+const syncAccountPlaylists = async (items) => {
+  if (!items?.length || Object.keys(state.syncingAccountPlaylistIds).length) return;
+  const stream = streamApi();
+  if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge);
+  let ok = 0;
+  let failed = 0;
+  for (const playlist of items) {
+    const id = String(playlist.providerPlaylistId || '').trim();
+    if (!id) continue;
+    state.syncingAccountPlaylistIds[id] = true;
+    render();
+    try {
+      await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist));
+      ok += 1;
+    } catch {
+      failed += 1;
+    } finally {
+      delete state.syncingAccountPlaylistIds[id];
+    }
+  }
+  state.selectedAccountPlaylistIds = {};
+  await openImportedPlaylist({ playlistId: true });
+  state.actionMessage = copy.synced(ok, failed);
+  render();
+};
+const requestAccountPlaylistSync = (items) => {
+  if (!items?.length) return;
+  if (!state.accepted) {
+    state.pendingAccountSync = items;
+    state.noticeOpen = true;
+    render();
+    return;
+  }
+  void syncAccountPlaylists(items).catch(reportError);
+};
+const syncAllAccountPlaylists = async () => {
+  if (Object.keys(state.syncingAccountPlaylistIds).length) return;
+  if (!state.accountPlaylists.length || !state.accountPanelOpen) {
+    await loadAccountPlaylists(state.accountPlaylistProvider || 'netease');
+  }
+  const items = [...(state.accountPlaylists || [])];
+  if (!items.length) {
+    state.actionError = copy.noPlaylists;
+    render();
+    return;
+  }
+  requestAccountPlaylistSync(items);
+};
 const openAlbum = async (album) => { state.selectedAlbum = album; state.selectedAlbumDetail = null; state.albumError = null; state.albumLoading = true; render(); try { if (!streamApi()?.getAlbum) throw new Error(copy.noBridge); state.selectedAlbumDetail = await streamApi().getAlbum({ provider: album.provider, providerAlbumId: album.providerAlbumId }); void probeVisibleTrackQualities(state.selectedAlbumDetail?.tracks); } catch (error) { state.albumError = error instanceof Error ? error.message : String(error); } finally { state.albumLoading = false; render(); } };
 const openArtist = async (artist) => { state.selectedArtist = artist; state.selectedArtistDetail = null; state.artistError = null; state.artistLoading = true; render(); try { if (!streamApi()?.getArtist) throw new Error(copy.noBridge); state.selectedArtistDetail = await streamApi().getArtist({ provider: artist.provider, providerArtistId: artist.providerArtistId }); void probeVisibleTrackQualities(state.selectedArtistDetail?.topTracks); } catch (error) { state.artistError = error instanceof Error ? error.message : String(error); } finally { state.artistLoading = false; render(); } };
 const openPlaylist = async (playlist) => {
@@ -3053,6 +3449,653 @@ const installNativePlaylistImport = () => {
   };
 };
 playlistPageUnsubscribe = installNativePlaylistImport();
+const installNativeArtistStreamingAlbums = () => {
+  const enabled = config.artistStreamingAlbumsEnabled !== false;
+  if (!enabled) return () => {};
+
+  const provider = config.artistStreamingAlbumsProvider === 'qqmusic' ? 'qqmusic' : 'netease';
+  const pageSize = 20;
+  const sectionMarker = 'data-echo-artist-streaming-albums';
+  const detailMarker = 'data-echo-artist-streaming-album-detail';
+  const styleId = 'echo-artist-streaming-albums-style';
+  const appendArtistCover = (parent, source, key) => {
+    const src = source || '';
+    parent.replaceChildren();
+    if (!src) {
+      parent.dataset.empty = 'true';
+      parent.append(makeIcon('disc', 24));
+      return;
+    }
+    parent.dataset.empty = 'false';
+    const image = document.createElement('img');
+    image.alt = '';
+    image.decoding = 'async';
+    image.draggable = false;
+    image.loading = 'lazy';
+    image.width = 320;
+    image.height = 320;
+    image.src = state.failedCoverUrls[key] === src ? defaultCover : src;
+    image.addEventListener('error', () => {
+      if (!src || src === defaultCover) {
+        parent.dataset.empty = 'true';
+        parent.replaceChildren(makeIcon('disc', 24));
+        return;
+      }
+      state.failedCoverUrls[key] = src;
+      persistMemory();
+      parent.dataset.empty = 'true';
+      parent.replaceChildren(makeIcon('disc', 24));
+    });
+    parent.append(image);
+  };
+  const copyLocal = chinese ? {
+    kicker: '流媒体',
+    title: '流媒体专辑',
+    searching: '搜索中...',
+    count: (n) => `${n} 张专辑`,
+    empty: '暂未找到匹配的流媒体专辑。',
+    loadMore: '加载更多',
+    loadingMore: '加载中...',
+    back: '流媒体专辑',
+    reading: '正在读取专辑...',
+    noTracks: '这张专辑没有可显示的歌曲。',
+    playAll: '播放整张',
+    readingAction: '读取中',
+    noPlayable: '这张流媒体专辑暂时没有可播放的歌曲。',
+    bridge: '桌面桥接不可用。请确认 ECHO Streaming 已启用。',
+  } : {
+    kicker: 'Streaming',
+    title: 'Streaming albums',
+    searching: 'Searching...',
+    count: (n) => `${n} albums`,
+    empty: 'No matching streaming albums yet.',
+    loadMore: 'Load more',
+    loadingMore: 'Loading...',
+    back: 'Streaming album',
+    reading: 'Reading album...',
+    noTracks: 'This album has no tracks to display.',
+    playAll: 'Play album',
+    readingAction: 'Reading',
+    noPlayable: 'This streaming album has no playable tracks.',
+    bridge: 'Streaming bridge unavailable. Make sure ECHO Streaming is enabled.',
+  };
+
+  const normalizeText = (value) => String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/\s*\([^)]*\)|\s*（[^）]*）/gu, '')
+    .replace(/[\s._'’"-]+/gu, '');
+  const artistTokens = (value) => String(value || '')
+    .split(/\s*(?:,|、|\/|&|;|；|\|| feat\.? | featuring | with | x |×|\+|＋)\s*/iu)
+    .map(normalizeText)
+    .filter(Boolean);
+  const albumArtistNames = (album) => {
+    const fromArtists = Array.isArray(album?.artists)
+      ? album.artists.map((item) => (typeof item === 'string' ? item : item?.name))
+      : [];
+    return [album?.artist, ...fromArtists].filter(Boolean);
+  };
+  const albumMatchesArtist = (album, artistName, mode = 'exact') => {
+    const expected = normalizeText(artistName);
+    if (!expected) return false;
+    const candidates = [...new Set(albumArtistNames(album).flatMap((name) => artistTokens(name)))];
+    if (candidates.has(expected)) return true;
+    if (mode === 'exact') return false;
+    if (expected.length < 2) return false;
+    const blob = normalizeText(albumArtistNames(album).join(' '));
+    if (blob.includes(expected)) return true;
+    return candidates.some((item) => item.length >= 2 && (item.includes(expected) || expected.includes(item)));
+  };
+  const filterAlbumsForArtist = (albums, artistName) => {
+    const list = Array.isArray(albums) ? albums : [];
+    const exact = list.filter((album) => albumMatchesArtist(album, artistName, 'exact'));
+    if (exact.length) return exact;
+    const soft = list.filter((album) => albumMatchesArtist(album, artistName, 'soft'));
+    return soft;
+  };
+  const pickBestArtist = (artists, artistName) => {
+    const list = Array.isArray(artists) ? artists : [];
+    const expected = normalizeText(artistName);
+    if (!expected || !list.length) return null;
+    const scored = list.map((artist, index) => {
+      const name = normalizeText(artist?.name || '');
+      let score = 0;
+      if (name === expected) score = 300;
+      else if (name.startsWith(expected) || expected.startsWith(name)) score = 200;
+      else if (name.includes(expected) || expected.includes(name)) score = 100;
+      return { artist, score: score - index };
+    }).filter((item) => item.score > 0);
+    scored.sort((left, right) => right.score - left.score);
+    return scored[0]?.artist || null;
+  };
+  const albumKey = (album) => `${album?.provider || ''}:${album?.providerAlbumId || album?.id || ''}`;
+  const mergeAlbums = (current, incoming) => Array.from(new Map(
+    [...(current || []), ...(incoming || [])].map((album) => [albumKey(album), album]),
+  ).values());
+  const albumMeta = (album) => [album?.provider, album?.trackCount ? formatTrackCount(album.trackCount) : null, album?.releaseDate]
+    .filter(Boolean)
+    .join(' / ');
+
+  let styleLoading = null;
+  const styleVersion = String(manifest.version || '0');
+  const ensureStyle = () => {
+    if (packageDisposed) return styleLoading;
+    const existing = document.getElementById(styleId);
+    if (existing?.dataset?.echoStyleVersion === styleVersion) return styleLoading;
+    if (styleLoading) return styleLoading;
+    styleLoading = (async () => {
+      try {
+        if (packageDisposed) return;
+        const current = document.getElementById(styleId);
+        if (current?.dataset?.echoStyleVersion === styleVersion) return;
+        const url = typeof external.assetUrl === 'function'
+          ? `${external.assetUrl('artist-streaming-albums.css')}?v=${encodeURIComponent(styleVersion)}`
+          : null;
+        const css = url
+          ? await (await fetch(url, { cache: 'no-store' })).text()
+          : await external.loadAsset('artist-streaming-albums.css');
+        if (!css || packageDisposed) return;
+        const style = current || document.createElement('style');
+        style.id = styleId;
+        style.dataset.echoStyleVersion = styleVersion;
+        style.textContent = String(css);
+        if (!style.isConnected) document.head.append(style);
+      } catch {}
+    })();
+    return styleLoading;
+  };
+  void ensureStyle();
+
+  const ui = {
+    artistName: '',
+    albums: [],
+    visibleCount: pageSize,
+    nextPage: 2,
+    hasMore: false,
+    loading: false,
+    loadingMore: false,
+    error: null,
+    requestId: 0,
+    selected: null,
+    detail: null,
+    detailLoading: false,
+    detailError: null,
+    resolvingKey: null,
+    providerArtistId: null,
+    loadSource: 'album-search',
+  };
+
+  const liveArtistPage = () => {
+    const page = document.querySelector('.artist-detail-page');
+    if (!page || !page.isConnected) return null;
+    if (page.hidden || page.getAttribute('aria-hidden') === 'true') return null;
+    const style = window.getComputedStyle(page);
+    if (style.display === 'none' || style.visibility === 'hidden') return null;
+    return page;
+  };
+  const liveAlbumsView = () => {
+    const page = liveArtistPage();
+    if (!page) return null;
+    return page.querySelector('.artist-tab-panel.artist-albums-view, .artist-albums-view');
+  };
+  const cleanArtistName = (value) => String(value || '')
+    .replace(/^[\s"'「『【\[]+|[\s"'」』】\]]+$/gu, '')
+    .trim();
+  const readArtistName = (page, albumsView) => {
+    const hero = page?.querySelector('.artist-hero-title, .artist-hero-copy h1, .artist-hero h1');
+    const fromHero = cleanArtistName(hero?.textContent || '');
+    if (fromHero) return fromHero;
+    const aria = String(albumsView?.getAttribute('aria-label') || '');
+    const ariaMatch = aria.match(/^(.*?)(?:\s+的专辑|\s+albums)$/iu) || aria.match(/^Albums for\s+(.+)$/iu);
+    if (ariaMatch?.[1]) return cleanArtistName(ariaMatch[1]);
+    const heading = albumsView?.querySelector('.artist-albums-view-header h2')?.textContent?.trim() || '';
+    return cleanArtistName(heading.replace(/\s*的专辑\s*$/u, ''));
+  };
+
+  const closeDetail = () => {
+    ui.selected = null;
+    ui.detail = null;
+    ui.detailLoading = false;
+    ui.detailError = null;
+    ui.resolvingKey = null;
+    const page = liveArtistPage();
+    if (page) {
+      page.removeAttribute(detailMarker);
+      page.querySelectorAll(`[${detailMarker}-panel]`).forEach((node) => node.remove());
+    }
+  };
+
+  const paintDetail = () => {
+    const page = liveArtistPage();
+    if (!page || !ui.selected) {
+      closeDetail();
+      return;
+    }
+    ensureStyle();
+    page.setAttribute(detailMarker, 'true');
+    let panel = page.querySelector(`[${detailMarker}-panel]`);
+    if (!panel) {
+      panel = make('div', 'album-detail-page artist-streaming-album-detail');
+      panel.setAttribute(detailMarker + '-panel', 'true');
+      page.append(panel);
+    }
+    const album = ui.detail || ui.selected;
+    const tracks = Array.isArray(ui.detail?.tracks) ? ui.detail.tracks : [];
+    panel.replaceChildren();
+    panel.append(actionButton(copyLocal.back, 'arrow', () => {
+      closeDetail();
+      paintSection();
+    }, { className: 'album-back-button', title: copyLocal.back }));
+
+    const hero = make('section', 'album-detail-hero album-detail-switch-surface');
+    hero.setAttribute('aria-label', `${album.title || ''} ${copyLocal.title}`);
+    const cover = make('div', 'album-detail-cover');
+    appendArtistCover(cover, album.coverThumb || album.coverUrl || '', albumKey(album));
+    hero.append(cover);
+    const consoleBox = make('div', 'album-detail-console');
+    const details = make('div', 'album-detail-copy');
+    const title = make('h1', albumTitleClass(album.title || ''), album.title || '');
+    details.append(make('span', 'album-detail-kicker', copyLocal.title), title);
+    if (album.artist) details.append(make('p', 'album-detail-artist-link', album.artist));
+    const meta = make('div', 'album-detail-meta');
+    meta.setAttribute('aria-label', copyLocal.title);
+    [album.provider, album.releaseDate, formatTrackCount(tracks.length || album.trackCount)]
+      .filter(Boolean)
+      .forEach((item) => meta.append(make('span', '', item)));
+    details.append(meta);
+    consoleBox.append(details);
+    const actions = make('div', 'album-detail-actions');
+    const playable = tracks.filter((track) => track.playable !== false);
+    actions.append(actionButton(
+      ui.detailLoading ? copyLocal.readingAction : copyLocal.playAll,
+      ui.detailLoading ? 'refresh' : 'play',
+      () => void playAlbum(),
+      {
+        className: 'album-primary-action',
+        disabled: ui.detailLoading || playable.length === 0,
+        title: copyLocal.playAll,
+      },
+    ));
+    consoleBox.append(actions);
+    if (ui.detailError) consoleBox.append(make('p', 'album-detail-error', ui.detailError));
+    hero.append(consoleBox);
+    const facts = make('aside', 'album-detail-facts');
+    [
+      [copy.source, album.provider || ''],
+      [copy.tracks, formatTrackCount(tracks.length || album.trackCount)],
+      [copy.released, album.releaseDate || copy.unknown],
+    ].forEach(([label, value]) => {
+      const fact = make('div', 'album-fact');
+      fact.append(make('span', '', label), make('strong', '', value));
+      facts.append(fact);
+    });
+    hero.append(facts);
+    panel.append(hero);
+
+    const section = make('section', 'album-detail-track-console');
+    section.setAttribute('aria-label', `${album.title || ''} ${copy.songs}`);
+    const tabs = make('header', 'album-detail-tabs');
+    const tab = make('button', 'album-detail-tab', copy.songs);
+    tab.type = 'button';
+    tab.setAttribute('aria-current', 'page');
+    tabs.append(tab);
+    section.append(tabs);
+    if (ui.detailLoading && !tracks.length) section.append(make('p', 'album-detail-empty', copyLocal.reading));
+    else if (!ui.detailLoading && !tracks.length && !ui.detailError) section.append(make('p', 'album-detail-empty', copyLocal.noTracks));
+    if (tracks.length) {
+      const list = make('div', 'album-track-list');
+      list.setAttribute('role', 'list');
+      const header = make('div', 'album-track-header');
+      header.setAttribute('aria-hidden', 'true');
+      header.append(make('span', '', '#'), make('span', '', copy.trackHeaderTitle), make('span', '', copy.album), make('span', '', copy.trackHeaderDuration), make('span', '', ''));
+      list.append(header);
+      tracks.forEach((track, index) => {
+        const key = trackKey(track);
+        const row = make('button', 'album-track-row');
+        row.type = 'button';
+        row.setAttribute('role', 'listitem');
+        row.dataset.playing = String(state.currentStableKey === key || playCurrentStableKey() === key);
+        row.dataset.unavailable = String(track.playable === false);
+        row.disabled = track.playable === false || Boolean(ui.resolvingKey);
+        row.addEventListener('click', () => void playTrack(track));
+        row.addEventListener('dblclick', () => void playTrack(track));
+        const number = make('span', 'album-track-number');
+        number.append(make('span', '', String(index + 1)));
+        const playIcon = makeIcon(ui.resolvingKey === key ? 'refresh' : 'play', 13);
+        playIcon.classList.add('album-track-row-play');
+        if (ui.resolvingKey === key) playIcon.classList.add('spinning-icon');
+        number.append(playIcon);
+        const copyBox = make('span', 'album-track-copy');
+        copyBox.append(make('strong', '', track.title || 'Untitled'), make('small', '', track.artist || album.artist || ''));
+        const tags = make('span', 'album-track-tags');
+        tags.append(make('em', '', track.album || track.provider || album.provider || ''));
+        row.append(number, copyBox, tags, make('span', 'album-track-duration', formatDuration(track.duration)), make('span', 'album-track-actions'));
+        list.append(row);
+      });
+      section.append(make('div', 'album-track-section', list));
+    }
+    panel.append(section);
+  };
+
+  const playTrack = async (track) => {
+    if (!track || track.playable === false || ui.resolvingKey) return;
+    const key = trackKey(track);
+    ui.resolvingKey = key;
+    ui.detailError = null;
+    paintDetail();
+    try {
+      const detail = ui.detail;
+      const playable = (detail?.tracks || []).filter((item) => item.playable !== false).map((item) => toLibraryTrack(item));
+      await playViaQueue(track, {
+        replaceQueueWith: playable.length ? playable : undefined,
+        source: sourceFor(track.provider, `${detail?.title || track.album || copyLocal.title} / ${track.provider}`),
+      });
+    } catch (error) {
+      ui.detailError = error instanceof Error ? error.message : String(error);
+    } finally {
+      ui.resolvingKey = null;
+      paintDetail();
+    }
+  };
+
+  const playAlbum = async () => {
+    const detail = ui.detail;
+    const playable = (detail?.tracks || []).filter((track) => track.playable !== false).map((track) => toLibraryTrack(track));
+    if (!playable.length) {
+      ui.detailError = copyLocal.noPlayable;
+      paintDetail();
+      return;
+    }
+    ui.detailError = null;
+    paintDetail();
+    try {
+      await playViaQueue(playable[0], {
+        replaceQueueWith: playable,
+        source: sourceFor(detail.provider, `${detail.title} / ${detail.provider}`),
+      });
+    } catch (error) {
+      ui.detailError = error instanceof Error ? error.message : String(error);
+      paintDetail();
+    }
+  };
+
+  const openAlbumDetail = async (album) => {
+    ui.selected = album;
+    ui.detail = null;
+    ui.detailLoading = true;
+    ui.detailError = null;
+    paintDetail();
+    try {
+      const api = streamApi();
+      if (!api?.getAlbum) throw new Error(copyLocal.bridge);
+      ui.detail = await api.getAlbum({ provider: album.provider, providerAlbumId: album.providerAlbumId });
+    } catch (error) {
+      ui.detailError = error instanceof Error ? error.message : String(error);
+    } finally {
+      ui.detailLoading = false;
+      if (ui.selected && albumKey(ui.selected) === albumKey(album)) paintDetail();
+    }
+  };
+
+  const paintSection = () => {
+    if (ui.selected) {
+      paintDetail();
+      return;
+    }
+    const albumsView = liveAlbumsView();
+    const page = liveArtistPage();
+    if (!albumsView || !page) {
+      document.querySelectorAll(`[${sectionMarker}]`).forEach((node) => node.remove());
+      return;
+    }
+    ensureStyle();
+    let section = albumsView.querySelector(`[${sectionMarker}]`);
+    if (!section) {
+      section = make('section', 'artist-streaming-albums');
+      section.setAttribute(sectionMarker, 'true');
+      albumsView.append(section);
+    }
+    section.setAttribute('aria-label', `${ui.artistName || ''} ${copyLocal.title}`);
+    section.replaceChildren();
+    const header = make('header', '');
+    const heading = make('div', '');
+    heading.append(make('span', '', copyLocal.kicker), make('h2', '', copyLocal.title));
+    header.append(heading, make('small', '', ui.loading ? copyLocal.searching : copyLocal.count(ui.albums.length)));
+    section.append(header);
+
+    const visible = ui.albums.slice(0, ui.visibleCount);
+    if (visible.length) {
+      const strip = make('div', 'artist-album-strip artist-streaming-album-strip');
+      visible.forEach((album) => {
+        const card = make('article', 'artist-album-card artist-streaming-album-card');
+        card.setAttribute('role', 'button');
+        card.tabIndex = 0;
+        card.addEventListener('click', () => void openAlbumDetail(album));
+        card.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void openAlbumDetail(album);
+          }
+        });
+        const cover = make('div', 'artist-album-cover');
+        cover.setAttribute('aria-hidden', 'true');
+        appendArtistCover(cover, album.coverUrl || album.coverThumb || '', albumKey(album));
+        const copyBox = make('div', 'artist-album-copy');
+        copyBox.append(make('strong', '', album.title || 'Untitled'), make('span', '', albumMeta(album)));
+        card.append(cover, copyBox);
+        strip.append(card);
+      });
+      section.append(strip);
+    }
+
+    if (ui.hasMore || ui.albums.length > ui.visibleCount) {
+      section.append(actionButton(
+        ui.loadingMore ? copyLocal.loadingMore : copyLocal.loadMore,
+        null,
+        () => void loadMore(),
+        { className: 'artist-load-more', disabled: ui.loading || ui.loadingMore },
+      ));
+    }
+    if (!ui.loading && !ui.albums.length && !ui.error) section.append(make('p', 'artist-detail-empty', copyLocal.empty));
+    if (ui.error) section.append(make('p', 'artist-detail-error', ui.error));
+  };
+
+  const searchAlbumsForArtist = async (api, artistName, page) => {
+    const result = await api.search({
+      provider,
+      query: artistName,
+      mediaTypes: ['album'],
+      page,
+      pageSize,
+    });
+    return {
+      albums: filterAlbumsForArtist(result?.albums || [], artistName),
+      hasMore: Boolean(result?.hasMore),
+      nextPage: Number(result?.page || page) + 1,
+      rawCount: Array.isArray(result?.albums) ? result.albums.length : 0,
+    };
+  };
+
+  const loadAlbums = async (artistName) => {
+    const requestId = ++ui.requestId;
+    ui.artistName = artistName;
+    ui.albums = [];
+    ui.visibleCount = pageSize;
+    ui.nextPage = 2;
+    ui.hasMore = false;
+    ui.loading = true;
+    ui.loadingMore = false;
+    ui.error = null;
+    ui.providerArtistId = null;
+    ui.loadSource = 'album-search';
+    paintSection();
+    try {
+      const api = streamApi();
+      if (!api?.search) throw new Error(copyLocal.bridge);
+
+      let albums = [];
+      let hasMore = false;
+      let nextPage = 2;
+      let loadSource = 'album-search';
+      let providerArtistId = null;
+
+      // Prefer official artist discography: search artist -> getArtist.albums
+      if (typeof api.getArtist === 'function') {
+        try {
+          const artistResult = await api.search({
+            provider,
+            query: artistName,
+            mediaTypes: ['artist'],
+            page: 1,
+            pageSize: 10,
+          });
+          if (requestId !== ui.requestId) return;
+          const match = pickBestArtist(artistResult?.artists || [], artistName);
+          if (match?.providerArtistId) {
+            const detail = await api.getArtist({
+              provider: match.provider || provider,
+              providerArtistId: match.providerArtistId,
+            });
+            if (requestId !== ui.requestId) return;
+            const discography = Array.isArray(detail?.albums) ? detail.albums : [];
+            if (discography.length) {
+              albums = mergeAlbums([], discography);
+              providerArtistId = match.providerArtistId;
+              loadSource = 'artist';
+              // Artist endpoints usually return one page; keep album-search available for "load more".
+              hasMore = true;
+              nextPage = 1;
+            }
+          }
+        } catch {
+          // Fall through to album search.
+        }
+      }
+
+      if (!albums.length) {
+        const searched = await searchAlbumsForArtist(api, artistName, 1);
+        if (requestId !== ui.requestId) return;
+        albums = mergeAlbums([], searched.albums);
+        hasMore = searched.hasMore;
+        nextPage = searched.nextPage;
+        loadSource = 'album-search';
+      }
+
+      ui.albums = albums;
+      ui.hasMore = hasMore;
+      ui.nextPage = nextPage;
+      ui.providerArtistId = providerArtistId;
+      ui.loadSource = loadSource;
+      ui.error = null;
+    } catch (error) {
+      if (requestId !== ui.requestId) return;
+      ui.albums = [];
+      ui.hasMore = false;
+      ui.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (requestId === ui.requestId) {
+        ui.loading = false;
+        paintSection();
+      }
+    }
+  };
+
+  const loadMore = async () => {
+    if (ui.loading || ui.loadingMore) return;
+    if (ui.albums.length > ui.visibleCount) {
+      ui.visibleCount = Math.min(ui.visibleCount + pageSize, ui.albums.length);
+      paintSection();
+      return;
+    }
+    if (!ui.hasMore) return;
+    ui.loadingMore = true;
+    ui.error = null;
+    paintSection();
+    try {
+      const api = streamApi();
+      if (!api?.search) throw new Error(copyLocal.bridge);
+      const page = Math.max(1, Number(ui.nextPage) || 1);
+      const searched = await searchAlbumsForArtist(api, ui.artistName, page);
+      const before = ui.albums.length;
+      ui.albums = mergeAlbums(ui.albums, searched.albums);
+      ui.hasMore = searched.hasMore && (ui.albums.length > before || searched.rawCount > 0);
+      ui.nextPage = searched.nextPage;
+      ui.loadSource = 'album-search';
+      ui.visibleCount = Math.min(ui.visibleCount + pageSize, Math.max(ui.albums.length, ui.visibleCount));
+    } catch (error) {
+      ui.error = error instanceof Error ? error.message : String(error);
+      ui.hasMore = false;
+    } finally {
+      ui.loadingMore = false;
+      paintSection();
+    }
+  };
+
+  let lastArtistKey = '';
+  let mountTimer = 0;
+  const sync = () => {
+    if (disposed || packageDisposed) return;
+    const page = liveArtistPage();
+    const albumsView = liveAlbumsView();
+    if (!page || !albumsView) {
+      if (lastArtistKey) {
+        lastArtistKey = '';
+        ui.requestId += 1;
+        closeDetail();
+        document.querySelectorAll(`[${sectionMarker}]`).forEach((node) => node.remove());
+      }
+      return;
+    }
+    const artistName = readArtistName(page, albumsView);
+    if (!artistName) return;
+    const key = `${artistName}::${provider}`;
+    if (key !== lastArtistKey) {
+      lastArtistKey = key;
+      closeDetail();
+      void loadAlbums(artistName);
+      return;
+    }
+    paintSection();
+  };
+  const schedule = () => {
+    if (mountTimer) return;
+    mountTimer = window.setTimeout(() => {
+      mountTimer = 0;
+      sync();
+    }, 80);
+  };
+
+  ensureStyle();
+  schedule();
+  const observer = new MutationObserver(() => schedule());
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const onRoute = () => schedule();
+  window.addEventListener('app:navigate:route', onRoute);
+  window.addEventListener('popstate', schedule);
+  const poll = window.setInterval(schedule, 1500);
+  const playPoll = window.setInterval(() => {
+    if (!ui.selected) return;
+    const key = playCurrentStableKey();
+    if (key !== state.currentStableKey) {
+      state.currentStableKey = key;
+      paintDetail();
+    }
+  }, 1000);
+
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('app:navigate:route', onRoute);
+    window.removeEventListener('popstate', schedule);
+    window.clearTimeout(mountTimer);
+    window.clearInterval(poll);
+    window.clearInterval(playPoll);
+    ui.requestId += 1;
+    closeDetail();
+    document.querySelectorAll(`[${sectionMarker}]`).forEach((node) => node.remove());
+    document.getElementById(styleId)?.remove();
+  };
+};
+artistStreamingAlbumsUnsubscribe = installNativeArtistStreamingAlbums();
 startDailyRefreshScheduler();
 const formatTogetherClock = (ms) => {
   const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -3406,8 +4449,7 @@ const togetherReportLocal = async (commandType) => {
 togetherInviteFlow = async () => {
   if (!neteaseConnected() && !togetherUi.snapshot.loggedIn) {
     showChromeNotice(togetherCopy.needLogin);
-    state.accountPageOpen = true;
-    render();
+    openAccountsSidebar({ provider: 'netease' });
     return;
   }
   try {
@@ -4006,6 +5048,28 @@ const ncmPlayerPoll = 0;
 installTogetherChrome();
 const installListeners = () => { if (downloadApi()?.onJobsUpdated) downloadUnsubscribe = downloadApi().onJobsUpdated((jobs) => { state.downloadJobs = Array.isArray(jobs) ? jobs : []; indexDownloadJobs(state.downloadJobs); state.downloadJobs.forEach(notifyDownloadJob); render(); }); bindAccountStatuses(); void invokeMain('target', {}).then((result) => { if (result?.directory) state.musicTargetBase = String(result.directory); }).catch(() => undefined); statusTimer = window.setInterval(() => { if (disposed) return; const key = playCurrentStableKey(); if (key !== state.currentStableKey) { state.currentStableKey = key; void similarOnTrackChange(); render(); } }, 1000); };
 
-const stopAccountQrPolling = () => { window.clearTimeout(accountQrTimer); accountQrTimer = 0; state.accountQr = null; };
-const disposeSidebar = external.sidebar.register({ id: 'main', label: manifest.name || copy.streaming, icon: '♫', order: Number(manifest.sidebarOrder) || 40, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); resetSearchInput(); cancelPlaybackPrepare(); stopAccountQrPolling(); closeStreamMenu(); closePlaylistDownloadDialog(); accountUnsubscribe?.(); downloadUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); accountUnsubscribe = null; downloadUnsubscribe = null; pageRoot = null; }; } });
-return () => { disposed = true; packageDisposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); window.clearInterval(dailyRefreshTimer); window.clearInterval(ncmPlayerPoll); resetSearchInput(); cancelPlaybackPrepare(); stopAccountQrPolling(); closeStreamMenu(); closePlaylistDownloadDialog(); disposeTogetherChrome(); document.querySelectorAll('.echo-streaming-comment-panel, .echo-streaming-similar-panel').forEach((node) => node.remove()); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); document.getElementById('echo-community-streaming-spatial')?.remove(); disposeSidebar?.(); };
+const stopAccountQrPolling = () => { window.clearTimeout(accountQrTimer); accountQrTimer = 0; state.accountQr = null; removeNeteaseQrBackdrop(); };
+const streamingSidebarOrder = Number(manifest.sidebarOrder) || 40;
+const disposeSidebar = external.sidebar.register({ id: 'main', label: manifest.name || copy.streaming, icon: '♫', order: streamingSidebarOrder, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); resetSearchInput(); cancelPlaybackPrepare(); closeStreamMenu(); closePlaylistDownloadDialog(); accountUnsubscribe?.(); downloadUnsubscribe?.(); accountUnsubscribe = null; downloadUnsubscribe = null; pageRoot = null; }; } });
+accountsSidebarUnsubscribe = external.sidebar.register({
+  id: 'accounts',
+  label: accountText('流媒体账号', 'Streaming accounts'),
+  icon: '👤',
+  order: streamingSidebarOrder + 1,
+  render(root) {
+    accountRoot = root;
+    accountDisposed = false;
+    root.replaceChildren(renderAccountPage());
+    void loadAccountStatuses().catch((error) => {
+      state.accountErrors.__global = error instanceof Error ? error.message : String(error);
+      refreshAccountPage();
+    });
+    return () => {
+      accountDisposed = true;
+      stopAccountQrPolling();
+      document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove());
+      accountRoot = null;
+    };
+  },
+});
+return () => { disposed = true; packageDisposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); window.clearInterval(dailyRefreshTimer); window.clearInterval(ncmPlayerPoll); resetSearchInput(); cancelPlaybackPrepare(); stopAccountQrPolling(); closeStreamMenu(); closePlaylistDownloadDialog(); disposeTogetherChrome(); document.querySelectorAll('.echo-streaming-comment-panel, .echo-streaming-similar-panel').forEach((node) => node.remove()); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); artistStreamingAlbumsUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); document.getElementById('echo-community-streaming-spatial')?.remove(); document.getElementById('echo-artist-streaming-albums-style')?.remove(); document.querySelectorAll('[data-echo-artist-streaming-albums], [data-echo-artist-streaming-album-detail-panel]').forEach((node) => node.remove()); disposeSidebar?.(); accountsSidebarUnsubscribe?.(); qobuzSidebarUnsubscribe?.(); };

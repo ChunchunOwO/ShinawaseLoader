@@ -780,6 +780,74 @@ const fetchNeteaseRadarPlaylists = async (cookie) => {
   return names;
 };
 
+const mapNeteaseAccountPlaylist = (playlistValue, userId) => {
+  const record = neteaseRecord(playlistValue);
+  const providerPlaylistId = neteaseIdText(record.id ?? record.playlistId);
+  const title = String(record.name || '').trim();
+  if (!providerPlaylistId || !title) return null;
+  const creator = neteaseRecord(record.creator);
+  const creatorUserId = neteaseIdText(creator.userId ?? creator.userid);
+  const cover = record.coverImgUrl ?? record.picUrl ?? record.coverUrl ?? null;
+  const ownership = creatorUserId && creatorUserId === userId
+    ? 'created'
+    : record.subscribed === true || record.ordered === true
+      ? 'favorited'
+      : 'unknown';
+  return {
+    id: `streaming:netease:playlist:${providerPlaylistId}`,
+    provider: 'netease',
+    providerPlaylistId,
+    title,
+    name: title,
+    description: String(record.description || '').trim() || null,
+    creator: String(creator.nickname || creator.name || record.creatorName || '').trim() || null,
+    coverUrl: neteaseImageUrl(cover, 600),
+    coverThumb: neteaseImageUrl(cover, 160),
+    trackCount: Number(record.trackCount ?? record.size ?? record.songCount) || 0,
+    ownership,
+    webUrl: `https://music.163.com/#/playlist?id=${encodeURIComponent(providerPlaylistId)}`,
+  };
+};
+
+const listNeteaseAccountPlaylists = async () => {
+  const session = streamingAccountSession('netease');
+  const cookie = session.cookie;
+  if (!cookie) throw new Error('netease_login_required');
+  const userId = await resolveNeteaseUserId(cookie);
+  if (!userId) throw new Error('netease_login_required');
+
+  const bodies = [];
+  let body = await ncmInvoke('user_playlist', { cookie, uid: userId, limit: 1000, offset: 0 });
+  if (body) bodies.push(body);
+  try {
+    const params = new URLSearchParams({ uid: userId, limit: '1000', offset: '0', includeVideo: 'true' });
+    bodies.push(await probeFetchJson(`https://music.163.com/api/user/playlist?${params.toString()}`, {
+      headers: neteaseApiHeaders(cookie),
+    }));
+  } catch (error) {
+    if (!bodies.length) throw error;
+  }
+
+  const playlists = [];
+  const seen = new Set();
+  for (const item of bodies) {
+    const record = neteaseRecord(item);
+    const lists = Array.isArray(record.playlist) ? record.playlist
+      : Array.isArray(neteaseRecord(record.data).playlist) ? neteaseRecord(record.data).playlist
+      : [];
+    for (const entry of lists) {
+      const mapped = mapNeteaseAccountPlaylist(entry, userId);
+      if (!mapped || seen.has(mapped.providerPlaylistId)) continue;
+      seen.add(mapped.providerPlaylistId);
+      playlists.push(mapped);
+    }
+  }
+  if (!playlists.length) {
+    logMod('WARN', `netease account playlists empty (${session.detail || 'session ok'})`);
+  }
+  return { playlists, authenticated: true, userId };
+};
+
 const fetchNeteaseHistoryDates = async (cookie) => {
   let body = await ncmInvoke('history_recommend_songs', { cookie });
   if (!body) {
@@ -3145,6 +3213,16 @@ const activate = (host) => {
     try {
       const result = await listQqAccountPlaylists();
       try { host.log('INFO', `qq account playlists: ${result.playlists.length} (uin=${result.userId})`); } catch {}
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  host.handle('neteaseAccountPlaylists', async () => {
+    try {
+      const result = await listNeteaseAccountPlaylists();
+      try { host.log('INFO', `netease account playlists: ${result.playlists.length} (uid=${result.userId})`); } catch {}
       return { ok: true, ...result };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

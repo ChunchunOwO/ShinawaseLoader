@@ -79,6 +79,18 @@
       "minimum": 3,
       "maximum": 50,
       "default": 10
+    },
+    "artistStreamingAlbumsEnabled": {
+      "type": "boolean",
+      "title": "流媒体专辑 / Streaming albums on artist pages",
+      "description": "When enabled, artist detail album tabs show a separate streaming-albums strip below local albums. Click an album to open its streaming detail and play.",
+      "default": true
+    },
+    "artistStreamingAlbumsProvider": {
+      "type": "string",
+      "title": "艺人流媒体专辑来源 / Artist streaming albums provider",
+      "enum": ["netease", "qqmusic"],
+      "default": "netease"
     }
   }
 }

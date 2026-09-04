@@ -1,7 +1,7 @@
 /* Spatial streaming shell for the community Mod. Hosts that already ship
    these rules keep working; this file fills the gap for Steam builds. */
 .echo-external-mod-page:has(.streaming-hub--spatial),
-.echo-external-mod-page:has(.streaming-account-view) {
+.echo-external-mod-page:has(.streaming-account-page) {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
@@ -762,9 +762,43 @@
   cursor: pointer;
 }
 
+.streaming-hub--spatial .streaming-account-playlist-row--sync {
+  grid-template-columns: 18px minmax(0, 1fr);
+  cursor: default;
+}
+
+.streaming-hub--spatial .streaming-account-playlist-row--sync > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--theme-accent-solid-bg, #6c8cff);
+}
+
+.streaming-hub--spatial .streaming-account-playlist-open {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .streaming-hub--spatial .streaming-account-playlist-row:hover,
-.streaming-hub--spatial .streaming-account-playlist-row[data-active="true"] {
+.streaming-hub--spatial .streaming-account-playlist-row[data-active="true"],
+.streaming-hub--spatial .streaming-account-playlist-open:hover {
   background: var(--theme-list-row-bg-hover, rgba(0, 0, 0, 0.05));
+}
+
+.streaming-hub--spatial .streaming-account-playlist-row[data-syncing="true"] {
+  opacity: 0.72;
 }
 
 .streaming-hub--spatial .streaming-account-playlist-main {
@@ -775,6 +809,47 @@
 
 .streaming-hub--spatial .streaming-account-playlist-main small {
   color: var(--theme-muted-text, #616977);
+}
+
+.streaming-hub--spatial .streaming-account-sync-hint {
+  margin: 0 0 8px;
+  color: var(--theme-muted-text, #616977);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.streaming-hub--spatial .streaming-account-sync-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 8px;
+}
+
+.streaming-hub--spatial .streaming-account-sync-toolbar > small {
+  margin-right: auto;
+  color: var(--theme-muted-text, #616977);
+  font-size: 11px;
+}
+
+.streaming-hub--spatial .streaming-text-button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--streaming-border, var(--theme-panel-border, rgba(0, 0, 0, 0.08)));
+  border-radius: 999px;
+  background: var(--theme-field-bg, rgba(255, 255, 255, 0.72));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.streaming-hub--spatial .streaming-text-button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .streaming-hub--spatial .streaming-playlist-import label {
@@ -1958,6 +2033,302 @@
   color: inherit;
   font: inherit;
   resize: vertical;
+}
+
+/* NetEase QR login dialog — self-contained so Steam hosts without full
+   settings-qr CSS still get a centered, closable card (ECHODev layout). */
+.settings-qr-login-backdrop[data-echo-streaming-qr] {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(8, 10, 14, 0.55);
+  backdrop-filter: blur(10px);
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(380px, calc(100vw - 32px));
+  min-width: 0;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--theme-panel-border, rgba(38, 40, 46, 0.14));
+  border-radius: 12px;
+  background: var(--theme-panel-bg, #fff);
+  box-shadow: 0 24px 64px rgba(16, 19, 24, 0.28);
+  color: inherit;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: start;
+  gap: 12px;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-header h3,
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-header p,
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-status {
+  margin: 0;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-header h3 {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-header p {
+  margin-top: 4px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-close {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  justify-content: center;
+  padding: 0;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-code {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 236px;
+  height: 236px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: #fff;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-code img {
+  display: block;
+  width: 220px;
+  height: 220px;
+  max-width: 220px;
+  max-height: 220px;
+  object-fit: contain;
+  user-select: none;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-status {
+  min-height: 18px;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-dialog[data-state="expired"] .settings-qr-login-status,
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-dialog[data-state="failed"] .settings-qr-login-status {
+  color: #b45865;
+}
+
+.settings-qr-login-backdrop[data-echo-streaming-qr] .settings-qr-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Unified accounts page — master/detail layout mirrored from ECHO settings. */
+.streaming-account-page {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  height: 100%;
+  min-height: 0;
+  padding: 28px 32px 24px;
+  overflow: auto;
+}
+
+.streaming-account-hero {
+  align-items: start;
+}
+
+.streaming-account-hero .settings-service-account-header-side,
+.streaming-account-hero .streaming-hero-meter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.streaming-account-page .settings-account-overview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.streaming-account-page .settings-account-overview-stat {
+  position: relative;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.streaming-account-page .settings-account-overview-stat::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-muted-text, #6c7179) 58%, transparent);
+  content: '';
+  vertical-align: 1px;
+}
+
+.streaming-account-page .settings-account-overview-stat.is-connected::before {
+  background: #35ad78;
+}
+
+.streaming-account-page .settings-account-overview-stat.is-checking::before {
+  background: var(--theme-accent, #4b55e8);
+}
+
+.streaming-account-workspace {
+  display: grid;
+  grid-template-columns: minmax(210px, 248px) minmax(0, 1fr);
+  min-height: min(520px, 70vh);
+  overflow: hidden;
+  border: 1px solid var(--theme-panel-border, rgba(38, 40, 46, 0.12));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-field-bg, rgba(255, 255, 255, 0.92)) 62%, var(--theme-panel-bg, transparent));
+}
+
+.streaming-account-page .settings-account-service-list {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px;
+  border-right: 1px solid var(--theme-panel-border, rgba(38, 40, 46, 0.1));
+  background: color-mix(in srgb, var(--theme-panel-bg-muted, rgba(0, 0, 0, 0.03)) 84%, transparent);
+  overflow: auto;
+}
+
+.streaming-account-page .settings-account-service-button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 10px;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.streaming-account-page .settings-account-service-button.is-active,
+.streaming-account-page .settings-account-service-button:hover {
+  border-color: color-mix(in srgb, var(--theme-accent, #4b55e8) 24%, transparent);
+  background: color-mix(in srgb, var(--theme-accent-bg, rgba(75, 85, 232, 0.1)) 72%, transparent);
+}
+
+.streaming-account-service-logo {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-accent, #4b55e8) 14%, transparent);
+  color: var(--theme-accent, #4b55e8);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.streaming-account-page .settings-account-service-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.streaming-account-page .settings-account-service-copy strong {
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.streaming-account-page .settings-account-service-state {
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.streaming-account-page .settings-account-service-state.is-connected {
+  color: #35ad78;
+}
+
+.streaming-account-page .settings-account-service-state.is-expired {
+  color: #b46a6f;
+}
+
+.streaming-account-page .settings-account-detail {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px 20px;
+  overflow: auto;
+}
+
+.streaming-account-page .settings-account-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.streaming-account-page .settings-account-detail-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.streaming-account-detail-body {
+  display: grid;
+  gap: 12px;
+}
+
+.streaming-account-advanced {
+  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  padding-top: 10px;
+}
+
+.streaming-account-advanced > summary {
+  cursor: pointer;
+  color: var(--theme-muted-text, #6c7179);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.streaming-account-advanced-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .streaming-account-workspace {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .streaming-account-page .settings-account-service-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--theme-panel-border, rgba(38, 40, 46, 0.1));
+    max-height: 220px;
+  }
 }
 
 .echo-streaming-phone-login {
