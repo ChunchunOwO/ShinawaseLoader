@@ -26,7 +26,7 @@ Every installer example ships a `config.schema.json` fallback form; most also in
 | --- | --- | --- |
 | ECHO Lyrics Match Whitebox | [ECHO-LyricsMatchWhitebox](ECHO-LyricsMatchWhitebox) | `examples/packages/ECHO-LyricsMatchWhitebox.echomod` |
 
-Opens the built-in lyrics candidate panel during network matching (white-box). Not in the installer optional list; import the `.echomod` yourself.
+Lyrics matching uses the official titlebar **歌词设置** button → right-side drawer. Does **not** auto-pop a floating overlay on every play, and does **not** inject a circular corner icon. Not in the installer optional list; import the `.echomod` yourself.
 
 ## Reference mods
 

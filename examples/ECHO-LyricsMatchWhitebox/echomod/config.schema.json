@@ -4,13 +4,25 @@
     "forceEnable": {
       "type": "boolean",
       "title": "启动时开启自动弹出候选",
-      "description": "把 lyricsCandidatePanelAutoOpenEnabled 设为 true，让官方歌词候选面板显示网络匹配结果。",
-      "default": true
+      "description": "把 lyricsCandidatePanelAutoOpenEnabled 设为 true，播放时在歌词页自动弹出候选浮层。默认关闭——请用右上角图标打开抽屉。",
+      "default": false
     },
     "keepForced": {
       "type": "boolean",
       "title": "保持强制开启",
-      "description": "默认关闭。开启后若官方面板或其它逻辑关掉开关，Mod 会再次打开（会覆盖用户在官方「自动弹出」上的关闭操作）。",
+      "description": "默认关闭。仅在 forceEnable 开启时有意义：若官方面板关掉开关，Mod 会再次打开。",
+      "default": false
+    },
+    "disableAutoOpenOnBoot": {
+      "type": "boolean",
+      "title": "启动时关闭自动弹出",
+      "description": "清除此前白盒强制打开的自动弹出，避免每次播放都盖住歌词页。forceEnable 开启时忽略。",
+      "default": true
+    },
+    "injectCornerIcon": {
+      "type": "boolean",
+      "title": "右上角歌词设置图标",
+      "description": "不要开启。会在标题栏上叠一个深色圆钮；歌词设置请用官方标题栏按钮。",
       "default": false
     },
     "injectToggle": {
@@ -22,19 +34,19 @@
     "injectRematch": {
       "type": "boolean",
       "title": "注入重新匹配按钮",
-      "description": "在侧栏歌词抽屉「当前歌曲」操作区注入「重新匹配」，点击后派发 lyrics:rematch-requested 并打开候选面板。",
+      "description": "在歌词抽屉「当前歌曲」操作区注入「重新匹配」，点击后派发 lyrics:rematch-requested。",
       "default": true
     },
     "closeDrawerOnRematch": {
       "type": "boolean",
       "title": "重新匹配后关闭抽屉",
-      "description": "方便立刻看到歌词页上的候选面板。",
-      "default": true
+      "description": "默认关闭，匹配结果留在抽屉「匹配」页（与 ECHODev 一致）。开启后会关掉抽屉以便看歌词页浮层候选。",
+      "default": false
     },
     "notify": {
       "type": "boolean",
       "title": "显示提示",
-      "description": "开启白盒 / 重新匹配时 toast。",
+      "description": "开启 / 关闭自动弹出、重新匹配时 toast。",
       "default": true
     },
     "locale": {

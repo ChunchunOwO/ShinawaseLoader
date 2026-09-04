@@ -1,22 +1,28 @@
 /**
  * ECHO Lyrics Match Whitebox
  *
- * Steam hides the lyrics candidate panel by default
- * (lyricsCandidatePanelAutoOpenEnabled === false). This mod turns that flag on
- * so the built-in lyrics-match-panel shows network match results.
- * Also restores a "重新匹配" action in the lyrics settings drawer.
+ * Restores drawer rematch + optional candidate panel, but does NOT auto-pop a
+ * floating overlay on every track change. Entry point is a persistent
+ * top-right lyrics-settings icon on the lyrics page → opens the official
+ * right-side drawer (same as ECHODev / titlebar「歌词设置」).
  *
  * Does not patch ECHO / ECHOSteam source.
  */
 const external = echoExternalMod;
 const config = external.config && typeof external.config === 'object' ? external.config : {};
 
-const forceEnable = config.forceEnable !== false;
-/** Re-enable if something else clears the flag. Default off so we do not fight the built-in panel checkbox. */
+/** Legacy: force-enable floating candidate panel. Default OFF — auto-pop is the bug. */
+const forceEnable = config.forceEnable === true;
+/** Re-enable if something else clears the flag. Only meaningful with forceEnable. */
 const keepForced = config.keepForced === true;
+/** On boot, clear a previously forced auto-open so play no longer pops the overlay. */
+const disableAutoOpenOnBoot = config.disableAutoOpenOnBoot !== false;
 const injectToggle = config.injectToggle !== false;
 const injectRematch = config.injectRematch !== false;
-const closeDrawerOnRematch = config.closeDrawerOnRematch !== false;
+/** Keep drawer open on rematch so matching stays in the side drawer (ECHODev-style). */
+const closeDrawerOnRematch = config.closeDrawerOnRematch === true;
+/** Never inject a floating corner blob; lyrics settings already lives in the titlebar. */
+const injectCornerIcon = config.injectCornerIcon === true;
 const notify = config.notify !== false;
 
 const chinese = (() => {
@@ -28,33 +34,43 @@ const chinese = (() => {
 
 const copy = {
   toastOn: chinese
-    ? '歌词匹配白盒已开启：网络匹配时会显示候选结果。'
-    : 'Lyrics match white-box enabled: candidates will appear during network matching.',
+    ? '歌词匹配白盒：已开启自动弹出候选（播放时会盖住歌词页）。'
+    : 'Lyrics match white-box: auto-open candidates enabled (covers the lyrics page while playing).',
+  toastOff: chinese
+    ? '歌词匹配改为右上角图标进入抽屉，播放时不再自动弹出浮层。'
+    : 'Lyrics matching uses the top-right icon → drawer; no auto overlay while playing.',
   toggleLabel: chinese ? '自动打开候选' : 'Auto open lyrics chooser',
   toggleHint: chinese
-    ? '网络匹配时在歌词页弹出候选面板（来源、分数、预览）。'
-    : 'Show the lyrics candidate panel during network matching.',
+    ? '网络匹配时在歌词页弹出候选浮层。默认关闭；需要时在抽屉里手动打开。'
+    : 'Show the floating candidate panel during network matching. Off by default.',
   rematchTitle: chinese ? '重新匹配' : 'Rematch lyrics',
-  // Keep short — long hints blow up Steam's audio-device-pill grid in the drawer.
   rematchHint: chinese
     ? '清理当前缓存并重新查找'
     : 'Clear the current cache and search again',
   rematchAction: chinese ? '匹配' : 'Match',
   rematchBusy: chinese ? '匹配中…' : 'Matching…',
-  rematchToast: chinese ? '已开始重新匹配，请查看候选面板。' : 'Rematch started — check the candidate panel.',
+  rematchToast: chinese
+    ? '已开始重新匹配，请在抽屉「匹配」页查看结果。'
+    : 'Rematch started — check the Match tab in the drawer.',
+  cornerIconLabel: chinese ? '歌词设置' : 'Lyrics settings',
+  cornerIconTitle: chinese
+    ? '打开歌词设置抽屉（匹配 / 显示 / 桌面 / 高级）'
+    : 'Open lyrics settings drawer (Match / Display / Desktop / Advanced)',
 };
 
 const TOGGLE_HOST = 'data-echo-lmwb-host';
 const TOGGLE_INPUT = 'data-echo-lmwb-input';
 const REMATCH_HOST = 'data-echo-lmwb-rematch';
+const CORNER_HOST = 'data-echo-lmwb-corner';
 const STYLE_HOST = 'data-echo-lmwb-style';
 const SETTING_KEY = 'lyricsCandidatePanelAutoOpenEnabled';
 const REMATCH_EVENT = 'lyrics:rematch-requested';
+const OPEN_DRAWER_EVENT = 'app:open-lyrics-settings';
 
 /**
  * Steam/asar sometimes clips match-panel actions; also keep our drawer injects
  * from stretching host audio-device-pill / engine-meter grids.
- * All selectors stay under .lyrics-match-panel or [data-echo-lmwb-*].
+ * Keep the official lyrics settings drawer docked to the right (ECHODev-style).
  */
 const PANEL_LAYOUT_CSS = `
 .lyrics-match-panel {
@@ -171,6 +187,44 @@ const PANEL_LAYOUT_CSS = `
   overflow: hidden !important;
   white-space: normal !important;
 }
+
+/* Keep lyrics settings as a right-side drawer, not a centered floating card. */
+.lyrics-settings-drawer-root.audio-drawer-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 130 !important;
+  pointer-events: none !important;
+}
+.lyrics-settings-drawer-root[data-open="true"] {
+  pointer-events: auto !important;
+}
+.lyrics-settings-drawer-root .audio-drawer.lyrics-settings-drawer {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: auto !important;
+  width: min(460px, calc(100vw - 18px)) !important;
+  max-width: min(460px, calc(100vw - 18px)) !important;
+  height: auto !important;
+  margin: 0 !important;
+  border-radius: 30px 0 0 30px !important;
+  transform-origin: right center !important;
+}
+
+/* Default: never paint the leftover circular blob. Official titlebar already has 歌词设置. */
+button[data-echo-lmwb-corner],
+button.echo-mv-corner {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+}
 `;
 
 let disposed = false;
@@ -185,12 +239,13 @@ let injectTimer = 0;
 let bootTimer = 0;
 let bootAttempts = 0;
 let rematchBusy = false;
+let cornerSyncTimer = 0;
 
 const cleanups = [];
 const MAX_BOOT_ATTEMPTS = 20;
 const BOOT_RETRY_MS = 500;
 const INJECT_DEBOUNCE_MS = 200;
-const needsDomInject = injectToggle || injectRematch;
+const needsDomInject = injectToggle || injectRematch || injectCornerIcon;
 
 const getApp = () => {
   const fromExternal = external.echo?.app;
@@ -250,6 +305,7 @@ const writeEnabled = async (enabled) => {
       syncInjectedInputs(cachedEnabled);
       dispatchSettings(cachedEnabled);
     }
+    try { external.log?.warn?.('[lyrics-match-whitebox] enable failed', error); } catch {}
     throw error;
   } finally {
     selfWriteDepth = Math.max(0, selfWriteDepth - 1);
@@ -261,6 +317,17 @@ const syncInjectedInputs = (enabled) => {
   for (const input of document.querySelectorAll(`input[${TOGGLE_INPUT}]`)) {
     if (input.checked !== enabled) input.checked = enabled;
   }
+};
+
+const closeFloatingMatchPanel = () => {
+  try {
+    const close = document.querySelector('.lyrics-match-panel .lyrics-match-close, .lyrics-match-panel button[aria-label*="Close" i], .lyrics-match-panel button[title*="Close" i]');
+    if (close && typeof close.click === 'function') {
+      close.click();
+      return true;
+    }
+  } catch {}
+  return false;
 };
 
 const ensureEnabled = async ({ quiet = false } = {}) => {
@@ -293,15 +360,53 @@ const ensureEnabled = async ({ quiet = false } = {}) => {
   }
 };
 
+/** Clear a previously forced auto-open so play no longer covers the lyrics page. */
+const ensureAutoOpenDisabled = async ({ quiet = false } = {}) => {
+  if (forceEnable || disposed || enabling) return false;
+  if (!disableAutoOpenOnBoot) return false;
+  const app = getApp();
+  if (!app) return false;
+
+  enabling = true;
+  try {
+    const current = await readEnabled();
+    if (disposed) return false;
+    if (current === null) return false;
+    cachedEnabled = current;
+    if (current === false) {
+      syncInjectedInputs(false);
+      closeFloatingMatchPanel();
+      return true;
+    }
+
+    const confirmed = await writeEnabled(false);
+    closeFloatingMatchPanel();
+    if (confirmed === false && !quiet && notify && !lastNotified && !disposed) {
+      lastNotified = true;
+      try { external.toast?.(copy.toastOff); } catch {}
+    }
+    return confirmed === false;
+  } catch (error) {
+    try { external.log?.warn?.('[lyrics-match-whitebox] disable auto-open failed', error); } catch {}
+    return false;
+  } finally {
+    enabling = false;
+  }
+};
+
 const scheduleBoot = () => {
-  if (disposed || !forceEnable || userOptedOut) return;
+  if (disposed) return;
+  if (!forceEnable && !disableAutoOpenOnBoot) return;
   if (bootTimer) window.clearTimeout(bootTimer);
   bootTimer = window.setTimeout(async () => {
     bootTimer = 0;
-    if (disposed || userOptedOut) return;
-    const ok = await ensureEnabled({ quiet: bootAttempts > 0 });
+    if (disposed) return;
+    const ok = forceEnable
+      ? await ensureEnabled({ quiet: bootAttempts > 0 })
+      : await ensureAutoOpenDisabled({ quiet: bootAttempts > 0 });
     bootAttempts += 1;
-    if (ok || disposed || userOptedOut || bootAttempts >= MAX_BOOT_ATTEMPTS) return;
+    if (ok || disposed || bootAttempts >= MAX_BOOT_ATTEMPTS) return;
+    if (forceEnable && userOptedOut) return;
     scheduleBoot();
   }, bootAttempts === 0 ? 0 : BOOT_RETRY_MS);
 };
@@ -346,8 +451,6 @@ const onSettingsEvent = (event) => {
 };
 
 const findInjectAnchor = () => {
-  // Prefer match-tab automation: display-category polish uses display:contents and
-  // hides .lyrics-match-threshold-control, which used to park our row in a weird slot.
   const automation = document.querySelector(
     '.lyrics-settings-drawer .lyrics-current-track-section .lyrics-current-track-automation',
   );
@@ -374,7 +477,6 @@ const buildToggleRow = (enabled) => {
   const row = document.createElement('label');
   row.className = 'audio-toggle-row';
   row.setAttribute(TOGGLE_HOST, '1');
-  // Let host .audio-toggle-row styles win inside the drawer; only set min-width.
   row.style.minWidth = '0';
 
   const text = document.createElement('span');
@@ -405,6 +507,7 @@ const buildToggleRow = (enabled) => {
           input.checked = confirmed;
           userOptedOut = !confirmed;
         }
+        if (!confirmed) closeFloatingMatchPanel();
       } catch (error) {
         try { external.log?.warn?.('[lyrics-match-whitebox] toggle failed', error); } catch {}
         input.checked = cachedEnabled === true;
@@ -426,14 +529,22 @@ const closeLyricsSettingsDrawer = () => {
   ];
   for (const selector of selectors) {
     const button = document.querySelector(selector);
-    if (button instanceof HTMLElement) {
+    if (button && typeof button.click === 'function') {
       button.click();
       return true;
     }
   }
-  // Fallback: Escape often closes the drawer on the lyrics page.
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
   return false;
+};
+
+const openLyricsSettingsDrawer = () => {
+  window.dispatchEvent(new Event(OPEN_DRAWER_EVENT));
+};
+
+const isLyricsSettingsDrawerOpen = () => {
+  const root = document.querySelector('.lyrics-settings-drawer-root');
+  return root?.getAttribute('data-open') === 'true';
 };
 
 const requestRematch = async () => {
@@ -441,8 +552,6 @@ const requestRematch = async () => {
   rematchBusy = true;
   setRematchBusy(true);
   try {
-    // Rematch handler opens the panel itself, but keep auto-open on so later
-    // tracks also show candidates without another manual rematch.
     if (forceEnable && !userOptedOut) {
       await ensureEnabled({ quiet: true });
     }
@@ -513,6 +622,54 @@ const buildRematchButton = () => {
   return button;
 };
 
+const buildCornerIcon = () => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.setAttribute(CORNER_HOST, '1');
+  button.setAttribute('aria-label', copy.cornerIconLabel);
+  button.title = copy.cornerIconTitle;
+  button.setAttribute('data-active', isLyricsSettingsDrawerOpen() ? 'true' : 'false');
+
+  // Captions-style icon (matches ECHODev titlebar lyrics-settings).
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('fill', 'none');
+  icon.setAttribute('stroke', 'currentColor');
+  icon.setAttribute('stroke-width', '2');
+  icon.setAttribute('stroke-linecap', 'round');
+  icon.setAttribute('stroke-linejoin', 'round');
+  icon.setAttribute('aria-hidden', 'true');
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('width', '18');
+  rect.setAttribute('height', '14');
+  rect.setAttribute('x', '3');
+  rect.setAttribute('y', '5');
+  rect.setAttribute('rx', '2');
+  rect.setAttribute('ry', '2');
+  const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line1.setAttribute('d', 'M7 15h4M15 15h2M7 11h2M13 11h4');
+  icon.append(rect, line1);
+  button.append(icon);
+
+  button.addEventListener('click', (event) => {
+    try { event?.preventDefault?.(); } catch {}
+    try { event?.stopPropagation?.(); } catch {}
+    if (isLyricsSettingsDrawerOpen()) {
+      closeLyricsSettingsDrawer();
+    } else {
+      openLyricsSettingsDrawer();
+    }
+    window.setTimeout(() => syncCornerIconState(), 120);
+  });
+  return button;
+};
+
+const syncCornerIconState = () => {
+  const button = document.querySelector(`button[${CORNER_HOST}]`);
+  if (!button || typeof button.setAttribute !== 'function') return;
+  button.setAttribute('data-active', isLyricsSettingsDrawerOpen() ? 'true' : 'false');
+};
+
 const injectToggleRow = () => {
   if (!injectToggle || disposed) return;
 
@@ -565,14 +722,37 @@ const injectRematchButton = () => {
   existing?.remove();
   const button = buildRematchButton();
   if (rematchBusy) button.disabled = true;
-  // Put rematch first, before remove / instrumental — matches ECHODev order.
   actions.insertBefore(button, actions.firstChild);
+};
+
+const injectCornerButton = () => {
+  document.querySelectorAll(`button[${CORNER_HOST}], button.echo-mv-corner`).forEach((node) => {
+    try { node.remove(); } catch {}
+  });
+};
+
+const injectPanelLayoutCss = () => {
+  if (disposed) return false;
+  let style = document.querySelector(`style[${STYLE_HOST}]`);
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute(STYLE_HOST, '1');
+    const host = document.head || document.documentElement || document.body;
+    if (!host) return false;
+    host.appendChild(style);
+  }
+  if (style.textContent !== PANEL_LAYOUT_CSS) {
+    style.textContent = PANEL_LAYOUT_CSS;
+  }
+  return (style.textContent || '').length > 100;
 };
 
 const injectAll = () => {
   if (disposed) return;
+  injectPanelLayoutCss();
   injectToggleRow();
   injectRematchButton();
+  injectCornerButton();
 };
 
 const scheduleInject = () => {
@@ -595,36 +775,32 @@ if (needsDomInject) {
   const observer = new MutationObserver(() => {
     if (disposed) return;
     scheduleInject();
+    if (cornerSyncTimer) window.clearTimeout(cornerSyncTimer);
+    cornerSyncTimer = window.setTimeout(() => {
+      cornerSyncTimer = 0;
+      if (!disposed) syncCornerIconState();
+    }, 80);
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-open', 'class'] });
   cleanups.push(() => observer.disconnect());
 }
-
-const injectPanelLayoutCss = () => {
-  if (disposed) return;
-  let style = document.querySelector(`style[${STYLE_HOST}]`);
-  if (!style) {
-    style = document.createElement('style');
-    style.setAttribute(STYLE_HOST, '1');
-    (document.head || document.documentElement).appendChild(style);
-  }
-  if (style.textContent !== PANEL_LAYOUT_CSS) {
-    style.textContent = PANEL_LAYOUT_CSS;
-  }
-};
 
 injectPanelLayoutCss();
 scheduleBoot();
 scheduleInject();
+// Re-assert CSS shortly after boot — loader re-inject / page transitions can drop the tag.
+window.setTimeout(() => { if (!disposed) injectPanelLayoutCss(); }, 800);
+window.setTimeout(() => { if (!disposed) injectPanelLayoutCss(); }, 2500);
 
 return () => {
   disposed = true;
   if (bootTimer) window.clearTimeout(bootTimer);
   if (injectTimer) window.clearTimeout(injectTimer);
+  if (cornerSyncTimer) window.clearTimeout(cornerSyncTimer);
   for (const cleanup of cleanups.splice(0)) {
     try { cleanup(); } catch {}
   }
-  for (const node of document.querySelectorAll(`[${TOGGLE_HOST}], button[${REMATCH_HOST}], style[${STYLE_HOST}]`)) {
+  for (const node of document.querySelectorAll(`[${TOGGLE_HOST}], button[${REMATCH_HOST}], button[${CORNER_HOST}], style[${STYLE_HOST}]`)) {
     try { node.remove(); } catch {}
   }
 };

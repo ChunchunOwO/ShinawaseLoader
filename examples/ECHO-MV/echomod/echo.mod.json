@@ -1,9 +1,9 @@
 {
   "id": "echo.mv",
   "name": "ECHO MV",
-  "version": "1.0.10",
+  "version": "1.0.15",
   "minEchoVersion": "26.8.15",
-  "description": "恢复 ECHO 隐藏的 MV 功能：播放条只留 MV 入口，歌词页面板与设置为 Mod 自建，Bilibili 应用内播放 + YouTube 搜索。",
+  "description": "恢复 ECHO 隐藏的 MV 功能：自动搜索并尽量自动应用匹配 MV，播放条入口 + 歌词页面板/设置。",
   "icon": "icon.svg",
   "entry": "mod.js",
   "main": "main.cjs",

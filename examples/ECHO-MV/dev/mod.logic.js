@@ -582,6 +582,7 @@ const state = {
   audioStatus: null,
   requestId: 0,
   preloadAttempt: null,
+  preloadRetryAttempt: null,
   lastSyncAt: 0,
   seeking: false,
   failedCovers: new Set(),
@@ -829,12 +830,15 @@ const loadSelected = async (options = {}) => {
       }
     }
     const canSearch = shouldAutoSearch() && (panelActive() || nextSettings.autoSearch !== false);
-    if (!video && canSearch && state.preloadAttempt !== state.trackId) {
+    const alreadyPreloaded = state.preloadAttempt === state.trackId;
+    if (!video && canSearch && !alreadyPreloaded) {
       state.preloadAttempt = state.trackId;
-        video = (await searchCandidatesForActive()) || (await mvApi.getSelected(effectiveId));
+      video = (await searchCandidatesForActive()) || (await mvApi.getSelected(effectiveId));
     }
     let resolved = await resolveNetworkVideo(video);
-    if (isUnplayableSearchCandidate(resolved) && canSearch && state.preloadAttempt !== state.trackId) {
+    // Retry once when the first hit is an unplayable search stub (resolve may still succeed on next pass).
+    if (isUnplayableSearchCandidate(resolved) && canSearch && state.preloadRetryAttempt !== state.trackId) {
+      state.preloadRetryAttempt = state.trackId;
       state.preloadAttempt = state.trackId;
       video = (await searchCandidatesForActive()) || (await mvApi.getSelected(effectiveId));
       resolved = await resolveNetworkVideo(video);
@@ -907,6 +911,7 @@ const refreshPlayback = async () => {
       state.streamingTarget = null;
     }
     state.preloadAttempt = null;
+    state.preloadRetryAttempt = null;
     state.lastSyncAt = 0;
     state.seeking = false;
     state.noticeDismissed = false;
@@ -997,9 +1002,15 @@ const applyPageFlags = () => {
   hideOfficialMvChrome(page);
   page?.querySelectorAll('aside.echo-mv-panel').forEach((node) => node.remove());
   if (refs.transportBtn) {
+    refs.transportBtn.classList.toggle('is-soft-active', mvOn);
+    refs.transportBtn.setAttribute('aria-pressed', String(mvOn));
+  }
+  if (refs.settingsBtn) {
     const open = isDrawerDomOpen();
-    refs.transportBtn.classList.toggle('is-soft-active', open);
-    refs.transportBtn.setAttribute('aria-pressed', String(open));
+    refs.settingsBtn.hidden = false;
+    refs.settingsBtn.dataset.active = open ? 'true' : 'false';
+    refs.settingsBtn.dataset.drawerOpen = open ? 'true' : 'false';
+    refs.settingsBtn.setAttribute('aria-pressed', String(open));
   }
 };
 
@@ -1228,9 +1239,17 @@ const runBusy = async (work) => {
 
 const bestAutoCandidate = (candidates) => {
   const threshold = state.settings.autoApplyThreshold ?? 0.7;
-  return [...(candidates || [])]
-    .filter((item) => Number(item.score) >= threshold)
-    .sort((left, right) => (Number(right.score) || 0) - (Number(left.score) || 0))[0] || null;
+  const softFloor = Math.min(threshold, 0.6);
+  const ranked = [...(candidates || [])]
+    .filter((item) => Number(item.score) >= softFloor)
+    .sort((left, right) => (Number(right.score) || 0) - (Number(left.score) || 0));
+  if (!ranked.length) return null;
+  const best = ranked[0];
+  const second = ranked[1];
+  if (Number(best.score) >= threshold) return best;
+  // Soft fallback: clear lead or solitary candidate above the soft floor.
+  if (!second || Number(best.score) - Number(second.score) >= 0.08) return best;
+  return null;
 };
 
 const searchNetwork = () => runBusy(async () => {
@@ -1564,8 +1583,9 @@ const renderDrawer = () => {
   const signature = sheetSignature();
   const root = refs.drawerRoot && refs.drawerRoot.isConnected
     ? refs.drawerRoot
-    : el('div', 'echo-mv-root no-drag', { role: 'presentation' });
+    : el('div', 'audio-drawer-root mv-settings-drawer-root echo-mv-root no-drag', { role: 'presentation' });
   refs.drawerRoot = root;
+  root.className = 'audio-drawer-root mv-settings-drawer-root echo-mv-root no-drag';
   root.dataset.open = state.drawerMotion ? 'true' : 'false';
   root.dataset.collapsed = collapsed ? 'true' : 'false';
   if (signature === lastDrawerSignature && root.isConnected && root.querySelector('.echo-mv-sheet')) return;
@@ -1577,37 +1597,39 @@ const renderDrawer = () => {
   pendingDrawerRender = false;
   const activeTitle = state.currentTrack ? `${state.currentTrack.title} - ${state.currentTrack.artist || state.currentTrack.albumArtist || ''}` : (state.trackId || t('mvSettings.status.noActiveTrack'));
   const reason = unavailableReason();
-  const scrim = btn('echo-mv-scrim', { 'aria-label': t('mvSettings.action.close'), onclick: onSheetScrimClick });
-  const sheet = el('aside', 'echo-mv-sheet', { 'aria-label': t('mvSettings.aria.drawer') });
-  const enable = el('label', 'echo-mv-enable');
-  const enableInput = el('input', '', { type: 'checkbox', checked: enabled });
-  enableInput.addEventListener('change', () => void patchSettings({ enabled: enableInput.checked }));
-  enable.append(enableInput, el('span', '', null, t('mvSettings.general.enabled')));
-  const bar = el('div', 'echo-mv-sheet-bar');
-  bar.append(
-    el('strong', '', null, t('mvPanel.title')),
-    el('div', 'echo-mv-sheet-actions', null, [
-      enable,
-      btn('echo-mv-icon-btn', {
-        'aria-label': collapsed ? t('mvPanel.action.expand') : t('mvPanel.action.hide'),
-        title: collapsed ? t('mvPanel.action.expand') : t('mvPanel.action.hide'),
-        onclick: () => { state.sheetCollapsed = !state.sheetCollapsed; scheduleRender(); },
-      }, [svgIcon(collapsed ? 'chevronDown' : 'minus', 16)]),
-      btn('echo-mv-icon-btn', {
-        'aria-label': t('mvPanel.action.close'),
-        title: t('mvSettings.action.close'),
-        onclick: () => openDrawer(false),
-      }, [svgIcon('x', 16)]),
+  const scrim = btn('audio-drawer-scrim', { 'aria-label': t('mvSettings.action.close'), onclick: onSheetScrimClick });
+  const sheet = el('aside', 'audio-drawer mv-settings-drawer echo-mv-sheet', { 'aria-label': t('mvSettings.aria.drawer') });
+  const header = el('header', 'audio-drawer-header');
+  header.append(
+    el('div', '', null, [svgIcon('clapperboard', 18), el('h2', '', null, t('mvSettings.title'))]),
+    btn('audio-drawer-close', {
+      type: 'button',
+      'aria-label': t('mvSettings.action.close'),
+      title: t('mvSettings.action.close'),
+      onclick: () => openDrawer(false),
+    }, [svgIcon('x', 20)]),
+  );
+  const meter = el('section', 'audio-engine-meter mv-engine-meter', { 'aria-label': t('mvSettings.aria.engineStatus') });
+  meter.append(
+    el('div', 'audio-engine-meter__top', null, [
+      el('span', 'audio-engine-meter__icon', null, [svgIcon('monitorPlay', 17)]),
+      el('div', '', null, [el('span', '', null, t('mvSettings.engine.title')), el('strong', '', null, activeTitle)]),
+      svgIcon('shieldCheck', 15),
+    ]),
+    el('div', 'audio-engine-meter__grid', null, [
+      el('span', '', null, [el('em', '', null, t('mvSettings.engine.mvTitle')), el('strong', '', null, formatVideoTitle(selected, t('mvSettings.status.none')))]),
+      el('span', '', null, [el('em', '', null, t('mvSettings.engine.quality')), el('strong', '', null, formatVideoQuality(selected, t('mvSettings.status.none')))]),
     ]),
   );
-  const status = el('p', 'echo-mv-status', { 'aria-live': 'polite' }, reason || selected?.title || (state.isLoading ? t('mvPanel.status.loading') : t('mvSettings.engine.title')));
-  const current = el('div', 'echo-mv-current');
-  current.append(
-    el('span', '', null, [el('small', '', null, t('mvSettings.engine.title')), el('strong', '', null, activeTitle)]),
-    el('span', '', null, [el('small', '', null, t('mvSettings.engine.mvTitle')), el('strong', '', null, formatVideoTitle(selected, t('mvSettings.status.none')))]),
-    el('span', '', null, [el('small', '', null, t('mvSettings.engine.quality')), el('strong', '', null, formatVideoQuality(selected, t('mvSettings.status.none')))]),
+  const master = switchRow(
+    enabled,
+    t('mvSettings.general.enabled'),
+    enabled ? t('mvSettings.status.on') : t('mvSettings.status.off'),
+    () => void patchSettings({ enabled: !enabled }),
+    'mv-master-toggle',
   );
-  const body = el('div', 'echo-mv-sheet-body');
+  const status = el('p', 'echo-mv-status', { 'aria-live': 'polite' }, reason || (state.isLoading ? t('mvPanel.status.loading') : ''));
+  const body = el('div', 'audio-drawer-scroll echo-mv-sheet-body');
   const binding = el('section', 'echo-mv-section');
   binding.append(
     el('div', 'echo-mv-section-title', null, [svgIcon('database', 17), el('h3', '', null, t('mvSettings.binding.title'))]),
@@ -1938,10 +1960,13 @@ const renderDrawer = () => {
     });
     network.append(sources);
   }
-  body.append(binding, network);
-  if (state.error && state.error !== state.networkError) body.append(el('p', 'echo-mv-error', null, state.error));
-  sheet.append(bar);
-  if (!collapsed) sheet.append(status, current, renderQualityChips(), body);
+  body.append(header, meter, master);
+  if (!collapsed) {
+    if (reason || state.isLoading) body.append(status);
+    body.append(renderQualityChips(), binding, network);
+    if (state.error && state.error !== state.networkError) body.append(el('p', 'audio-drawer-error echo-mv-error', null, state.error));
+  }
+  sheet.append(body);
   const active = document.activeElement;
   const restore = root.contains(active) ? {
     key: sheetFocusKey(active),
@@ -2063,12 +2088,61 @@ const onMvButtonClick = (event) => {
   const now = performance.now();
   if (now - lastEntryToggleAt < 250) return;
   lastEntryToggleAt = now;
-  reconcileDrawerState();
-  const shouldOpen = !isDrawerDomOpen();
-  if (shouldOpen && !isLyricsPageVisible()) {
+  if (!isLyricsPageVisible()) {
     window.dispatchEvent(new CustomEvent(NAV_LYRICS_EVENT, { detail: { mode: 'lyrics' } }));
   }
-  openDrawer(shouldOpen);
+  void (async () => {
+    if (state.settings.enabled === false) {
+      await patchSettings({ enabled: true });
+    }
+    void loadSelected();
+  })();
+};
+
+const onSettingsButtonClick = (event) => {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  reconcileDrawerState();
+  openDrawer(!isDrawerDomOpen());
+};
+
+const mountSettingsButton = () => {
+  document.querySelectorAll('button.echo-mv-corner, button[data-echo-lmwb-corner]').forEach((node) => node.remove());
+  const host = document.querySelector('.app-titlebar-actions');
+  if (!host) return;
+  let button = host.querySelector('button.echo-mv-titlebar');
+  if (button?.dataset.echoMvBound === 'true' && host.contains(button)) {
+    refs.settingsBtn = button;
+    applyPageFlags();
+    return;
+  }
+  button?.remove();
+  const actions = [...host.querySelectorAll('button.titlebar-action')];
+  const template = actions.find((el) => /歌词设置|Lyrics settings/i.test(el.getAttribute('aria-label') || ''))
+    || actions.find((el) => /画面视觉|Visual/i.test(el.getAttribute('aria-label') || ''))
+    || actions[0];
+  if (!template) return;
+  const label = t('route.mvSettings.label');
+  button = template.cloneNode(false);
+  button.className = `${template.className} echo-mv-titlebar`.replace(/\s+/g, ' ').trim();
+  button.type = 'button';
+  button.dataset.echoMvBound = 'true';
+  button.dataset.drawerTrigger = 'true';
+  button.removeAttribute('data-active');
+  button.removeAttribute('data-drawer-open');
+  button.setAttribute('aria-label', label);
+  button.setAttribute('title', label);
+  button.replaceChildren(svgIcon('film', 17));
+  button.addEventListener('click', onSettingsButtonClick);
+  const visual = actions.find((el) => /画面视觉|Visual/i.test(el.getAttribute('aria-label') || ''));
+  const settingsButton = actions.find((el) => {
+    const aria = (el.getAttribute('aria-label') || '').trim();
+    return aria === '设置' || aria === 'Settings';
+  });
+  const before = visual ? visual.nextSibling : settingsButton;
+  host.insertBefore(button, before || settingsButton || null);
+  refs.settingsBtn = button;
+  applyPageFlags();
 };
 
 const bindTransportButton = (button) => {
@@ -2161,8 +2235,10 @@ const onSeeked = (event) => {
 
 const onNavigateLyrics = (event) => {
   const mode = event instanceof CustomEvent ? event.detail?.mode : null;
-  if (mode === 'mv') openDrawer(true);
-  else applyPageFlags();
+  applyPageFlags();
+  if (mode === 'mv' || isLyricsPageVisible()) {
+    if (panelActive() || shouldAutoSearch()) void loadSelected({ preserveCurrent: true });
+  }
 };
 
 const startTimers = () => {
@@ -2181,6 +2257,7 @@ const observeDom = () => {
   const scan = () => {
     const lyricsButton = document.querySelector('button.transport-lyrics-button');
     if (lyricsButton) mountTransportButton(lyricsButton);
+    mountSettingsButton();
     applyPageFlags();
     if (!isLyricsPageVisible()) return;
     if (ownedPanelEl()) ownedPanelEl().remove();
@@ -2298,6 +2375,7 @@ const dispose = () => {
   });
   resizeObserver?.disconnect();
   refs.transportBtn?.remove();
+  refs.settingsBtn?.remove();
   refs.drawerRoot?.remove();
   restorePanel();
   uninstallMvApi();
