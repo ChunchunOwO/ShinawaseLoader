@@ -6,7 +6,8 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 
 ## 使用
 
-- 播放条 **MV 按钮**：单击打开 / 关闭 MV 设置抽屉（右键、`app:open-mv-settings` 事件同样有效）
+- 播放条 **MV 按钮**：开启 / 关闭 MV 并自动匹配加载，**不会**弹出设置
+- 歌词页 **右上角胶片图标**（或标题栏 MV 设置、`app:open-mv-settings`）：拉开右侧 MV 设置抽屉
 - 抽屉里的 **「启用 MV」总开关**：控制歌词页是否显示 MV 视图
 - 抽屉内按 `Esc` 或点遮罩关闭
 - 注意：没有正在播放的曲目时，播放条与歌词页由应用本身隐藏，MV 按钮也会跟着不可见
@@ -18,7 +19,7 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 - 在线视频源：搜索、DASH（AVC / AV1 可内嵌，无音轨；HEVC / 杜比视界除外）与 MP4 直链；流经 `echo-mv://` 代理
 - 外部搜索：配置 API Key 后可搜索，解析结果恒为外部打开
 - 自定义链接：视频页 URL 或源站视频编号
-- 自动匹配：阈值 0.7、领先 0.08 / 高置信 0.86，先解析可播再提交（`selectionOrigin=auto`）
+- 自动匹配：默认阈值 0.7；强标题匹配即使缺少艺人/时长佐证也可自动应用（不再卡在 0.69）；严格路径失败时回退到可播放的领先候选（`selectionOrigin=auto`）
 - 临时流：不写盘，TTL ≤ 15 分钟，`echo-mv://ephemeral/{token}`
 
 设置保存在 Steam 稳定版 `%APPDATA%\ECHO Steam\echo-mv-mod\store.json`，**不会**改写 `echo-settings.json`。

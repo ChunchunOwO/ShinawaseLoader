@@ -1,9 +1,11 @@
 {
-  "forceEnable": true,
+  "forceEnable": false,
   "keepForced": false,
+  "disableAutoOpenOnBoot": true,
   "injectToggle": true,
   "injectRematch": true,
-  "closeDrawerOnRematch": true,
+  "injectCornerIcon": false,
+  "closeDrawerOnRematch": false,
   "notify": true,
   "locale": "auto"
 }

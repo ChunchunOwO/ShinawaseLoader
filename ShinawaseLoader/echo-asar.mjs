@@ -452,9 +452,21 @@ const writeArchive = (archive, replacements) => {
 // rewrite the sourceProvider==="local" filter no longer matches, so the
 // patch stays idempotent.
 const playlistProviderFilterRe = /\.filter\(([A-Za-z_$][\w$]*)=>\1\.sourceProvider==="local"(?:&&\1\.kind!=="system")?\)/gu;
+
+// SteamPlaylistsPage itemToTrack only keeps `item.track`. Streaming playlist
+// rows often arrive with `track: null` while still carrying mediaType /
+// mediaId / sourceItemId snapshots, so every song becomes unavailable and
+// cannot be clicked. Rebuild stream_track rows the same way the full
+// PlaylistsPage does. The old arrow pattern no longer matches after rewrite.
+const steamItemToTrackRe = /([A-Za-z_$][\w$]*)=l\(([A-Za-z_$][\w$]*)=>\2\.track\?\{\.\.\.\2\.track,playlistItemId:\2\.id,unavailable:\2\.unavailable\|\|\2\.track\.unavailable\}:\{id:\2\.mediaId\?\?\2\.id,path:"",title:\2\.titleSnapshot\?\?"Unavailable track",artist:\2\.artistSnapshot\?\?"Unknown artist",album:\2\.albumSnapshot\?\?"",albumArtist:\2\.artistSnapshot\?\?"",trackNo:null,discNo:null,year:null,genre:null,duration:\2\.durationSnapshot\?\?0,codec:null,sampleRate:null,bitDepth:null,bitrate:null,coverId:\2\.coverId,coverThumb:\2\.coverThumb,fieldSources:\{\},playlistItemId:\2\.id,unavailable:!0\},"itemToTrack"\)/gu;
+const steamItemToTrackReplacement = '$1=l($2=>{if($2.mediaType==="stream_track"&&$2.mediaId&&$2.sourceItemId&&!$2.unavailable){const $2t=$2.track??null;return{id:$2.mediaId,mediaType:"streaming",path:$2.mediaId,provider:$2.sourceProvider,providerTrackId:$2.sourceItemId,streamingQuality:$2t?.streamingQuality,stableKey:$2t?.stableKey??$2.mediaId,title:$2t?.title??$2.titleSnapshot??"Streaming track",artist:$2t?.artist??$2.artistSnapshot??"Unknown artist",album:$2t?.album??$2.albumSnapshot??"",albumArtist:$2t?.albumArtist??$2.artistSnapshot??"",trackNo:$2t?.trackNo??null,discNo:$2t?.discNo??null,year:$2t?.year??null,genre:$2t?.genre??null,duration:$2t?.duration??$2.durationSnapshot??0,codec:$2t?.codec??null,sampleRate:$2t?.sampleRate??null,bitDepth:$2t?.bitDepth??null,bitrate:$2t?.bitrate??null,coverId:$2t?.coverId??$2.coverId,coverThumb:$2t?.coverThumb??$2.coverThumb,fieldSources:{title:$2.sourceProvider,artist:$2.sourceProvider,album:$2.sourceProvider},playlistItemId:$2.id,unavailable:!1}}const $2m=typeof $2.mediaId==="string"?/^streaming:([a-z0-9_-]+):(.+)$/i.exec($2.mediaId):null;if(!$2.track&&$2m&&!$2.unavailable){const $2p=$2.sourceProvider&&$2.sourceProvider!=="local"?$2.sourceProvider:$2m[1];return{id:$2.mediaId,mediaType:"streaming",path:$2.mediaId,provider:$2p,providerTrackId:$2.sourceItemId||$2m[2],stableKey:$2.mediaId,title:$2.titleSnapshot??"Streaming track",artist:$2.artistSnapshot??"Unknown artist",album:$2.albumSnapshot??"",albumArtist:$2.artistSnapshot??"",trackNo:null,discNo:null,year:null,genre:null,duration:$2.durationSnapshot??0,codec:null,sampleRate:null,bitDepth:null,bitrate:null,coverId:$2.coverId,coverThumb:$2.coverThumb,fieldSources:{title:$2p,artist:$2p,album:$2p},playlistItemId:$2.id,unavailable:!1}}return $2.track?{...$2.track,playlistItemId:$2.id,unavailable:$2.unavailable||$2.track.unavailable}:{id:$2.mediaId??$2.id,path:"",title:$2.titleSnapshot??"Unavailable track",artist:$2.artistSnapshot??"Unknown artist",album:$2.albumSnapshot??"",albumArtist:$2.artistSnapshot??"",trackNo:null,discNo:null,year:null,genre:null,duration:$2.durationSnapshot??0,codec:null,sampleRate:null,bitDepth:null,bitrate:null,coverId:$2.coverId,coverThumb:$2.coverThumb,fieldSources:{},playlistItemId:$2.id,unavailable:!0}},"itemToTrack")';
+
 const patchSteamPlaylistsPage = (text) => {
   playlistProviderFilterRe.lastIndex = 0;
-  return text.replace(playlistProviderFilterRe, '.filter($1=>$1.kind!=="system")');
+  steamItemToTrackRe.lastIndex = 0;
+  let next = text.replace(playlistProviderFilterRe, '.filter($1=>$1.kind!=="system")');
+  next = next.replace(steamItemToTrackRe, steamItemToTrackReplacement);
+  return next;
 };
 
 const patch = (root) => {
@@ -472,7 +484,7 @@ const patch = (root) => {
   const playlistPatches = [];
   for (const entry of playlistPages) {
     const currentPlaylistsText = current.bytes.subarray(current.dataStart + Number(entry.info.offset), current.dataStart + Number(entry.info.offset) + Number(entry.info.size)).toString('utf8');
-    if (!currentPlaylistsText.includes('sourceProvider==="local"')) continue;
+    if (!currentPlaylistsText.includes('sourceProvider==="local"') && !currentPlaylistsText.includes('"itemToTrack")')) continue;
     const playlistsText = patchSteamPlaylistsPage(currentPlaylistsText);
     if (playlistsText !== currentPlaylistsText) playlistPatches.push({ entry, playlistsText });
   }

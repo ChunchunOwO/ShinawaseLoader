@@ -538,7 +538,9 @@ const scoreNetworkMvCandidate = (track, candidate) => {
   const titleEvidenceEligible = strongTitleMatch ? corroborated : substantialTitleMatch && doublyCorroborated;
   const autoEligible = titleEvidenceEligible && shortTitleCorroborated && !durationConflict && !contentConflict;
   if (!corroborated) {
-    score = Math.min(score, 0.69);
+    // Strong title matches may still auto-apply (default threshold 0.7).
+    // Weak titles stay capped under the default threshold.
+    score = Math.min(score, strongTitleMatch ? 0.78 : 0.69);
     reasons.push('auto blocked: no artist or duration evidence');
   }
   if (!autoEligible && (durationConflict || contentConflict || !substantialTitleMatch || !shortTitleCorroborated)) {
@@ -2039,19 +2041,38 @@ function createEngine(options = {}) {
 
   const selectFirstResolvedAutoCandidate = async (trackId, candidates, settings) => {
     const threshold = normalizeAutoApplyThreshold(settings.autoApplyThreshold);
-    const enabledProviders = new Set(settings.enabledProviders);
-    const rankedCandidates = [...candidates]
-      .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider))
-      .filter((candidate) => candidate.score >= threshold)
-      .sort(compareNetworkCandidates(settings));
-    if (!rankedCandidates.length) return null;
-    for (const candidate of rankedCandidates) {
-      try {
-        const resolved = await resolvePlayableCandidateForSelection(candidate.id);
-        if (resolved.video.playableInApp && resolved.video.mediaUrl) return commitSelectedVideo(trackId, candidate.id, 'auto');
-      } catch {}
+    const tryCommit = async (ranked) => {
+      for (const candidate of ranked) {
+        try {
+          const resolved = await resolvePlayableCandidateForSelection(candidate.id);
+          if (resolved.video.playableInApp && resolved.video.mediaUrl) {
+            return commitSelectedVideo(trackId, candidate.id, 'auto');
+          }
+        } catch {}
+      }
+      return null;
+    };
+
+    // Strict path (ECHODev): autoEligible + threshold + confident lead.
+    const strictRanked = sameUploaderAutoResolutionCandidates(rankAutoCandidates(candidates, settings));
+    if (hasConfidentAutoMatchLead(strictRanked)) {
+      const strict = await tryCommit(strictRanked);
+      if (strict) return strict;
     }
-    return null;
+
+    // Fallback: still auto-apply a clear playable winner so users are not forced
+    // to pick from the sheet on every track when title match is already strong.
+    const enabledProviders = new Set(settings.enabledProviders);
+    const softFloor = Math.min(threshold, 0.6);
+    const fallbackRanked = [...candidates]
+      .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider))
+      .filter((candidate) => candidate.score >= softFloor)
+      .sort(compareNetworkCandidates(settings));
+    if (!fallbackRanked.length) return null;
+    if (!hasConfidentAutoMatchLead(fallbackRanked) && fallbackRanked[0].score < threshold) {
+      return null;
+    }
+    return tryCommit(fallbackRanked);
   };
 
   const searchProviderWithFallback = async (providerId, track, settings, plan) => {
