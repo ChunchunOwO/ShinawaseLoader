@@ -84,7 +84,9 @@ export const readZip = (archive, limits = {}) => {
     const localOffset = bytes.readUInt32LE(cursor + 42);
     const name = bytes.subarray(cursor + 46, cursor + 46 + nameLength).toString((flags & 0x800) ? 'utf8' : 'latin1');
     cursor += 46 + nameLength + extraLength + commentLength;
-    if (!name || name.endsWith('/') || size > maxBytes || total + size > maxBytes) throw new Error('echomod_zip_size_invalid');
+    if (!name) throw new Error('echomod_zip_entry_invalid');
+    if (name.endsWith('/')) continue;
+    if (size > maxBytes || total + size > maxBytes) throw new Error('echomod_zip_size_invalid');
     if (localOffset + 30 > bytes.length || bytes.readUInt32LE(localOffset) !== localSignature) throw new Error('echomod_zip_local_invalid');
     const localNameLength = bytes.readUInt16LE(localOffset + 26);
     const localExtraLength = bytes.readUInt16LE(localOffset + 28);
