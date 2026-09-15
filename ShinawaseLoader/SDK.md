@@ -24,6 +24,8 @@ Each external Mod or Plugin receives `echoExternalMod`:
 
 Use `echo-external-mod.d.ts` for editor hints in JavaScript or TypeScript projects. The external SDK tracks the public bridge present in the installed build; it intentionally does not depend on ECHO's built-in plugin runtime.
 
+For automated testing of packages — an offline harness that runs entries in the exact injected wrapper against a recorded `echoExternalMod` mock, static manifest/archive validation, and live attach-only acceptance over the HTTP API and CDP — see `ShinawaseLoader/TESTING.md` and the modules under `ShinawaseLoader/testing/` (types in `testing/shinawase-testing.d.ts`).
+
 ## echo-steam 26.9.1 alignment
 
 Current verified host: **echo-steam 26.9.1** at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.3.0**, Chromium 150.0.7871.212, Steam AppId **5105150**, Workshop SDK **1.15.0** (`native-shell` kind). The isolated Mod runtime (`ShinawaseLoader/modded-runtime`) is fingerprinted against the live Steam `app.asar` / `ECHO.exe`; Steam updates trigger `runtime-sync.mjs` on the next launch.
