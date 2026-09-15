@@ -623,7 +623,32 @@ function Download-File([string]$Uri, [string]$Destination) {
   }
 }
 
+function Find-SystemNode([string]$minimumVersion) {
+  $cmd = Get-Command node.exe -ErrorAction SilentlyContinue
+  if (-not $cmd) { $cmd = Get-Command node -ErrorAction SilentlyContinue }
+  if (-not $cmd) { return $null }
+  $path = [string]$cmd.Source
+  if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+  try {
+    $ver = (& $path --version 2>$null) -join ''
+    if ([string]::IsNullOrWhiteSpace($ver)) { return $null }
+    $have = $null
+    if (-not [version]::TryParse($ver.TrimStart('vV'), [ref]$have)) { return $null }
+    $min = $null
+    if (-not [version]::TryParse($minimumVersion.TrimStart('vV'), [ref]$min)) { $min = $have }
+    if ($have.Major -lt $min.Major) { return $null }
+    if ($have.Major -eq $min.Major -and $have -lt $min) { return $null }
+    return $path
+  } catch { return $null }
+}
+
 function Get-NodeRuntime($versionInfo, $loaderRoot) {
+  $systemNode = Find-SystemNode $versionInfo.nodeVersion
+  if ($systemNode) {
+    Write-Host "检测到系统已安装 Node: $systemNode (使用系统 Node)" -ForegroundColor DarkGray
+    return $systemNode
+  }
+  Write-Host "未检测到合适的系统 Node，改用脚本下载 Node 运行时..." -ForegroundColor DarkGray
   New-Item -ItemType Directory -Force -Path $RuntimeCache | Out-Null
   $cacheDir = Join-Path $RuntimeCache ("node-" + $versionInfo.nodeVersion)
   $cacheNode = Join-Path $cacheDir 'node.exe'
