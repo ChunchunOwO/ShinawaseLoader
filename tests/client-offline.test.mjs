@@ -7,7 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { RendererClient, TestingClientError, connectLoader } from '../ShinawaseLoader/testing/client.mjs';
+import { createServer as createHttpServer } from 'node:http';
+import { RendererClient, TestingClientError, assertLoopbackWsUrl, connectLoader } from '../ShinawaseLoader/testing/client.mjs';
 import { openSession } from '../ShinawaseLoader/testing/session.mjs';
 
 const freePort = () => new Promise((resolve, reject) => {
@@ -47,6 +48,40 @@ test('non-loopback hosts are refused before any connection', async () => {
     assert.equal(error.code, 'host_not_loopback');
     return true;
   });
+});
+
+// Regression: fetch follows redirects by default, so a local endpoint could
+// bounce the SDK's loopback-validated request to another host. The redirect
+// target is a second local server that records hits; it must never be reached.
+test('HTTP redirects from a local endpoint are refused, not followed', async (t) => {
+  let redirectTargetHits = 0;
+  const target = createHttpServer((request, response) => { redirectTargetHits += 1; response.end('{}'); });
+  await new Promise((resolvePromise) => target.listen(0, '127.0.0.1', resolvePromise));
+  t.after(() => target.close());
+  const redirecting = createHttpServer((request, response) => {
+    response.statusCode = 302;
+    response.setHeader('location', `http://127.0.0.1:${target.address().port}/api/status`);
+    response.end();
+  });
+  await new Promise((resolvePromise) => redirecting.listen(0, '127.0.0.1', resolvePromise));
+  t.after(() => redirecting.close());
+
+  await assert.rejects(connectLoader({ port: redirecting.address().port }));
+  assert.equal(redirectTargetHits, 0, 'the redirect target was never contacted');
+});
+
+// Regression: webSocketDebuggerUrl values from local CDP/inspector endpoints
+// were opened without checking that they still point at loopback.
+test('WebSocket debugger URLs must be loopback ws:// URLs', () => {
+  assert.equal(assertLoopbackWsUrl('ws://127.0.0.1:9229/devtools/page/A'), 'ws://127.0.0.1:9229/devtools/page/A');
+  assert.equal(assertLoopbackWsUrl('ws://[::1]:9229/devtools/page/A'), 'ws://[::1]:9229/devtools/page/A');
+  for (const bad of ['ws://example.com/devtools/page/A', 'wss://127.0.0.1:9229/x', 'http://127.0.0.1:9229/x', 'not a url']) {
+    assert.throws(() => assertLoopbackWsUrl(bad), (error) => {
+      assert.ok(error instanceof TestingClientError);
+      assert.ok(['ws_not_loopback', 'ws_url_invalid'].includes(error.code), `${bad}: ${error.code}`);
+      return true;
+    }, bad);
+  }
 });
 
 test('openSession without a loader and without launchLoader blocks with loader_unreachable', async () => {

@@ -184,6 +184,9 @@ export const createMockContext = (options = {}) => {
     hook: (path, wrapper) => {
       record('extend', 'hook', [path]);
       const target = resolveEchoPath(path, EXTEND_BLOCKED_SEGMENTS);
+      // The loader unhooks an existing hook at the same path first; without
+      // this, reverse-order disposal would leave the first wrapper installed.
+      if (hooks.has(target.path)) extend.unhook(target.path);
       const original = target.owner[target.key];
       if (typeof original !== 'function') throw new Error('extend_path_missing');
       const bound = original.bind(target.owner);
@@ -217,6 +220,9 @@ export const createMockContext = (options = {}) => {
     replaceRoute: (routeId, replaceOptions = {}) => {
       const target = String(routeId || '');
       record('extend', 'replaceRoute', [target]);
+      // The loader restores an existing replacement for the route first, so a
+      // second replaceRoute cannot leak the previous page or skip its cleanup.
+      if (routeReplacements.has(target)) extend.restoreRoute(target);
       const page = document.createElement('section');
       page.className = 'echo-external-mod-page';
       page.hidden = true;

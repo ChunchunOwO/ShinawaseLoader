@@ -62,6 +62,42 @@ test('unsafe paths and case-insensitive duplicates fail', (t) => {
     { path: 'MOD.JS', content: '' },
   ]));
   assert.ok(duplicate.errors.some((entry) => entry.code === 'file_duplicate'));
+  assert.equal(duplicate.errors.filter((entry) => entry.code === 'file_duplicate').length, 1, 'collision reported once');
+});
+
+// Regression: a case-variant second manifest slipped past the duplicate check
+// (only the selected manifest path was excluded from the file list), letting
+// a Windows import overwrite the manifest the loader just wrote.
+test('case-variant duplicate manifests fail', (t) => {
+  const result = validatePackageArchive(zipArchive(t, [
+    { path: 'echo.mod.json', content: manifestJson() },
+    { path: 'ECHO.MOD.JSON', content: manifestJson({ version: '9.9.9' }) },
+    { path: 'mod.js', content: '' },
+  ]));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((entry) => entry.code === 'file_duplicate'));
+});
+
+// Regression: JSON `null` payloads/manifests crashed with a TypeError instead
+// of returning a structured validation result.
+test('null archive payloads and manifests fail as validation errors', (t) => {
+  const dir = temp(t);
+  const nullPayload = join(dir, 'null-payload.echomod');
+  writeFileSync(nullPayload, 'null');
+  const payloadResult = validatePackageArchive(nullPayload);
+  assert.equal(payloadResult.ok, false);
+  assert.ok(payloadResult.errors.some((entry) => entry.code === 'payload_not_object'));
+
+  const nullManifest = validatePackageArchive(zipArchive(t, [
+    { path: 'echo.mod.json', content: 'null' },
+    { path: 'mod.js', content: '' },
+  ]));
+  assert.equal(nullManifest.ok, false);
+  assert.ok(nullManifest.errors.some((entry) => entry.code === 'manifest_not_object'));
+
+  const nonObjectManifest = join(dir, 'bad-manifest.echomod');
+  writeFileSync(nonObjectManifest, JSON.stringify({ type: 'echo-external-mod', manifest: [], files: [] }));
+  assert.ok(validatePackageArchive(nonObjectManifest).errors.some((entry) => entry.code === 'manifest_not_object'));
 });
 
 test('valid JSON payload passes; unknown type and bad id fail', (t) => {

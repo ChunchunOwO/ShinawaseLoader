@@ -6,6 +6,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../ShinawaseLoader/testing/cli.mjs', import.meta.url));
@@ -28,4 +31,30 @@ test('value flag before the positional still consumes its value', () => {
   const report = JSON.parse(result.stdout);
   assert.equal(report.ok, true);
   assert.ok(report.stages.some((stage) => stage.id === 'harness-smoke' && stage.ok), 'smoke ran with the settle value');
+});
+
+// Regression: `node --test <bareDir>` fails on this Node line ("Cannot find
+// module"), so the test command must enumerate *.test.mjs files itself. The
+// old bare-directory spawn always exited 1, so exit 0 here proves the fix;
+// the failing-file case proves the discovered files actually execute.
+test('test command runs *.test.mjs files in a directory (including nested)', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'shinawase-cli-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'sample.test.mjs'), "import test from 'node:test';\ntest('passes', () => {});\n");
+  mkdirSync(join(dir, 'nested'));
+  writeFileSync(join(dir, 'nested', 'deep.test.mjs'), "import test from 'node:test';\ntest('nested passes', () => {});\n");
+  const passing = runCli('test', dir);
+  assert.equal(passing.status, 0, `${passing.stdout}\n${passing.stderr}`);
+
+  writeFileSync(join(dir, 'failing.test.mjs'), "import test from 'node:test';\ntest('fails', () => { throw new Error('boom'); });\n");
+  const failing = runCli('test', dir);
+  assert.equal(failing.status, 1, 'a failing discovered test file propagates exit code 1');
+});
+
+test('test command reports a directory without test files as a usage error', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'shinawase-cli-empty-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const result = runCli('test', dir);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /no \*\.test\.mjs files/u);
 });

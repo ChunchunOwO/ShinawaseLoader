@@ -129,6 +129,44 @@ test('extend.navigate + replaceRoute mount and restore route surfaces', async ()
   harness.expectClean();
 });
 
+// Regression: the loader unhooks an existing hook at the same path before
+// installing a new one; the mock used to overwrite the map entry, so reverse
+// -order disposal left the first wrapper installed.
+test('re-hooking the same path replaces the previous wrapper (loader parity)', async () => {
+  const harness = inline(`
+    echoExternalMod.extend.hook('playback.getStatus', async (original) => ({ ...(await original()), first: true }));
+    echoExternalMod.extend.hook('playback.getStatus', async (original) => ({ ...(await original()), second: true }));
+    return () => {};
+  `);
+  await harness.inject();
+  const hooked = await harness.controls.rawEcho.playback.getStatus();
+  assert.equal(hooked.second, true);
+  assert.equal(hooked.first, undefined, 'second hook replaces the first instead of stacking on it');
+  harness.dispose();
+  harness.expectClean();
+  const restored = await harness.controls.rawEcho.playback.getStatus();
+  assert.equal(restored.first, undefined, 'no wrapper left after dispose');
+  assert.equal(restored.second, undefined, 'no wrapper left after dispose');
+});
+
+// Regression: the loader restores an existing replacement before installing a
+// new one for the same route; the mock used to leak the first page element.
+test('replacing the same route twice keeps a single replacement page', async () => {
+  const harness = inline(`
+    echoExternalMod.extend.replaceRoute('community', { render(root) { root.innerHTML = '<h1>One</h1>'; return () => {}; } });
+    echoExternalMod.extend.replaceRoute('community', { render(root) { root.innerHTML = '<h1>Two</h1>'; } });
+    echoExternalMod.extend.navigate('community');
+    return () => {};
+  `);
+  await harness.inject();
+  const pages = harness.window.document.querySelectorAll('[data-echo-external-replace="community"]');
+  assert.equal(pages.length, 1, 'only the latest replacement page exists');
+  assert.equal(pages[0].querySelector('h1').textContent, 'Two');
+  harness.dispose();
+  assert.equal(harness.query('[data-echo-external-replace="community"]'), null);
+  harness.expectClean();
+});
+
 test('sidebar register + openSidebarPage render/cleanup', async () => {
   const harness = inline(`
     const dispose = echoExternalMod.sidebar.register({

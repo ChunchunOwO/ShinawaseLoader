@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { checkEntrySyntax, validateManifest } from '../ShinawaseLoader/testing/validate.mjs';
+import { safeRelative } from '../ShinawaseLoader/testing/contract.mjs';
 
 const fixture = (files) => {
   const dir = mkdtempSync(join(tmpdir(), 'shinawase-validate-'));
@@ -27,6 +28,29 @@ test('valid minimal mod passes', (t) => {
   assert.equal(result.ok, true);
   assert.equal(result.kind, 'mod');
   assert.equal(result.entry, 'mod.js');
+});
+
+// Regression: JSON.parse accepts null/arrays, which used to crash with a
+// TypeError at manifest.id instead of returning a structured result.
+test('non-object manifests fail as validation errors, not TypeErrors', (t) => {
+  const nullManifest = fixture({ 'echo.mod.json': 'null' });
+  t.after(() => rmSync(nullManifest, { recursive: true, force: true }));
+  const nullResult = validateManifest(nullManifest);
+  assert.equal(nullResult.ok, false);
+  assert.ok(nullResult.errors.some((entry) => entry.code === 'manifest_not_object'));
+
+  const arrayManifest = fixture({ 'echo.mod.json': '[]' });
+  t.after(() => rmSync(arrayManifest, { recursive: true, force: true }));
+  assert.ok(validateManifest(arrayManifest).errors.some((entry) => entry.code === 'manifest_not_object'));
+});
+
+// Regression: on POSIX, normalize() ran before backslash conversion, so
+// 'a\..\..\outside.js' escaped the package boundary check.
+test('safeRelative rejects backslash traversal on every host', () => {
+  assert.throws(() => safeRelative('a\\..\\..\\outside.js'), /invalid_mod_file/u);
+  assert.throws(() => safeRelative('..\\outside.js'), /invalid_mod_file/u);
+  assert.equal(safeRelative('a/b.js'), 'a/b.js');
+  assert.equal(safeRelative('nested\\file.js'), 'nested/file.js');
 });
 
 test('invalid id fails with the safeId rule', (t) => {

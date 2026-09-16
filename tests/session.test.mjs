@@ -51,6 +51,21 @@ test('artifacts: run directory under tmp, ordered sanitized names, records', (t)
   assert.equal(artifacts.items.length, 1);
 });
 
+// Regression: a raw runId such as '../other-run' escaped the default
+// tmpdir()/shinawase-testing root before sanitization.
+test('artifacts: traversal in runId cannot escape the default root', (t) => {
+  const root = join(tmpdir(), 'shinawase-testing');
+  const escaping = createArtifacts({ runId: '../escape-attempt' });
+  t.after(() => rmSync(escaping.dir, { recursive: true, force: true }));
+  assert.ok(escaping.dir.startsWith(root), `stays under ${root}: ${escaping.dir}`);
+  assert.ok(!escaping.runId.includes('/') && !escaping.runId.includes('\\'), 'reported runId is sanitized');
+
+  const dotsOnly = createArtifacts({ runId: '..' });
+  t.after(() => rmSync(dotsOnly.dir, { recursive: true, force: true }));
+  assert.ok(dotsOnly.dir.startsWith(root), 'dot-only runId falls back to a generated id');
+  assert.notEqual(dotsOnly.dir, root, 'never lands on the shared root itself');
+});
+
 // Regression: a failed open must reclaim what it spawned. The fake loader
 // records its pid and stays alive without ever opening the port, so openSession
 // times out; afterwards the child must be dead and the isolated store dir gone.

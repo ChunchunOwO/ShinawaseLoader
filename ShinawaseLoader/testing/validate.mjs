@@ -26,6 +26,10 @@ const trySafeRelative = (value) => {
   catch { return { error: `unsafe package-relative path: ${JSON.stringify(value)}` }; }
 };
 
+// JSON.parse accepts null/arrays/scalars, which would make field access below
+// throw instead of producing the documented structured result.
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
 // Validate an unpacked package directory (or a manifest object plus an
 // optional file list). Returns { ok, errors, warnings, notices, ... }.
 export const validateManifest = (input) => {
@@ -58,6 +62,10 @@ export const validateManifest = (input) => {
     manifestName = input.manifestName || 'echo.mod.json';
   } else {
     issue(errors, 'input_invalid', 'validateManifest expects a directory path or a manifest object');
+    return { ok: false, errors, warnings, notices, manifest, manifestName, directory };
+  }
+  if (!isPlainObject(manifest)) {
+    issue(errors, 'manifest_not_object', `${manifestName}: manifest must be a JSON object, got ${manifest === null ? 'null' : Array.isArray(manifest) ? 'an array' : typeof manifest}`);
     return { ok: false, errors, warnings, notices, manifest, manifestName, directory };
   }
 
@@ -167,15 +175,32 @@ export const validatePackageArchive = (file) => {
 
   let manifest = null;
   let files = [];
+  const flaggedDuplicates = new Set();
   if (isZip(bytes)) {
     let entries;
     try { entries = readZip(bytes, { maxBytes: MAX_PACKAGE_BYTES }); }
     catch (error) { issue(errors, 'zip_invalid', error instanceof Error ? error.message : String(error)); return summary; }
+    // Scan all entries (manifest included) for case-insensitive collisions
+    // before one manifest is selected: the loader's own duplicate check only
+    // sees the non-manifest file list, so a case-variant second manifest
+    // silently overwrites the imported one on Windows. Flag it here instead.
+    const normalizedCounts = new Map();
+    for (const entry of entries) {
+      const key = entry.path.replaceAll('\\', '/').toLowerCase();
+      normalizedCounts.set(key, (normalizedCounts.get(key) || 0) + 1);
+    }
+    for (const [key, count] of normalizedCounts) {
+      if (count > 1) {
+        flaggedDuplicates.add(key);
+        issue(errors, 'file_duplicate', `duplicate package path (case-insensitive): ${key}`);
+      }
+    }
     const byPath = new Map(entries.map((entry) => [entry.path.replaceAll('\\', '/').toLowerCase(), entry]));
     const manifestEntry = [...MANIFEST_NAMES, 'echo.workshop.json'].map((name) => byPath.get(name)).find(Boolean);
     if (!manifestEntry) { issue(errors, 'manifest_missing', 'archive has no manifest'); return summary; }
     const parsed = tryParseJson(manifestEntry.data.toString('utf8'));
     if (parsed.error) { issue(errors, 'manifest_invalid_json', parsed.error); return summary; }
+    if (!isPlainObject(parsed.value)) { issue(errors, 'manifest_not_object', 'archive manifest must be a JSON object'); return summary; }
     manifest = parsed.value;
     summary.type = manifestEntry.path.toLowerCase().endsWith('plugin.json') ? 'echo-plugin-package' : 'echo-external-mod';
     if (manifestEntry.path.toLowerCase().endsWith('workshop.json')) {
@@ -191,9 +216,13 @@ export const validatePackageArchive = (file) => {
     const parsed = tryParseJson(bytes.toString('utf8'));
     if (parsed.error) { issue(errors, 'payload_invalid_json', parsed.error); return summary; }
     const payload = parsed.value;
+    if (!isPlainObject(payload)) { issue(errors, 'payload_not_object', 'JSON package payload must be an object'); return summary; }
     summary.type = payload.type || null;
     if (!PACKAGE_TYPES.has(payload.type)) issue(errors, 'type_unknown', `payload type must be one of: ${[...PACKAGE_TYPES].join(', ')}`);
-    manifest = payload.manifest || null;
+    manifest = isPlainObject(payload.manifest) ? payload.manifest : null;
+    if (payload.manifest !== undefined && payload.manifest !== null && !isPlainObject(payload.manifest)) {
+      issue(errors, 'manifest_not_object', 'payload manifest must be a JSON object');
+    }
     files = (Array.isArray(payload.files) ? payload.files : []).map((entry) => ({
       path: entry?.path,
       size: entry?.encoding === 'base64' ? Math.floor(String(entry.content || '').length * 3 / 4) : Buffer.byteLength(String(entry?.content ?? '')),
@@ -208,7 +237,7 @@ export const validatePackageArchive = (file) => {
     const check = trySafeRelative(entry.path);
     if (check.error) { issue(errors, 'file_path_invalid', check.error); continue; }
     const key = check.value.toLowerCase();
-    if (seen.has(key)) issue(errors, 'file_duplicate', `duplicate package path (case-insensitive): ${check.value}`);
+    if (seen.has(key) && !flaggedDuplicates.has(key)) issue(errors, 'file_duplicate', `duplicate package path (case-insensitive): ${check.value}`);
     seen.add(key);
     summary.totalBytes += Number(entry.size) || 0;
   }

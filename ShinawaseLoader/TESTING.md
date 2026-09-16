@@ -158,7 +158,10 @@ await renderer.expectAbsent('.my-mod-root');
   (the same one the injected UI calls) and the CDP/inspector ports the loader
   already opens. **No new loader endpoints exist for testing** — see the
   design note at the end.
-- Loopback only; non-loopback hosts are refused (`host_not_loopback`).
+- Loopback only; non-loopback hosts are refused (`host_not_loopback`). HTTP
+  redirects are refused (`redirect: 'error'`), and `webSocketDebuggerUrl`
+  values returned by CDP/inspector endpoints are validated as loopback `ws://`
+  URLs before any socket opens (`ws_not_loopback`).
 - `importPackage` checks the loader's 64 MB request-body cap up front and
   fails with guidance instead of a cryptic HTTP error.
 - Input driving uses `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` /
@@ -274,7 +277,7 @@ accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep
        [--launch-loader] [--launch-echo] [--close-echo] [--echo <root>]
        [--isolated-user-data [dir]] [--isolated-store] [--steps <file>]
        [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH]
-       [--allow-console-errors] [--port <n>] [--id <modId>]
+       [--allow-console-errors] [--port <n>]
        [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]
 doctor [--json] [--port <n>]
 shot [--json] [--element <selector>] [--label <name>] [--out <file>] [--port <n>]

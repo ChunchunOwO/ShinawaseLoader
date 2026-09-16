@@ -38,11 +38,30 @@ const assertLoopback = (host) => {
   }
 };
 
+// CDP/inspector endpoints hand back webSocketDebuggerUrl values; validate
+// them before opening privileged sockets so a stale or hostile local endpoint
+// cannot point the SDK at a remote host.
+export const assertLoopbackWsUrl = (value) => {
+  let url;
+  try { url = new URL(String(value)); }
+  catch { throw new TestingClientError(`invalid WebSocket URL from local endpoint: ${JSON.stringify(String(value))}`, 'ws_url_invalid'); }
+  if (url.protocol !== 'ws:') {
+    throw new TestingClientError(`refusing non-ws WebSocket URL "${url.protocol}//...": local CDP/inspector endpoints use ws:// on loopback`, 'ws_not_loopback');
+  }
+  if (!LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new TestingClientError(`refusing non-loopback WebSocket host "${url.hostname}": the testing SDK only talks to local loader/CDP endpoints`, 'ws_not_loopback');
+  }
+  return url.href;
+};
+
+// redirect: 'error' on every request: Node fetch follows redirects by
+// default, which would let a local endpoint bounce the SDK off loopback.
 const fetchJson = async (url, { method = 'GET', body, timeoutMs = 10000 } = {}) => {
   const response = await fetch(url, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
@@ -192,7 +211,7 @@ export class RendererClient {
     assertLoopback(host);
     let list;
     try {
-      const response = await fetch(`http://${host}:${debugPort}/json/list`, { signal: AbortSignal.timeout(timeoutMs) });
+      const response = await fetch(`http://${host}:${debugPort}/json/list`, { redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
       list = await response.json();
     } catch (error) {
       throw new TestingClientError(`no CDP endpoint on ${host}:${debugPort} (${error instanceof Error ? error.message : error})`, 'cdp_unreachable', { skipped: true, debugPort });
@@ -207,7 +226,7 @@ export class RendererClient {
     if (!main) {
       throw new TestingClientError(`CDP on ${host}:${debugPort} has ${targets.length} page target(s) but no ECHO Main window`, 'main_window_missing', { skipped: true, debugPort });
     }
-    const socket = new WebSocket(main.webSocketDebuggerUrl);
+    const socket = new WebSocket(assertLoopbackWsUrl(main.webSocketDebuggerUrl));
     await new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => reject(new TestingClientError('cdp_connect_timeout', 'cdp_connect_timeout')), timeoutMs);
       socket.addEventListener('open', () => { clearTimeout(timer); resolvePromise(); }, { once: true });
@@ -422,13 +441,13 @@ const mainInspectorEval = async ({ inspectPort = DEFAULT_INSPECT_PORT, host = '1
   assertLoopback(host);
   let targets;
   try {
-    targets = await (await fetch(`http://${host}:${inspectPort}/json`, { signal: AbortSignal.timeout(5000) })).json();
+    targets = await (await fetch(`http://${host}:${inspectPort}/json`, { redirect: 'error', signal: AbortSignal.timeout(5000) })).json();
   } catch (error) {
     throw new TestingClientError(`no main-process inspector on ${host}:${inspectPort}`, 'inspector_unreachable', { skipped: true });
   }
   const target = (Array.isArray(targets) ? targets : []).find((entry) => entry.webSocketDebuggerUrl);
   if (!target) throw new TestingClientError('main-process inspector has no target', 'inspector_unreachable', { skipped: true });
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  const socket = new WebSocket(assertLoopbackWsUrl(target.webSocketDebuggerUrl));
   await new Promise((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new TestingClientError('inspector_connect_timeout', 'inspector_unreachable')), 5000);
     socket.addEventListener('open', () => { clearTimeout(timer); resolvePromise(); }, { once: true });

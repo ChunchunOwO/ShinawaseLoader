@@ -14,7 +14,7 @@ import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_CDP_PORT, DEFAULT_LOADER_PORT } from './contract.mjs';
-import { RendererClient, TestingClientError, captureViaMainProcess, connectLoader } from './client.mjs';
+import { RendererClient, TestingClientError, assertLoopbackWsUrl, captureViaMainProcess, connectLoader } from './client.mjs';
 import { startAutomationNotice } from './automation-notice.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -46,7 +46,11 @@ export const decideTopology = ({ loaderAlive, cdpAlive, launchLoader = false, la
 // Artifact runs live under the OS temp directory by default so screenshots
 // and reports never land inside the repository or a package directory.
 export const createArtifacts = ({ dir, runId } = {}) => {
-  const id = runId || `${new Date().toISOString().replaceAll(/[:.]/gu, '-')}-${Math.random().toString(36).slice(2, 8)}`;
+  // runId is a public option that lands in the default artifact path, so
+  // sanitize it: a raw value such as '../other-run' must not escape the
+  // tmpdir()/shinawase-testing root.
+  const safeRunId = String(runId || '').replaceAll(/[^a-zA-Z0-9._-]+/gu, '-').replaceAll(/^[.-]+|[.-]+$/gu, '').slice(0, 80);
+  const id = safeRunId || `${new Date().toISOString().replaceAll(/[:.]/gu, '-')}-${Math.random().toString(36).slice(2, 8)}`;
   const root = resolve(dir || join(tmpdir(), 'shinawase-testing', id));
   mkdirSync(root, { recursive: true });
   let seq = 0;
@@ -304,10 +308,10 @@ export const openSession = async (options = {}) => {
 // closing the app; never a process kill, never selected by process name.
 const gracefulBrowserClose = async (debugPort) => {
   try {
-    const version = await (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(4000) })).json();
+    const version = await (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { redirect: 'error', signal: AbortSignal.timeout(4000) })).json();
     const wsUrl = version?.webSocketDebuggerUrl;
     if (wsUrl) {
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(assertLoopbackWsUrl(wsUrl));
       await new Promise((resolvePromise, reject) => {
         const timer = setTimeout(() => reject(new Error('browser_ws_timeout')), 4000);
         socket.addEventListener('open', () => { clearTimeout(timer); resolvePromise(); }, { once: true });
@@ -321,7 +325,7 @@ const gracefulBrowserClose = async (debugPort) => {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
     try {
-      await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) });
+      await fetch(`http://127.0.0.1:${debugPort}/json/version`, { redirect: 'error', signal: AbortSignal.timeout(1000) });
       await sleep(500);
     } catch { return true; }
   }

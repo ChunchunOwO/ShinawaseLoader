@@ -16,7 +16,7 @@
 // `--json` prints a single reportVersion:1 document to stdout (progress goes
 // to stderr) so agents can parse results without scraping logs.
 
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -203,9 +203,24 @@ const commandTest = async ({ positionals, flags }) => {
     process.stderr.write(`no test directory found (looked for: ${candidates.join(', ')})\n`);
     return 2;
   }
+  // node --test does not expand a bare directory argument on this Node line
+  // (AGENTS.md documents the glob form), so enumerate the files explicitly.
+  const testFiles = readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.test.mjs'))
+    .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
+    .sort();
+  if (!testFiles.length) {
+    process.stderr.write(`no *.test.mjs files found in ${dir}\n`);
+    return 2;
+  }
   const extra = [];
   if (flags.reporter) extra.push(`--test-reporter=${flags.reporter}`);
-  const child = spawn(process.execPath, ['--test', ...extra, dir], { stdio: 'inherit', windowsHide: true });
+  // When this CLI itself runs under `node --test`, the inherited
+  // NODE_TEST_CONTEXT makes the child behave as a test-runner child: it
+  // reports nothing and exits 0 even on failures. Always spawn a fresh root.
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, ['--test', ...extra, ...testFiles], { stdio: 'inherit', windowsHide: true, env });
   return new Promise((resolvePromise) => child.on('exit', (code) => resolvePromise(code ?? 1)));
 };
 
@@ -224,7 +239,7 @@ const commandAccept = async ({ positionals, flags }) => {
     process.stderr.write('usage: cli.mjs accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep-enabled]\n'
       + '  [--launch-loader] [--launch-echo] [--close-echo] [--echo <root>] [--isolated-user-data [dir]] [--isolated-store]\n'
       + '  [--steps <file>] [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors] [--port <n>]\n'
-      + '  [--id <modId>] [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n');
+      + '  [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n');
     return 2;
   }
   const report = newReport('accept');
@@ -240,8 +255,9 @@ const commandAccept = async ({ positionals, flags }) => {
 
   try {
     await runOfflineChecks(resolve(packageDir), { 'no-smoke': flags['no-smoke'], 'strict-timers': flags['strict-timers'], 'settle-ms': flags['settle-ms'], json }, report, stages);
+    // importPackage() always installs under the manifest's own id, so the
+    // manifest is the only valid source for the id every later stage targets.
     modId = report.package.id;
-    if (flags.id) modId = String(flags.id);
     if (!isSafeId(modId)) throw new Error(`invalid package id: ${modId}`);
 
     await stages.run('session', async (stage) => {
@@ -294,6 +310,9 @@ const commandAccept = async ({ positionals, flags }) => {
     await stages.run('import', async () => {
       const manifest = await session.loader.importPackage(resolve(packageDir));
       imported = true;
+      if (manifest?.id !== modId) {
+        throw new Error(`loader installed "${manifest?.id}" but the manifest declared "${modId}"; refusing to continue against a mismatched id`);
+      }
       return `${manifest.id} v${manifest.version || '1.0.0'}`;
     });
 
@@ -493,7 +512,7 @@ const main = async () => {
       + '  accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep-enabled] [--launch-loader]\n'
       + '         [--launch-echo] [--close-echo] [--echo <root>] [--isolated-user-data [dir]] [--isolated-store]\n'
       + '         [--steps <file>] [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors]\n'
-      + '         [--port <n>] [--id <modId>] [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n'
+      + '         [--port <n>] [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n'
       + '  doctor [--json] [--port <n>]\n'
       + '  shot [--json] [--element <selector>] [--label <name>] [--out <file>] [--port <n>]\n'
       + 'Note: check and accept execute the package entry in the offline mock-DOM harness smoke\n'

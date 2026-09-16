@@ -16,10 +16,14 @@ export const SAFE_ID_SOURCE = '^[a-z0-9][a-z0-9._-]{1,63}$';
 export const SAFE_ID_PATTERN = new RegExp(SAFE_ID_SOURCE, 'iu');
 export const isSafeId = (id) => typeof id === 'string' && SAFE_ID_PATTERN.test(id);
 
-// ShinawaseLoader.mjs safeRelative(): package-relative path rules.
+// ShinawaseLoader.mjs safeRelative(): package-relative path rules. The mirror
+// converts backslashes to '/' before normalize() (the loader converts after):
+// on POSIX, normalize() treats '\' as an ordinary character, so pre-converting
+// makes 'a\..\..\x' resolve and get rejected exactly as the Windows-only
+// loader rejects it. Same verdicts on Windows; loader-side fix is a separate PR.
 export const safeRelative = (value) => {
   if (typeof value !== 'string' || !value || value.includes('\0')) throw new Error('invalid_mod_file');
-  const clean = normalize(value).replaceAll('\\', '/');
+  const clean = normalize(value.replaceAll('\\', '/')).replaceAll('\\', '/');
   if (clean === '.' || clean.startsWith('../') || clean === '..' || clean.startsWith('/') || /^[a-z]:/iu.test(clean)) throw new Error('invalid_mod_file');
   return clean;
 };
