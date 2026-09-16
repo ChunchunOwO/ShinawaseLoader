@@ -33,14 +33,29 @@ const findManifest = (root) => {
 };
 const collectFiles = (root, manifestName) => {
   const files = [];
+  // Mirror the loader's case-insensitive duplicate rule: importPackage rejects
+  // archives whose paths collide by case alone (duplicate_mod_file), so fail
+  // at pack time on a case-sensitive file system instead of producing an
+  // archive that can never be imported.
+  const seenPaths = new Set();
+  let manifestSeen = false;
   const visit = (directory, prefix = '') => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (ignoredNames.has(entry.name.toLowerCase()) || entry.name.endsWith('.log')) continue;
       const fullPath = join(directory, entry.name);
       const packagePath = safePackagePath(prefix ? `${prefix}/${entry.name}` : entry.name);
-      if (entry.isDirectory()) visit(fullPath, packagePath);
-      else if (entry.isFile() && packagePath !== manifestName) files.push({ path: packagePath, data: readFileSync(fullPath) });
-      else if (entry.isSymbolicLink()) throw new Error(`symbolic links are not allowed: ${packagePath}`);
+      if (entry.isDirectory()) { visit(fullPath, packagePath); continue; }
+      if (entry.isSymbolicLink()) throw new Error(`symbolic links are not allowed: ${packagePath}`);
+      if (!entry.isFile()) continue;
+      const key = packagePath.toLowerCase();
+      if (key === manifestName.toLowerCase()) {
+        if (manifestSeen) throw new Error(`case-insensitive duplicate path (the loader rejects these): ${packagePath}`);
+        manifestSeen = true;
+        continue;
+      }
+      if (seenPaths.has(key)) throw new Error(`case-insensitive duplicate path (the loader rejects these): ${packagePath}`);
+      seenPaths.add(key);
+      files.push({ path: packagePath, data: readFileSync(fullPath) });
       if (files.length > maxFiles) throw new Error(`too many files (limit ${maxFiles})`);
     }
   };
