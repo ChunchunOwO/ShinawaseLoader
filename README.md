@@ -136,6 +136,22 @@ Plugin 使用 `echo.plugin.json` + `plugin.js`，SDK 与 Mod 相同。需要主�
 .\pack-mod.bat .\MyMod .\MyMod.echomod --zip
 ```
 
+### 自动化测试 SDK（Testing SDK）
+
+`ShinawaseLoader/testing/` 提供面向自动化工具与 AI Agent 的测试 SDK：离线仿真 harness（在与 Loader 完全一致的 `echoExternalMod` 包装内执行入口、记录全部 SDK 调用、审计清理泄漏，带虚拟时钟）、静态校验（manifest / 入口语法 / `.echomod` 归档，规则镜像 Loader），以及 attach-only 真机验收客户端（导入→启用→探测→可信输入→截图→清理验证；绝不杀进程，启动/关闭 ECHO 需显式旗标且带所有权跟踪）。零 npm 依赖，仅 loopback，无任何外发数据。
+
+```powershell
+node .\ShinawaseLoader\testing\cli.mjs check .\MyMod          # 离线：清单 + 包装语法 + 冒烟 + 泄漏审计
+node .\ShinawaseLoader\testing\cli.mjs accept .\MyMod --json  # 真机：附加到运行中的 Loader 做验收
+node --test "tests/*.test.mjs"                                # 仓库自测（纯离线）
+```
+
+也可用根目录 `test-mod.bat`。退出码：0 通过 / 1 失败 / 2 用法错误 / 3 真机环境不可用（如实标注跳过而非假绿）。`--json` 输出 `reportVersion: 1` 结构化报告（含截图工件与环境元数据，供视觉模型阅读）。完整契约见 [`ShinawaseLoader/TESTING.md`](ShinawaseLoader/TESTING.md)，编辑器类型见 [`ShinawaseLoader/testing/shinawase-testing.d.ts`](ShinawaseLoader/testing/shinawase-testing.d.ts)。测试文件请放在包目录之外（沿用 `echomod/` 与 `dev/` 并列的布局）。
+
+测试 SDK 随项目提供，普通 Loader 启动不会加载它。离线检查使用模拟环境；真机验收会实际操作选定的 ECHO 和包目录。`accept`、`shot` 或 `openSession()` 连接到主窗口后，会在顶部显示「本实例正在用于自动化测试」（英文环境显示英文提示），包括附加到已有实例的情况。提示不截获点击、不改变页面布局，并会出现在窗口截图中；会话关闭时移除，页面刷新后自动恢复。测试进程异常退出或断连时，提示会在最后一次心跳约 10 秒后自动清理（窗口挂起或计时器受限时可能延后）。普通启动、离线检查和 `doctor` 不显示此提示。
+
+提示本身不代表数据隔离。`--isolated-user-data` 和 `--isolated-store` 只对测试会话新启动的 Loader 生效；附加到已有 Loader 时仍使用它原来的用户数据和包目录。
+
 ### 自定义配置页（v1.6.0）
 
 在清单中声明 `configUi`。该脚本在配置弹窗中以 `echoConfigUi` 上下文执行（`root` / `config` / `schema` / `save` / `close` / `onSave` / `assetUrl` 等）。未提供该字段或脚本加载失败时，Loader 回退到 `config.schema.json` 的自动渲染表单。
@@ -222,6 +238,7 @@ flowchart TB
 ├── ShinawaseLoader/           # Loader、SDK、模板、native host、inspector bootstrap
 │   ├── ShinawaseLoader.mjs
 │   ├── SDK.md
+│   ├── TESTING.md
 │   ├── echo-external-mod.d.ts
 │   ├── loader-ui.js
 │   ├── loader.config.json
@@ -231,6 +248,7 @@ flowchart TB
 │   ├── native-shell-host.cjs
 │   ├── streaming-bridge.ts
 │   ├── streaming-preload.cjs
+│   ├── testing/               # 自动化测试 SDK（harness / validate / client / session / cli）
 │   ├── mod-template/
 │   ├── plugin-template/
 │   ├── native-plugin-template/
@@ -248,8 +266,10 @@ flowchart TB
 │   ├── ECHO-Streaming/
 │   ├── packages/              # 预装包：Streaming / MV
 │   └── reference/             # 归档参考 Mod（不进安装器可选包）
+├── tests/                     # 仓库自测（node --test "tests/*.test.mjs"，纯离线）
 ├── setup-modloader.bat
 ├── pack-mod.bat
+├── test-mod.bat
 └── build-release.bat
 ```
 
