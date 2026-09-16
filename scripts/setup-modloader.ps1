@@ -771,8 +771,16 @@ function Prepare-ModdedRuntime([string]$echoRoot, [string]$echoExe, [string]$loa
   # from an older install must not pin the isolated runtime after Steam updates.
   $sync = Join-Path $loaderRoot 'runtime-sync.mjs'
   if (-not (Test-Path -LiteralPath $sync)) { throw 'runtime-sync.mjs is missing from the loader install.' }
-  & $node $sync --echo $echoRoot --force
-  if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime sync failed.' }
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $output = & $node $sync --echo $echoRoot --loader $loaderRoot --force --skip-update 2>&1 | Out-String
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $previous
+  if ($code -ne 0) {
+    $detail = ($output -replace '\s+', ' ').Trim()
+    if (-not $detail) { $detail = "exit $code" }
+    throw "Isolated runtime sync failed: $detail"
+  }
   return (Join-Path $loaderRoot 'modded-runtime')
 }
 

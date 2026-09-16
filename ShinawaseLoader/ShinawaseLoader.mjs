@@ -78,13 +78,13 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.2';
+const loaderVersion = '1.7.3';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
 const alignedEchoProduct = 'echo-steam';
-const alignedEchoVersion = '26.9.1';
-const alignedElectronVersion = '43.3.0';
+const alignedEchoVersion = '26.9.16';
+const alignedElectronVersion = '43.5.1';
 const echoSteamAppId = '5105150';
 const echoUserDataFolderName = 'ECHO Steam';
 const root = resolve(process.env.ECHO_MOD_HOME || loaderDir);
