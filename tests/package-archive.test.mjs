@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { createZip } from '../ShinawaseLoader/echomod-archive.mjs';
 import { validatePackageArchive } from '../ShinawaseLoader/testing/validate.mjs';
 
@@ -84,7 +85,7 @@ test('valid JSON payload passes; unknown type and bad id fail', (t) => {
 
 test('shipped example packages still satisfy the import rules', () => {
   for (const name of ['ECHO-MV.echomod', 'ECHO-Streaming.echomod']) {
-    const result = validatePackageArchive(new URL(`../examples/packages/${name}`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/u, '$1'));
+    const result = validatePackageArchive(fileURLToPath(new URL(`../examples/packages/${name}`, import.meta.url)));
     assert.equal(result.ok, true, `${name}: ${JSON.stringify(result.errors)}`);
   }
 });

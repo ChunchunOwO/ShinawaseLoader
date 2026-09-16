@@ -113,84 +113,110 @@ export const openSession = async (options = {}) => {
   report.loaderOwnership = plan.loaderOwnership;
   report.echoOwnership = plan.echoOwnership;
 
-  if (plan.spawnLoader) {
-    const env = { ...process.env };
-    if (options.isolatedUserData) {
-      const dir = typeof options.isolatedUserData === 'string'
-        ? resolve(options.isolatedUserData)
-        : mkdtempSync(join(tmpdir(), 'shinawase-userdata-'));
-      env.ECHO_USER_DATA_PATH_OVERRIDE = dir;
-      report.userDataIsolated = true;
-      if (typeof options.isolatedUserData !== 'string') tempDirs.push({ dir, kind: 'userData' });
-    }
-    if (options.isolatedStore) {
-      const dir = mkdtempSync(join(tmpdir(), 'shinawase-store-'));
-      env.ECHO_MODS_HOME = join(dir, 'Mods');
-      env.ECHO_PLUGINS_HOME = join(dir, 'Plugins');
-      mkdirSync(env.ECHO_MODS_HOME, { recursive: true });
-      mkdirSync(env.ECHO_PLUGINS_HOME, { recursive: true });
-      report.storeIsolated = true;
-      tempDirs.push({ dir, kind: 'store' });
-    }
-    // testing/ sits inside ShinawaseLoader/, so ../ShinawaseLoader.mjs is the
-    // loader CLI in both the repo checkout and installed/release layouts.
-    const loaderScript = resolve(options.loaderScript || join(moduleDir, '..', 'ShinawaseLoader.mjs'));
-    const args = [loaderScript, 'serve', '--port', String(port)];
-    if (options.echoRoot) args.push('--echo', String(options.echoRoot));
-    loaderOutput = tailBuffer();
-    loaderChild = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    loaderChild.stdout.on('data', loaderOutput.push);
-    loaderChild.stderr.on('data', loaderOutput.push);
-    const deadline = Date.now() + (Number(options.loaderReadyTimeoutMs) || 30000);
-    while (!loader && Date.now() < deadline) {
-      if (loaderChild.exitCode !== null) break;
-      try { loader = await connectLoader({ port }); } catch { await sleep(500); }
-    }
-    if (!loader) {
-      try { loaderChild.kill(); } catch {}
-      throw new TestingClientError(`session loader did not become ready on port ${port}: ${loaderOutput.read().slice(-600)}`, 'loader_spawn_failed');
-    }
-  } else if (options.isolatedUserData || options.isolatedStore) {
-    report.warnings.push('isolation flags need a session-spawned loader; the attached loader keeps its own folders and user data');
-  }
-  if (!plan.spawnLoader && options.echoRoot) {
-    report.warnings.push('echoRoot is only used when the session spawns the loader; the attached loader keeps its own selection');
-  }
-
-  if (plan.launchEcho) {
-    await loader.launch();
-  }
-
+  // Failure cleanup before the session object exists: reclaim only what this
+  // call itself created (the spawned loader child, a session-launched ECHO
+  // via graceful Browser.close, and temp isolation dirs). Anything external
+  // stays untouched, matching the ownership rules of session.close().
+  let echoLaunched = false;
   let renderer = null;
-  if (cdpAlive || plan.launchEcho) {
-    const deadline = Date.now() + (Number(options.echoReadyTimeoutMs) || 90000);
-    let lastError = null;
-    while (Date.now() < deadline) {
-      try {
-        renderer = await RendererClient.connect({ debugPort });
-        await renderer.waitForReady({ timeoutMs: Math.max(2000, deadline - Date.now()) });
-        break;
-      } catch (error) {
-        lastError = error;
-        try { renderer?.close(); } catch {}
-        renderer = null;
-        await sleep(1000);
-      }
+  const reclaimSpawned = async () => {
+    try { renderer?.close(); } catch {}
+    if (loaderChild) {
+      try { loaderChild.kill(); } catch {}
+      await sleep(400);
     }
-    if (!renderer) {
-      report.rendererSkipped = `renderer not ready on CDP ${debugPort}: ${lastError?.message || 'timeout'}`;
-      if (options.requireRenderer === true) {
-        throw new TestingClientError(report.rendererSkipped, 'renderer_not_ready', { skipped: true });
-      }
+    const echoClosed = echoLaunched ? await gracefulBrowserClose(debugPort) : true;
+    for (const entry of tempDirs) {
+      // Mirror close(): a userData dir may still be in use when a launched
+      // ECHO did not confirm exit; store dirs only need the loader stopped.
+      if (entry.kind !== 'store' && !echoClosed) continue;
+      try { rmSync(entry.dir, { recursive: true, force: true }); } catch {}
     }
-  } else {
-    report.rendererSkipped = `no ECHO on CDP ${debugPort} (attach-only session; pass launchEcho: true / --launch-echo to start one)`;
-    if (options.requireRenderer === true) {
-      throw new TestingClientError(report.rendererSkipped, 'echo_unreachable', { skipped: true });
-    }
-  }
+  };
 
-  const artifacts = createArtifacts({ dir: options.artifactsDir, runId: options.runId });
+  let artifacts;
+  try {
+    if (plan.spawnLoader) {
+      const env = { ...process.env };
+      if (options.isolatedUserData) {
+        const dir = typeof options.isolatedUserData === 'string'
+          ? resolve(options.isolatedUserData)
+          : mkdtempSync(join(tmpdir(), 'shinawase-userdata-'));
+        env.ECHO_USER_DATA_PATH_OVERRIDE = dir;
+        report.userDataIsolated = true;
+        if (typeof options.isolatedUserData !== 'string') tempDirs.push({ dir, kind: 'userData' });
+      }
+      if (options.isolatedStore) {
+        const dir = mkdtempSync(join(tmpdir(), 'shinawase-store-'));
+        env.ECHO_MODS_HOME = join(dir, 'Mods');
+        env.ECHO_PLUGINS_HOME = join(dir, 'Plugins');
+        mkdirSync(env.ECHO_MODS_HOME, { recursive: true });
+        mkdirSync(env.ECHO_PLUGINS_HOME, { recursive: true });
+        report.storeIsolated = true;
+        tempDirs.push({ dir, kind: 'store' });
+      }
+      // testing/ sits inside ShinawaseLoader/, so ../ShinawaseLoader.mjs is the
+      // loader CLI in both the repo checkout and installed/release layouts.
+      const loaderScript = resolve(options.loaderScript || join(moduleDir, '..', 'ShinawaseLoader.mjs'));
+      const args = [loaderScript, 'serve', '--port', String(port)];
+      if (options.echoRoot) args.push('--echo', String(options.echoRoot));
+      loaderOutput = tailBuffer();
+      loaderChild = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      loaderChild.stdout.on('data', loaderOutput.push);
+      loaderChild.stderr.on('data', loaderOutput.push);
+      const deadline = Date.now() + (Number(options.loaderReadyTimeoutMs) || 30000);
+      while (!loader && Date.now() < deadline) {
+        if (loaderChild.exitCode !== null) break;
+        try { loader = await connectLoader({ port }); } catch { await sleep(500); }
+      }
+      if (!loader) {
+        throw new TestingClientError(`session loader did not become ready on port ${port}: ${loaderOutput.read().slice(-600)}`, 'loader_spawn_failed');
+      }
+    } else if (options.isolatedUserData || options.isolatedStore) {
+      report.warnings.push('isolation flags need a session-spawned loader; the attached loader keeps its own folders and user data');
+    }
+    if (!plan.spawnLoader && options.echoRoot) {
+      report.warnings.push('echoRoot is only used when the session spawns the loader; the attached loader keeps its own selection');
+    }
+
+    if (plan.launchEcho) {
+      await loader.launch();
+      echoLaunched = true;
+    }
+
+    if (cdpAlive || plan.launchEcho) {
+      const deadline = Date.now() + (Number(options.echoReadyTimeoutMs) || 90000);
+      let lastError = null;
+      while (Date.now() < deadline) {
+        try {
+          renderer = await RendererClient.connect({ debugPort });
+          await renderer.waitForReady({ timeoutMs: Math.max(2000, deadline - Date.now()) });
+          break;
+        } catch (error) {
+          lastError = error;
+          try { renderer?.close(); } catch {}
+          renderer = null;
+          await sleep(1000);
+        }
+      }
+      if (!renderer) {
+        report.rendererSkipped = `renderer not ready on CDP ${debugPort}: ${lastError?.message || 'timeout'}`;
+        if (options.requireRenderer === true) {
+          throw new TestingClientError(report.rendererSkipped, 'renderer_not_ready', { skipped: true });
+        }
+      }
+    } else {
+      report.rendererSkipped = `no ECHO on CDP ${debugPort} (attach-only session; pass launchEcho: true / --launch-echo to start one)`;
+      if (options.requireRenderer === true) {
+        throw new TestingClientError(report.rendererSkipped, 'echo_unreachable', { skipped: true });
+      }
+    }
+
+    artifacts = createArtifacts({ dir: options.artifactsDir, runId: options.runId });
+  } catch (error) {
+    await reclaimSpawned();
+    throw error;
+  }
   let stopAutomationNotice = null;
 
   const session = {
@@ -238,9 +264,11 @@ export const openSession = async (options = {}) => {
         outcome.notes.push('closeEcho ignored: ECHO was already running before this session (external ownership)');
       }
       if (loaderChild) {
-        try { loaderChild.kill(); } catch {}
+        let signalled = false;
+        try { signalled = loaderChild.kill() === true; } catch {}
         await sleep(400);
-        outcome.loaderStopped = true;
+        outcome.loaderStopped = loaderChild.exitCode !== null || loaderChild.signalCode !== null || signalled;
+        if (!outcome.loaderStopped) outcome.notes.push('loader child did not confirm exit');
       }
       for (const entry of tempDirs) {
         const safe = entry.kind === 'store'
@@ -262,7 +290,9 @@ export const openSession = async (options = {}) => {
       report.automationNoticeShown = true;
       await loader.reinject().catch(() => undefined);
     } catch (error) {
-      await session.close();
+      // closeEcho only acts on a session-launched ECHO (ownership-guarded in
+      // close()), so this reclaims what this failed open started and nothing else.
+      await session.close({ closeEcho: true });
       throw error;
     }
   }

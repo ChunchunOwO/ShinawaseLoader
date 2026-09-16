@@ -276,7 +276,7 @@ export class MockElement {
     return false;
   }
   get textContent() {
-    return this.childNodes.map((node) => node.nodeType === 3 ? node.textContent : node.textContent).join('');
+    return this.childNodes.map((node) => node.textContent).join('');
   }
   set textContent(value) { this.replaceChildren(new MockTextNode(value, this.__realm)); }
   get innerHTML() { return this.childNodes.map((node) => serializeNode(node)).join(''); }
@@ -575,7 +575,20 @@ export const createMockRealm = (options = {}) => {
     __realm: realm,
     createElement: (tag) => new MockElement(tag, realm),
     createTextNode: (text) => new MockTextNode(text, realm),
-    getElementById: (id) => document.documentElement.querySelector(`#${id}`),
+    // Direct tree walk: ids may contain characters the subset selector
+    // engine would misparse (for example dots read as class selectors).
+    getElementById: (id) => {
+      const target = String(id);
+      const walk = (element) => {
+        if (element.id === target) return element;
+        for (const child of element.children) {
+          const found = walk(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      return walk(document.documentElement);
+    },
     querySelector: (selector) => document.documentElement.matches?.(selector) && matchesSelector(document.documentElement, selector) ? document.documentElement : document.documentElement.querySelector(selector),
     querySelectorAll: (selector) => document.documentElement.querySelectorAll(selector),
     contains: (node) => document.documentElement.contains(node),

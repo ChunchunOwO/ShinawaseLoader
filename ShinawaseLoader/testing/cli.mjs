@@ -30,6 +30,14 @@ import { openSession } from './session.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 
+// Flags that never take a value, so `check --no-smoke <dir>` keeps <dir> as a
+// positional instead of swallowing it as the flag's value.
+const BOOLEAN_FLAGS = new Set([
+  'json', 'no-smoke', 'pack', 'strict-timers', 'allow-skip', 'allow-overwrite',
+  'keep', 'keep-enabled', 'launch-loader', 'launch-echo', 'close-echo',
+  'isolated-store', 'allow-console-errors', 'no-failure-screenshot',
+]);
+
 const parseArgs = (argv) => {
   const positionals = [];
   const flags = {};
@@ -39,7 +47,7 @@ const parseArgs = (argv) => {
     if (token.startsWith('--')) {
       const name = token.slice(2);
       const next = argv[index + 1];
-      if (next !== undefined && !next.startsWith('--')) { flags[name] = next; index += 1; }
+      if (!BOOLEAN_FLAGS.has(name) && next !== undefined && !next.startsWith('--')) { flags[name] = next; index += 1; }
       else flags[name] = true;
     } else positionals.push(token);
   }
@@ -72,8 +80,9 @@ const stageRunner = (report, json) => {
         stage.detail = error instanceof Error ? error.message : String(error);
         logLine(`[FAIL] ${id} - ${stage.detail}`);
         if (!optional) throw error;
+      } finally {
+        stage.durationMs = Date.now() - startedAt;
       }
-      stage.durationMs = Date.now() - startedAt;
       return stage;
     },
   };
@@ -173,7 +182,7 @@ const runOfflineChecks = async (packageDir, flags, report, stages) => {
 const commandCheck = async ({ positionals, flags }) => {
   const packageDir = positionals[0];
   const json = flags.json === true;
-  if (!packageDir) { process.stderr.write('usage: cli.mjs check <packageDir> [--json] [--no-smoke] [--pack] [--strict-timers]\n'); return 2; }
+  if (!packageDir) { process.stderr.write('usage: cli.mjs check <packageDir> [--json] [--no-smoke] [--pack] [--strict-timers] [--settle-ms <ms>]\n'); return 2; }
   const report = newReport('check');
   const stages = stageRunner(report, json);
   try {
@@ -212,9 +221,10 @@ const commandAccept = async ({ positionals, flags }) => {
   const packageDir = positionals[0];
   const json = flags.json === true;
   if (!packageDir) {
-    process.stderr.write('usage: cli.mjs accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep]\n'
+    process.stderr.write('usage: cli.mjs accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep-enabled]\n'
       + '  [--launch-loader] [--launch-echo] [--close-echo] [--echo <root>] [--isolated-user-data [dir]] [--isolated-store]\n'
-      + '  [--steps <file>] [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors] [--port <n>]\n');
+      + '  [--steps <file>] [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors] [--port <n>]\n'
+      + '  [--id <modId>] [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n');
     return 2;
   }
   const report = newReport('accept');
@@ -229,7 +239,7 @@ const commandAccept = async ({ positionals, flags }) => {
   let exitCode = 0;
 
   try {
-    await runOfflineChecks(resolve(packageDir), { 'no-smoke': flags['no-smoke'], json }, report, stages);
+    await runOfflineChecks(resolve(packageDir), { 'no-smoke': flags['no-smoke'], 'strict-timers': flags['strict-timers'], 'settle-ms': flags['settle-ms'], json }, report, stages);
     modId = report.package.id;
     if (flags.id) modId = String(flags.id);
     if (!isSafeId(modId)) throw new Error(`invalid package id: ${modId}`);
@@ -478,13 +488,16 @@ const main = async () => {
   const parsed = parseArgs(rest);
   if (!command || command === 'help' || command === '--help') {
     process.stdout.write('Shinawase Testing SDK\n'
-      + '  check <packageDir> [--json] [--no-smoke] [--pack] [--strict-timers]\n'
+      + '  check <packageDir> [--json] [--no-smoke] [--pack] [--strict-timers] [--settle-ms <ms>]\n'
       + '  test [dir] [--reporter <name>]\n'
-      + '  accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--launch-loader] [--launch-echo]\n'
-      + '         [--close-echo] [--echo <root>] [--isolated-user-data [dir]] [--isolated-store] [--steps <file>]\n'
-      + '         [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors] [--port <n>]\n'
+      + '  accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep-enabled] [--launch-loader]\n'
+      + '         [--launch-echo] [--close-echo] [--echo <root>] [--isolated-user-data [dir]] [--isolated-store]\n'
+      + '         [--steps <file>] [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH] [--allow-console-errors]\n'
+      + '         [--port <n>] [--id <modId>] [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]\n'
       + '  doctor [--json] [--port <n>]\n'
       + '  shot [--json] [--element <selector>] [--label <name>] [--out <file>] [--port <n>]\n'
+      + 'Note: check and accept execute the package entry in the offline mock-DOM harness smoke\n'
+      + '(pass --no-smoke for static-only validation).\n'
       + 'Exit codes: 0 pass, 1 fail, 2 usage, 3 live environment unavailable.\n'
       + 'See ShinawaseLoader/TESTING.md for the full contract.\n');
     return command ? 0 : 2;

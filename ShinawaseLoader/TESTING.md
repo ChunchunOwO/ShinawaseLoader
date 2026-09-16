@@ -270,11 +270,12 @@ the SDK `main.cjs` / `main.invoke` surface.
 ```text
 check <packageDir> [--json] [--no-smoke] [--pack] [--strict-timers] [--settle-ms <ms>]
 test [dir] [--reporter <name>]              # discovers test/, tests/, dev/tests
-accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep]
+accept <packageDir> [--json] [--allow-skip] [--allow-overwrite] [--keep] [--keep-enabled]
        [--launch-loader] [--launch-echo] [--close-echo] [--echo <root>]
        [--isolated-user-data [dir]] [--isolated-store] [--steps <file>]
        [--timeout <ms>] [--artifacts-dir <dir>] [--viewport WxH]
-       [--allow-console-errors] [--port <n>]
+       [--allow-console-errors] [--port <n>] [--id <modId>]
+       [--no-smoke] [--strict-timers] [--settle-ms <ms>] [--no-failure-screenshot]
 doctor [--json] [--port <n>]
 shot [--json] [--element <selector>] [--label <name>] [--out <file>] [--port <n>]
 ```
@@ -287,7 +288,10 @@ renderer cleanup verification (`window.__echoExternalMods`, plus
 `cleanupSelectors`) -> restore (fixture removed, or prior enabled state
 restored; note an overwritten install keeps the newly imported files — only
 the enabled state is restorable) -> session close. On failure it captures a
-failure screenshot and still disables/removes the fixture.
+failure screenshot and still disables/removes the fixture. `--keep` leaves the
+package installed after the run (re-enabled only if it was enabled before, or
+always with `--keep-enabled`); `--no-smoke`, `--strict-timers`, and
+`--settle-ms <ms>` tune the offline stage exactly as they do for `check`.
 
 Acceptance steps module (`accept.steps.mjs` next to the package directory, or
 `--steps <file>`):

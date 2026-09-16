@@ -32,9 +32,11 @@ export const PACKAGE_EXTENSIONS = new Set(['.echomod', '.echo']);
 export const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
 export const packageKind = (type) => type === 'echo-plugin-package' || type === 'echo-next-plugin-package' ? 'plugin' : 'mod';
 
-// scripts/pack-echomod.mjs maxFiles: the packer refuses larger packages, so
-// validation warns before authors hit it.
+// scripts/pack-echomod.mjs maxFiles / maxBytes: the packer refuses larger
+// packages, so validation warns before authors hit it. The loader itself
+// accepts up to MAX_PACKAGE_BYTES, but pack-mod.bat stops at 128 MB.
 export const PACKER_MAX_FILES = 512;
+export const PACKER_MAX_BYTES = 128 * 1024 * 1024;
 
 // ShinawaseLoader.mjs defaultPort / defaultDebugPort / inspectPort defaults.
 export const DEFAULT_LOADER_PORT = 17862;
@@ -157,6 +159,7 @@ export const DEFAULT_UI_SETTINGS = Object.freeze({
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  steamLaunchReminder: false,
 });
 
 // SDK.md "echo-steam 26.9.1 alignment": window.echo namespaces observed on the

@@ -121,3 +121,13 @@ test('virtual clock: ordering, intervals, clear, pending audit', async () => {
   window.clearInterval(interval);
   assert.equal(clock.pending().length, 0);
 });
+
+test('getElementById finds ids the selector subset cannot parse', () => {
+  const { document } = realm();
+  const badge = document.createElement('div');
+  badge.id = 'echo.sample.mod-badge';
+  document.body.append(badge);
+  assert.equal(document.getElementById('echo.sample.mod-badge'), badge);
+  assert.equal(document.getElementById('echo.sample'), null);
+  assert.equal(document.getElementById('missing'), null);
+});

@@ -10,7 +10,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { isZip, readZip } from '../echomod-archive.mjs';
 import {
-  ICON_EXTENSIONS, MANIFEST_NAMES, MAX_PACKAGE_BYTES, PACKAGE_TYPES, PACKER_MAX_FILES,
+  ICON_EXTENSIONS, MANIFEST_NAMES, MAX_PACKAGE_BYTES, PACKAGE_TYPES, PACKER_MAX_BYTES, PACKER_MAX_FILES,
   compileConfigUi, compileEntry, isSafeId, packageKind, safeRelative,
 } from './contract.mjs';
 
@@ -215,6 +215,7 @@ export const validatePackageArchive = (file) => {
   summary.fileCount = files.length;
   if (summary.fileCount > PACKER_MAX_FILES) issue(warnings, 'file_count_over_packer_limit', `${summary.fileCount} files exceed the packer limit of ${PACKER_MAX_FILES}`);
   if (summary.totalBytes > MAX_PACKAGE_BYTES) issue(errors, 'contents_too_large', `package contents exceed ${MAX_PACKAGE_BYTES} bytes`);
+  else if (summary.totalBytes > PACKER_MAX_BYTES) issue(warnings, 'contents_over_packer_limit', `package contents exceed the packer limit of ${PACKER_MAX_BYTES} bytes; the loader accepts it but pack-mod.bat will refuse to rebuild it`);
 
   if (manifest && summary.type !== 'echo-workshop-item') {
     const kind = packageKind(summary.type);
