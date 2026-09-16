@@ -98,7 +98,18 @@ const bridge = `${marker}
   app.commandLine.appendSwitch('remote-debugging-port', debugPort);
   app.whenReady().then(() => {
     if (globalThis.__shinawaseLoaderProcess) return;
-    const node = process.env.ECHO_NODE_PATH || path.join(loaderRoot, process.platform === 'win32' ? 'node.exe' : 'node');
+    // Resolve the Node runtime to spawn. Prefer an explicit override, then the
+    // runtimePath recorded by the installer (a matching system Node when one was
+    // found, otherwise the bundled node.exe copied next to the loader), then a
+    // local node.exe, and finally a bare node resolved via PATH.
+    const resolveNodePath = () => {
+      if (process.env.ECHO_NODE_PATH && fs.existsSync(process.env.ECHO_NODE_PATH)) return process.env.ECHO_NODE_PATH;
+      if (config.runtimePath && typeof config.runtimePath === 'string' && fs.existsSync(config.runtimePath)) return config.runtimePath;
+      const local = path.join(loaderRoot, process.platform === 'win32' ? 'node.exe' : 'node');
+      if (fs.existsSync(local)) return local;
+      return process.platform === 'win32' ? 'node.exe' : 'node';
+    };
+    const node = resolveNodePath();
     const loaderArgs = [script, 'attach', '--port', port, '--debug-port', debugPort];
     const command = showConsole && process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : node;
     const args = showConsole && process.platform === 'win32'

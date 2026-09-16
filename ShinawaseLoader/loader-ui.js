@@ -965,6 +965,7 @@ css.textContent = `
     color: #aeb7c9; font: 600 11px var(--shl-font); cursor: pointer;
     transition: background 160ms var(--shl-ease), color 160ms var(--shl-ease);
   }
+  .echo-debug-actions { display: flex; align-items: center; gap: 8px; }
   .echo-debug-clear:hover { background: rgba(255, 255, 255, 0.1); color: #e8eef7; }
   .echo-debug-output {
     margin: 0; padding: 12px 14px; overflow: auto; white-space: pre-wrap; word-break: break-word;
@@ -1953,6 +1954,7 @@ const runDebugCommand = async (command) => {
   if (!line) return;
   consoleAppend('> ' + line, 'echo-debug-in', true);
   if (line === 'clear' || line === 'cls') {
+    try { await api('/api/logs', { method: 'POST' }); } catch { /* ignore */ }
     const out = loaderPanel.querySelector('[data-console-out]');
     if (out) out.replaceChildren();
     lastLogText = '';
@@ -2173,7 +2175,10 @@ const openLoader = async () => {
               <span class="echo-debug-dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span>${T.consoleHint}</span>
             </span>
-            <button class="echo-debug-clear" data-action="console-clear">${T.consoleClear}</button>
+            <span class="echo-debug-actions">
+              <button class="echo-debug-clear" data-action="console-copy" title="${T.consoleCopy}">${T.consoleCopy}</button>
+              <button class="echo-debug-clear" data-action="console-clear">${T.consoleClear}</button>
+            </span>
           </div>
           <pre class="echo-debug-output" data-console-out></pre>
           <form class="echo-debug-form" data-console-form>
@@ -2215,9 +2220,32 @@ const openLoader = async () => {
     if (file) void importLoaderSettings(file).catch((error) => toast((T.settingsImportFailed || 'Import failed') + ': ' + error.message, 'error'));
   };
   renderAppearance();
-  loaderPanel.querySelector('[data-action="console-clear"]').onclick = () => {
+  loaderPanel.querySelector('[data-action="console-clear"]').onclick = async () => {
+    try { await api('/api/logs', { method: 'POST' }); } catch (error) { toast(error.message, 'error'); }
     loaderPanel.querySelector('[data-console-out]')?.replaceChildren();
     lastLogText = '';
+  };
+  loaderPanel.querySelector('[data-action="console-copy"]').onclick = async () => {
+    const out = loaderPanel.querySelector('[data-console-out]');
+    const text = out ? out.textContent || '' : '';
+    if (!text.trim()) { toast(T.consoleNoLog || '没有可复制的日志', 'info'); return; }
+    let ok = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); ok = true; }
+    } catch { ok = false; }
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        ta.remove();
+      } catch { ok = false; }
+    }
+    toast(ok ? (T.consoleCopied || '已复制') : (T.consoleCopyFail || '复制失败'), ok ? 'success' : 'error');
   };
   loaderPanel.querySelector('[data-console-form]').onsubmit = (event) => {
     event.preventDefault();

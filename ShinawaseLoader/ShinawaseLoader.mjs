@@ -2451,6 +2451,13 @@ const server = createServer(async (request, response) => {
       const tail = Math.min(400, Math.max(20, Number(url.searchParams.get('tail') || 80)));
       return jsonResponse(response, 200, { folder: logsRoot, logFile: logFilePath, errorFile: errorLogPath, file: kind, text: readLogTail(kind, tail) });
     }
+    if (request.method === 'POST' && url.pathname === '/api/logs') {
+      // Clear the selected log file (default: loader.log). The loader appends via
+      // appendFileSync, so truncating is safe and the next log keeps writing.
+      const kind = url.searchParams.get('kind') === 'error' ? errorLogPath : logFilePath;
+      try { writeFileSync(kind, ''); } catch (error) { return jsonResponse(response, 500, { ok: false, error: String(error.message || error) }); }
+      return jsonResponse(response, 200, { ok: true, file: kind });
+    }
     if (request.method === 'POST' && url.pathname === '/api/console') {
       const body = await readRequest(request);
       return jsonResponse(response, 200, { ok: true, output: await runConsoleCommand(body.command) });
