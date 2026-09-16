@@ -551,7 +551,7 @@ static napi_value js_write(napi_env env, napi_callback_info info) {
   size_t module_size = 0;
   void *dst = resolve_address(module_name, (size_t)offset, &module_size);
   free(module_name);
-  if (!dst || (module_size && (size_t)offset + size > module_size)) return throw_error(env, "native_write_range");
+  if (!dst || !module_size || (size_t)offset + size > module_size) return throw_error(env, "native_write_range");
   memcpy(dst, data, size);
   napi_value out;
   napi_create_uint32(env, (uint32_t)size, &out);
