@@ -39,7 +39,7 @@ const collectFiles = (root, manifestName) => {
       const fullPath = join(directory, entry.name);
       const packagePath = safePackagePath(prefix ? `${prefix}/${entry.name}` : entry.name);
       if (entry.isDirectory()) visit(fullPath, packagePath);
-      else if (entry.isFile() && packagePath !== manifestName) files.push({ path: packagePath, data: readFileSync(fullPath) });
+      else if (entry.isFile() && packagePath.toLowerCase() !== manifestName.toLowerCase()) files.push({ path: packagePath, data: readFileSync(fullPath) });
       else if (entry.isSymbolicLink()) throw new Error(`symbolic links are not allowed: ${packagePath}`);
       if (files.length > maxFiles) throw new Error(`too many files (limit ${maxFiles})`);
     }

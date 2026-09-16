@@ -358,7 +358,10 @@ const saveState = (state) => writeJson(statePath, state);
 const safeId = (id) => typeof id === 'string' && /^[a-z0-9][a-z0-9._-]{1,63}$/iu.test(id);
 const safeRelative = (value) => {
   if (typeof value !== 'string' || !value || value.includes('\0')) throw new Error('invalid_mod_file');
-  const clean = normalize(value).replaceAll('\\', '/');
+  // Convert backslashes before normalize(): POSIX normalize() treats '\' as an
+  // ordinary character, so 'a\..\..\x' would otherwise slip past the traversal
+  // check on non-Windows hosts. Windows verdicts are unchanged.
+  const clean = normalize(value.replaceAll('\\', '/')).replaceAll('\\', '/');
   if (clean === '.' || clean.startsWith('../') || clean === '..' || clean.startsWith('/') || /^[a-z]:/iu.test(clean)) throw new Error('invalid_mod_file');
   return clean;
 };
@@ -494,7 +497,7 @@ const collectDirectoryFiles = (directory, skipName) => {
       const filePath = join(current, entry.name);
       const packagePath = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) visit(filePath, packagePath);
-      else if (entry.isFile() && packagePath !== skipName) files.push(packageFile(packagePath, readFileSync(filePath)));
+      else if (entry.isFile() && packagePath.toLowerCase() !== skipName.toLowerCase()) files.push(packageFile(packagePath, readFileSync(filePath)));
     }
   };
   visit(directory);
@@ -525,6 +528,16 @@ const packagePayloadFromDirectory = (directory) => {
 };
 const packagePayloadFromZip = (source) => {
   const entries = readZip(readFileSync(source), { maxBytes: maxPackageBytes });
+  // Reject case-insensitive duplicate paths across all entries (manifest
+  // included) before selecting one manifest: a case-variant second manifest
+  // would otherwise land in the file list and overwrite the imported manifest
+  // on a case-insensitive file system.
+  const seenEntryPaths = new Set();
+  for (const entry of entries) {
+    const key = entry.path.replaceAll('\\', '/').toLowerCase();
+    if (seenEntryPaths.has(key)) throw new Error('duplicate_mod_file');
+    seenEntryPaths.add(key);
+  }
   const byPath = new Map(entries.map((entry) => [entry.path.replaceAll('\\', '/').toLowerCase(), entry]));
   const manifestEntry = ['echo.mod.json', 'echo.plugin.json', 'manifest.json', 'echo.workshop.json'].map((name) => byPath.get(name)).find(Boolean);
   if (!manifestEntry) throw new Error('mod_manifest_missing');
@@ -569,7 +582,10 @@ const importPackage = (source) => {
   const manifest = { ...payload.manifest, entry: payload.manifest.entry || payload.manifest.main || (kind === 'plugin' ? 'plugin.js' : 'mod.js') };
   const files = Array.isArray(payload.files) ? payload.files : [];
   const target = installedDirectory(manifest.id, kind);
-  const seenPaths = new Set();
+  // Seed the duplicate check with the manifest file names this import writes
+  // below, so no payload file can overwrite them after writeJson runs.
+  const seenPaths = new Set([kind === 'plugin' ? 'echo.plugin.json' : 'echo.mod.json']);
+  if (payload.type === 'echo-workshop-item' && payload.workshop) seenPaths.add('echo.workshop.json');
   const validatedFiles = files.map((file) => {
     const path = safeRelative(file?.path);
     const pathKey = process.platform === 'win32' ? path.toLowerCase() : path;
