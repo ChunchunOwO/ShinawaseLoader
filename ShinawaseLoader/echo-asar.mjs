@@ -15,10 +15,12 @@ const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the
 const KNOWN_STOCK_ASAR_SHA256 = {
   '26.8.28': 'c59648731aea7f109317c26a9181bb6626b9c9e7f130998c2577a99e9ccae2c0',
   '26.9.1': 'f245fd7683542bfd9f9e12fc628149bd04029819b6d2611ca274a1d7655545b6',
+  '26.9.16': '137b81875ac1f1c4735b2014b478ef27aaf7fb3fca9d6401ff0a218cc71f9271',
 };
 const KNOWN_STOCK_HEADER_SHA256 = {
   '26.8.28': 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd',
   '26.9.1': '8f685506c8b2ca9165e1ebd0a4c31385438e4bdeb41568cced2ce819a09cba1d',
+  '26.9.16': '5467723cc48791eac83ab03456570ad3e021847eb2d3bb8bc1ca4e00b7137bdc',
 };
 const knownAsarHashes = new Set(Object.values(KNOWN_STOCK_ASAR_SHA256));
 const knownHeaderHashes = new Set(Object.values(KNOWN_STOCK_HEADER_SHA256));
@@ -98,7 +100,18 @@ const bridge = `${marker}
   app.commandLine.appendSwitch('remote-debugging-port', debugPort);
   app.whenReady().then(() => {
     if (globalThis.__shinawaseLoaderProcess) return;
-    const node = process.env.ECHO_NODE_PATH || path.join(loaderRoot, process.platform === 'win32' ? 'node.exe' : 'node');
+    // Resolve the Node runtime to spawn. Prefer an explicit override, then the
+    // runtimePath recorded by the installer (a matching system Node when one was
+    // found, otherwise the bundled node.exe copied next to the loader), then a
+    // local node.exe, and finally a bare node resolved via PATH.
+    const resolveNodePath = () => {
+      if (process.env.ECHO_NODE_PATH && fs.existsSync(process.env.ECHO_NODE_PATH)) return process.env.ECHO_NODE_PATH;
+      if (config.runtimePath && typeof config.runtimePath === 'string' && fs.existsSync(config.runtimePath)) return config.runtimePath;
+      const local = path.join(loaderRoot, process.platform === 'win32' ? 'node.exe' : 'node');
+      if (fs.existsSync(local)) return local;
+      return process.platform === 'win32' ? 'node.exe' : 'node';
+    };
+    const node = resolveNodePath();
     const loaderArgs = [script, 'attach', '--port', port, '--debug-port', debugPort];
     const command = showConsole && process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : node;
     const args = showConsole && process.platform === 'win32'
@@ -252,6 +265,8 @@ const createShinawaseQobuzApi = (ipc, channels) => ({
 });
 `;
 
+const echoApiAnchor = '  const echoApi = {\n    listening: createListeningApi(ipcRenderer),';
+const echoApiInsert = '  const echoApi = {\n    streaming: createShinawaseStreamingApi(ipcRenderer, IpcChannels),\n    downloads: createShinawaseDownloadsApi(ipcRenderer, IpcChannels),\n    qobuz: createShinawaseQobuzApi(ipcRenderer, IpcChannels),\n    accounts: createShinawaseAccountsApi(ipcRenderer, IpcChannels),\n    listening: createListeningApi(ipcRenderer),';
 const patchPreload = (text) => {
   if (text.includes(preloadMarker)) return text;
   const replacements = [
@@ -260,9 +275,13 @@ const patchPreload = (text) => {
     ['accounts: null,', 'qobuz: createShinawaseQobuzApi(ipcRenderer, IpcChannels),\n  accounts: createShinawaseAccountsApi(ipcRenderer, IpcChannels),'],
   ];
   let next = text;
-  for (const [from, to] of replacements) {
-    if (!next.includes(from)) throw new Error(`asar_preload_entry_missing:${from}`);
-    next = next.replace(from, to);
+  if (replacements.every(([from]) => next.includes(from))) {
+    for (const [from, to] of replacements) next = next.replace(from, to);
+  } else if (next.includes(echoApiAnchor)) {
+    // 26.9.16 dropped the Steam `streaming: null` stubs. Inject onto echoApi.
+    next = next.replace(echoApiAnchor, echoApiInsert);
+  } else {
+    throw new Error('asar_preload_entry_missing:streaming');
   }
   return `${next.split('\n').slice(0, 1).join('\n')}\n${preloadBridge}\n${next.split('\n').slice(1).join('\n')}`;
 };
@@ -282,16 +301,19 @@ const applyStreamingQualityPassthrough = (text) => {
 };
 
 // Electron 37 on Windows crashed natively (0xC0000005) when always-on-top was
-// applied to a transparent+frameless window in its first moments. Current
-// echo-steam (Electron 43.3) still constructs the mini-player with alwaysOnTop: true and
-// the apply* helpers still raise immediately; pet / desktop-lyrics now omit
-// the ctor flag and branch darwin vs Win32. Keep the 600ms deferral.
+// applied to a transparent+frameless window in its first moments. echo-steam
+// 26.9.16 (Electron 43.5) still constructs the mini-player with alwaysOnTop:
+// true and the apply* helpers still raise immediately on win32. Keep the 600ms
+// deferral.
 const applyAuxiliaryWindowCrashFix = (text) => {
   if (text.includes('__shinawaseBornAt')) return text;
   let next = text;
   const currentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
   const currentSafe = currentCtor.replace('alwaysOnTop: true', 'alwaysOnTop: false');
   if (next.includes(currentCtor)) next = next.replaceAll(currentCtor, currentSafe);
+  const overlayCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    ...linuxOverlayBrowserWindowOptions(),\n    webPreferences: {';
+  const overlaySafe = overlayCtor.replace('alwaysOnTop: true', 'alwaysOnTop: false');
+  if (next.includes(overlayCtor)) next = next.replaceAll(overlayCtor, overlaySafe);
   const legacyCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: true,\n    webPreferences: {';
   const legacySafe = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: false,\n    webPreferences: {';
   while (next.includes(legacyCtor)) next = next.replace(legacyCtor, legacySafe);
@@ -300,6 +322,10 @@ const applyAuxiliaryWindowCrashFix = (text) => {
     if (next.includes(anchor)) {
       next = next.replace(anchor, `  ${assignment}\n  window.__shinawaseBornAt = Date.now();\n  window.setMenuBarVisibility(false);`);
     }
+  }
+  const lyricsAssign = '  desktopLyricsWindow = window;\n  desktopLyricsLastUserBounds = bounds;';
+  if (next.includes(lyricsAssign) && !next.includes('desktopLyricsWindow = window;\n  window.__shinawaseBornAt')) {
+    next = next.replace(lyricsAssign, '  desktopLyricsWindow = window;\n  window.__shinawaseBornAt = Date.now();\n  desktopLyricsLastUserBounds = bounds;');
   }
   const deferRaise = (body) => '{\n'
     + '  const raise = () => {\n'
@@ -310,6 +336,12 @@ const applyAuxiliaryWindowCrashFix = (text) => {
     + '  if (delay === 0) raise(); else setTimeout(raise, delay);\n'
     + '};';
   const helpers = [
+    ['const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "win32") {\n    window.setAlwaysOnTop(true);\n    return;\n  }\n  applyOverlayAlwaysOnTop(window, platform);\n};',
+      `const applyPetAlwaysOnTop = (window, platform = process.platform) => ${deferRaise('    if (platform === "win32") {\n      window.setAlwaysOnTop(true);\n      return;\n    }\n    applyOverlayAlwaysOnTop(window, platform);\n')}`],
+    ['const applyMiniPlayerAlwaysOnTop = (window) => {\n  if (process.platform === "win32") {\n    window.setAlwaysOnTop(true);\n    return;\n  }\n  applyOverlayAlwaysOnTop(window);\n};',
+      `const applyMiniPlayerAlwaysOnTop = (window) => ${deferRaise('    if (process.platform === "win32") {\n      window.setAlwaysOnTop(true);\n      return;\n    }\n    applyOverlayAlwaysOnTop(window);\n')}`],
+    ['const applyDesktopLyricsAlwaysOnTop = (window) => {\n  if (process.platform === "win32") {\n    window.setAlwaysOnTop(true);\n    window.moveTop();\n    return;\n  }\n  applyOverlayAlwaysOnTop(window);\n};',
+      `const applyDesktopLyricsAlwaysOnTop = (window) => ${deferRaise('    if (process.platform === "win32") {\n      window.setAlwaysOnTop(true);\n      window.moveTop();\n      return;\n    }\n    applyOverlayAlwaysOnTop(window);\n')}`],
     ['const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};',
       `const applyPetAlwaysOnTop = (window, platform = process.platform) => ${deferRaise('    if (platform === "darwin") {\n      window.setAlwaysOnTop(true, "floating");\n      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n      return;\n    }\n    window.setAlwaysOnTop(true);\n')}`],
     ['const applyMiniPlayerAlwaysOnTop = (window) => {\n  if (process.platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};',
@@ -563,7 +595,9 @@ const verifyAnchors = (root) => {
     });
   }
   const aotCurrentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
+  const aotOverlayCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    ...linuxOverlayBrowserWindowOptions(),\n    webPreferences: {';
   const aotCurrentPet = 'const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};';
+  const aotWin32Pet = 'const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "win32") {\n    window.setAlwaysOnTop(true);\n    return;\n  }\n  applyOverlayAlwaysOnTop(window, platform);\n};';
   const asarSha = sha256(readFileSync(archive));
   const headerSha = headerJsonHash(archive);
   const exePath = echoExeFor(root);
@@ -582,13 +616,13 @@ const verifyAnchors = (root) => {
     streamingPath: mainText.includes('  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {'),
     streamingReturn: mainText.includes('  return { filePath, mimeType: null, probe, durationSeconds };'),
     qualityPassthrough: mainText.includes('quality: "standard",\n      stableKey:'),
-    preloadStreamingNull: preloadText.includes('streaming: null,'),
-    preloadDownloadsNull: preloadText.includes('downloads: null,'),
-    preloadAccountsNull: preloadText.includes('accounts: null,'),
+    preloadStreamingNull: preloadText.includes('streaming: null,') || preloadText.includes(echoApiAnchor),
+    preloadDownloadsNull: preloadText.includes('downloads: null,') || preloadText.includes(echoApiAnchor),
+    preloadAccountsNull: preloadText.includes('accounts: null,') || preloadText.includes(echoApiAnchor),
     playlistFilter: playlistHits.some((item) => item.filterMatches.length),
-    aotMiniPlayerCtor: mainText.includes(aotCurrentCtor),
-    aotPetHelper: mainText.includes(aotCurrentPet),
-    aotBirthStamp: ['petWindow = window;', 'desktopLyricsWindow = window;', 'miniPlayerWindow = window;']
+    aotMiniPlayerCtor: mainText.includes(aotCurrentCtor) || mainText.includes(aotOverlayCtor),
+    aotPetHelper: mainText.includes(aotCurrentPet) || mainText.includes(aotWin32Pet),
+    aotBirthStamp: ['petWindow = window;', 'miniPlayerWindow = window;']
       .every((assignment) => mainText.includes(`  ${assignment}\n  window.setMenuBarVisibility(false);`)),
     playbackChannels: ['playback:play-media-item', 'playback:resolve-media-item', 'playback:prepare-media-item']
       .every((channel) => mainText.includes(channel)),
