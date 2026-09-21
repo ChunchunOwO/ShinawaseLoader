@@ -1703,8 +1703,9 @@ const saveUiSettings = async (patch) => {
   return { ...uiSettings };
 };
 
+const isLoaderSurface = (surface) => surface.classList.contains('echo-external-loader-panel') || surface.classList.contains('echo-external-mod-panel') || surface.classList.contains('echo-external-mod-page');
 const hideNativeSurfaces = () => document.querySelectorAll('.page-surface:not([hidden])').forEach((surface) => {
-  if (surface.classList.contains('echo-external-loader-panel') || surface.classList.contains('echo-external-mod-panel') || surface.classList.contains('echo-external-mod-page')) return;
+  if (isLoaderSurface(surface)) return;
   if (surface.closest('aside.sidebar, .sidebar, .sidebar-groups')) return;
   surface.dataset.echoExternalHidden = 'true';
   surface.setAttribute('hidden', '');
@@ -1749,6 +1750,33 @@ const closeSidebarPage = () => {
 const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:lyrics-back', 'app:navigate:route'];
 const onNativeRoute = () => closeSidebarPage();
 nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNativeRoute));
+
+// ECHO also routes from entry points the .nav-item click hook never sees
+// (titlebar actions, shortcuts, player controls). Watch the surface host: when
+// a native page-surface becomes visible while one of our pages is open, yield
+// to it — hide our panels and drop the hidden markers WITHOUT unhiding, since
+// ECHO's router owns surface visibility again and restoring here would stack
+// the previous native page under the new one.
+const loaderPageActive = () => Boolean(
+  (loaderPanel && !loaderPanel.hidden) || (modsPanel && !modsPanel.hidden) || (marketPanel && !marketPanel.hidden)
+  || (activeSidebar && sidebarPages.get(activeSidebar) && !sidebarPages.get(activeSidebar).hidden));
+const onSurfaceMutation = () => {
+  if (!loaderPageActive()) return;
+  const nativeVisible = [...document.querySelectorAll('.page-surface:not([hidden])')]
+    .some((surface) => !isLoaderSurface(surface) && !surface.closest('aside.sidebar, .sidebar, .sidebar-groups'));
+  if (!nativeVisible) return;
+  hideAllPanels();
+  document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => { delete surface.dataset.echoExternalHidden; });
+};
+const surfaceObserver = new MutationObserver(onSurfaceMutation);
+let surfaceObserverTarget = null;
+const observeSurfaces = () => {
+  const host = pageHost();
+  if (!host || host === surfaceObserverTarget) return;
+  surfaceObserver.disconnect();
+  surfaceObserver.observe(host, { childList: true, attributes: true, attributeFilter: ['hidden'], subtree: true });
+  surfaceObserverTarget = host;
+};
 
 const navSvg = (paths) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
 const loaderNavIcon = navSvg('<path d="M12 3 4.8 7.2v9.6L12 21l7.2-4.2V7.2L12 3z"/><circle cx="12" cy="12" r="2.35"/><path d="M12 3v6.4"/>');
@@ -4036,6 +4064,7 @@ const maybeShowDisclaimer = () => {
 const ensure = () => {
   if (splashActive()) return false;
   ensureLegacyThemeVars();
+  observeSurfaces();
   attachPanel(loaderPanel);
   attachPanel(modsPanel);
   attachPanel(marketPanel);
@@ -4074,21 +4103,38 @@ const startObserver = () => {
   ensure();
 };
 startObserver();
-document.addEventListener('click', (event) => {
-  const navItem = event.target?.closest?.('.nav-item');
-  if (!navItem) return;
-  if (navItem.dataset.echoExternalSidebar || navItem.dataset.echoExternalLoader || navItem.dataset.echoExternalMods || navItem.dataset.echoExternalMarket) return;
-  if (navItem !== activeNav) closeSidebarPage();
-}, true);
+// Capture on window so this runs ahead of ECHO's document handlers and of any
+// listener a previous UI instance failed to remove.
+const onNavControlClick = (event) => {
+  const control = event.target?.closest?.('.nav-item, .titlebar-action');
+  if (!control) return;
+  if (control.dataset.echoExternalSidebar || control.dataset.echoExternalLoader || control.dataset.echoExternalMods || control.dataset.echoExternalMarket) return;
+  // ECHO route controls toggle away from their page when it is already the
+  // current route. Our pages never change ECHO's route, so with one open a
+  // click on the active control means "back to that page": swallow it and
+  // restore the surface we hid instead of letting ECHO toggle to the previous
+  // route. Drawer triggers (data-drawer-trigger) never route; leave them alone.
+  if (loaderPageActive() && control.dataset.active === 'true' && control.dataset.drawerTrigger !== 'true'
+    && document.querySelector('.page-surface[data-echo-external-hidden="true"]')) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    closeSidebarPage();
+    return;
+  }
+  if (control.classList.contains('nav-item') && control !== activeNav) closeSidebarPage();
+};
+window.addEventListener('click', onNavControlClick, true);
 
 window.__echoExternalLoaderUi = {
-  version: 56,
+  version: 58,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
   setUiSettings: (patch) => saveUiSettings(patch),
   dispose: () => {
     observer.disconnect();
+    surfaceObserver.disconnect();
+    window.removeEventListener('click', onNavControlClick, true);
     window.clearTimeout(ensureTimer);
     window.clearTimeout(configModalTimer);
     window.clearTimeout(searchTimer);
