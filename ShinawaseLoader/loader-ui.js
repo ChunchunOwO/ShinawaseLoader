@@ -1761,8 +1761,19 @@ nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNa
 const loaderPageActive = () => Boolean(
   (loaderPanel && !loaderPanel.hidden) || (modsPanel && !modsPanel.hidden) || (marketPanel && !marketPanel.hidden)
   || (activeSidebar && sidebarPages.get(activeSidebar) && !sidebarPages.get(activeSidebar).hidden));
-const onSurfaceMutation = () => {
+// subtree childList also fires for unrelated UI churn (list rerenders, player
+// updates); only the mutations below can change which page-surface is visible,
+// so anything else skips the full surface rescan.
+const surfaceMutationRelevant = (records) => records.some((record) => {
+  if (record.type === 'attributes') return record.target?.classList?.contains('page-surface') === true;
+  for (const node of record.addedNodes) {
+    if (node?.classList?.contains('page-surface')) return true;
+  }
+  return false;
+});
+const onSurfaceMutation = (records) => {
   if (!loaderPageActive()) return;
+  if (!surfaceMutationRelevant(records)) return;
   const nativeVisible = [...document.querySelectorAll('.page-surface:not([hidden])')]
     .some((surface) => !isLoaderSurface(surface) && !surface.closest('aside.sidebar, .sidebar, .sidebar-groups'));
   if (!nativeVisible) return;
@@ -4154,7 +4165,7 @@ const onNavControlClick = (event) => {
 window.addEventListener('click', onNavControlClick, true);
 
 window.__echoExternalLoaderUi = {
-  version: 58,
+  version: 59,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
