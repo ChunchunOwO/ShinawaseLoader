@@ -62,8 +62,8 @@ export const PLAYER_GLOBAL = '__echoExternalPlayer';
 export const EXTEND_GLOBAL = '__echoExternalExtend';
 
 // Minimum runtime versions the injection cycle expects (ShinawaseLoader.mjs
-// injectEnabled(): uiVersion < 56, playerVersion < 1, extendVersion < 1).
-export const MIN_UI_VERSION = 56;
+// injectEnabled(): uiVersion < 59, playerVersion < 1, extendVersion < 1).
+export const MIN_UI_VERSION = 59;
 export const MIN_PLAYER_VERSION = 1;
 export const MIN_EXTEND_VERSION = 1;
 
