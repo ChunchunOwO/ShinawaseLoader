@@ -1586,6 +1586,7 @@ const renderDrawer = () => {
     pendingDrawerRender = true;
     return;
   }
+  const previousScrollTop = root.querySelector('.echo-mv-sheet-body')?.scrollTop ?? 0;
   lastDrawerSignature = signature;
   pendingDrawerRender = false;
   const activeTitle = state.currentTrack ? `${state.currentTrack.title} - ${state.currentTrack.artist || state.currentTrack.albumArtist || ''}` : (state.trackId || t('mvSettings.status.noActiveTrack'));
@@ -1969,10 +1970,11 @@ const renderDrawer = () => {
   } : null;
   root.replaceChildren(scrim, sheet);
   if (!root.isConnected) document.body.append(root);
+  body.scrollTop = previousScrollTop;
   if (restore?.key) {
     const next = [...root.querySelectorAll('input, textarea, button, select')].find((node) => sheetFocusKey(node) === restore.key);
     if (next) {
-      next.focus();
+      next.focus({ preventScroll: true });
       if (restore.value != null && 'value' in next) {
         try {
           next.value = restore.value;

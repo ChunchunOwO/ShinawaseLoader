@@ -289,7 +289,7 @@ const renderAccountPage = () => {
       state.accountAdvancedOpen = false;
       refreshAccountPage();
     });
-    const logo = make('span', 'settings-account-service-logo streaming-account-service-logo', (accountProviderLabels[provider] || provider).slice(0, 1));
+    const logo = makeAccountProviderLogo(provider, 'settings-account-service-logo');
     const copyBox = make('span', 'settings-account-service-copy');
     copyBox.append(
       make('strong', '', accountProviderLabels[provider] || provider),
@@ -306,7 +306,7 @@ const renderAccountPage = () => {
   detail.setAttribute('aria-label', accountProviderLabels[provider] || provider);
   const detailHeader = make('header', 'settings-account-detail-header');
   detailHeader.append(
-    make('span', 'settings-account-detail-logo streaming-account-service-logo', (accountProviderLabels[provider] || provider).slice(0, 1)),
+    makeAccountProviderLogo(provider, 'settings-account-detail-logo'),
   );
   const detailTitle = make('div', '');
   detailTitle.append(
@@ -467,6 +467,19 @@ iconPaths.more = '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="non
 const playlistIdentity = (playlist) => String(playlist?.id || playlist?.providerPlaylistId || playlist?.importedPlaylistId || playlist?.key || `${playlist?.provider || ''}:${playlist?.title || playlist?.name || ''}`);
 const makeIcon = (name, size = 16) => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size)); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true'); svg.innerHTML = iconPaths[name] || ''; return svg; };
 const make = (tag, className = '', text = undefined) => { const node = document.createElement(tag); if (className) node.className = className; if (text instanceof Node) node.append(text); else if (text !== undefined) node.textContent = String(text ?? ''); return node; };
+const makeAccountProviderLogo = (provider, className) => {
+  const fallback = (accountProviderLabels[provider] || provider).slice(0, 1);
+  const logo = make('span', `${className} streaming-account-service-logo`, fallback);
+  logo.dataset.provider = provider;
+  if (typeof external.assetUrl !== 'function') return logo;
+  const image = make('img', 'streaming-account-service-icon');
+  image.alt = '';
+  image.setAttribute('aria-hidden', 'true');
+  image.decoding = 'async';
+  image.addEventListener('load', () => { logo.textContent = ''; logo.append(image); }, { once: true });
+  image.src = external.assetUrl(`provider-icons/${provider}.${provider === 'kugou' ? 'png' : 'svg'}`);
+  return logo;
+};
 const actionButton = (label, iconName, handler, options = {}) => { const node = make('button', options.className || '', options.iconOnly ? undefined : label); node.type = 'button'; if (iconName) node.prepend(makeIcon(iconName, options.size || 16)); node.title = options.title || label; node.setAttribute('aria-label', options.ariaLabel || label); if (options.active !== undefined) node.dataset.active = String(options.active); if (options.disabled) node.disabled = true; node.addEventListener('click', (event) => { event.stopPropagation(); try { Promise.resolve(handler(event)).catch(reportError); } catch (error) { reportError(error); } }); return node; };
 const renderNeteasePhoneLogin = () => {
   const box = make('div', 'echo-streaming-phone-login');

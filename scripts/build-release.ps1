@@ -45,6 +45,8 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'scripts\pack-echomod.mjs') -Dest
   '4. Or double-click ECHO.modded.exe / ShinawaseLoader\start-echo-with-mods.cmd.',
   '',
   'ECHO.modded.exe is an independent host. It does not replace Steam ECHO.exe.',
+  'Setup asks you to accept the ShinawaseLoader disclaimer. Normal launches do not ask again.',
+  'ShinawaseLoader is separate from ECHO. Unlawful, commercial, profit-seeking, infringing, unauthorized or privacy-violating use is prohibited.',
   'The installer uses an external CDP connection and never patches Steam resources\app.asar.',
   'Install builds an isolated ShinawaseLoader\modded-runtime plus ECHO.modded.exe. -PatchApp is accepted for older callers and ignored.',
   'It downloads Node into the current user cache only when required.',

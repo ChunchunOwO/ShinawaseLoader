@@ -585,6 +585,15 @@ css.textContent = `
   }
 
   /* ---- Mod Market ---- */
+  .echo-market-page [data-market-home] { display: grid; gap: 24px; min-width: 0; }
+  .echo-market-page [data-market-home][hidden] { display: none; }
+  .echo-market-page .echo-mod-header > div:first-child { min-width: 0; }
+  .echo-market-page .echo-mod-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .echo-market-page .echo-recommend-head { min-height: 18px; }
+  .echo-market-page [data-recommend-wrap] .echo-recommend-head::after,
+  .echo-market-page [data-all-wrap] .echo-recommend-head::after {
+    content: ""; height: 1px; flex: 1; background: var(--shl-border);
+  }
   .echo-market-action {
     min-height: 34px; padding: 0 14px; border-radius: 10px; flex: none;
     border: 1px solid transparent;
@@ -1236,20 +1245,21 @@ css.textContent = `
     height: 18px;
     align-items: center;
     align-self: center;
-    padding: 0 7px;
-    border: 1px solid color-mix(in srgb, var(--shl-accent, var(--theme-accent, #4b55e8)) 32%, transparent);
-    border-radius: 999px;
+    padding: 0 3px;
+    border: none;
     color: var(--shl-accent-strong, var(--theme-accent-text-strong, var(--theme-accent, #4b55e8)));
-    background: linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--shl-accent-bg, var(--theme-accent-bg, rgba(75, 85, 232, 0.12))) 64%, transparent),
-      color-mix(in srgb, var(--shl-panel, var(--theme-panel-bg, #fff)) 72%, transparent)
-    );
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--shl-accent, var(--theme-accent, #4b55e8)) 12%, transparent);
-    font-size: 10px;
-    font-weight: 880;
+    background: linear-gradient(115deg,
+      var(--shl-accent-strong, var(--theme-accent-text-strong, #4b55e8)) 15%,
+      color-mix(in srgb, var(--shl-accent, var(--theme-accent, #4b55e8)) 72%, #a78bfa) 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    box-shadow: none;
+    font-family: "Outfit", "Segoe UI", sans-serif;
+    font-size: 14px;
+    font-weight: 700;
     line-height: 1;
-    letter-spacing: 0.01em;
+    letter-spacing: -0.035em;
     white-space: nowrap;
     pointer-events: none;
   }
@@ -1291,6 +1301,7 @@ css.textContent = `
 
   .echo-mod-list[data-layout="store"] {
     display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 14px;
+    align-items: stretch;
   }
   .echo-mod-list[data-layout="store"] > .echo-empty { grid-column: 1 / -1; }
   .echo-mod-list[data-layout="store"] > .echo-skel { min-height: 168px; }
@@ -1300,16 +1311,10 @@ css.textContent = `
     grid-template-columns: none; grid-template-rows: none;
   }
   .echo-store-card {
-    display: flex; flex-direction: column; gap: 12px; min-width: 0; max-width: 100%; min-height: 168px;
-    padding: 16px; border: 1px solid color-mix(in srgb, var(--shl-border) 70%, transparent);
+    display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 100%; min-height: 190px;
+    padding: 18px; border: 1px solid color-mix(in srgb, var(--shl-border) 70%, transparent);
     border-radius: 16px; background: var(--shl-panel);
     box-shadow: 0 1px 2px rgba(16, 19, 24, 0.04);
-  }
-  .echo-store-slot {
-    min-height: 168px; pointer-events: none;
-    border: 1px dashed color-mix(in srgb, var(--shl-border) 85%, transparent);
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--shl-panel) 42%, transparent);
   }
   .echo-store-card:hover {
     transform: none; border-color: color-mix(in srgb, var(--shl-accent) 22%, var(--shl-border));
@@ -1318,22 +1323,29 @@ css.textContent = `
   .echo-store-card[data-installed="true"], .echo-store-card[data-update="true"] {
     background: var(--shl-panel);
   }
-  .echo-store-top { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .echo-store-top { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0; }
   .echo-store-card .echo-mod-icon { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
-  .echo-store-body { min-width: 0; }
-  .echo-store-body strong { font-size: 15px; font-weight: 700; }
+  .echo-store-body { min-width: 0; overflow: hidden; }
+  .echo-store-body strong {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 15px; font-weight: 700; line-height: 1.35;
+  }
   .echo-store-byline {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; min-width: 0;
     color: var(--shl-muted); font-size: 12px;
   }
+  .echo-store-byline span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .echo-store-body em {
-    display: -webkit-box; margin-top: 6px; white-space: normal; line-height: 1.45;
+    display: -webkit-box; margin-top: 8px; max-height: 2.9em; overflow: hidden;
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.45;
     -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   }
+  .echo-store-body em[hidden] { display: none; }
   .echo-store-foot {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto;
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto;
+    flex: none; min-width: 0; padding-top: 12px; border-top: 1px solid var(--shl-border);
   }
-  .echo-store-foot .echo-mod-row-actions { margin-left: auto; }
+  .echo-store-foot .echo-mod-row-actions { margin-left: auto; min-width: 0; flex-wrap: wrap; }
   .echo-store-ghost {
     min-height: 32px; padding: 0 12px; border-radius: 8px;
     border: 1px solid var(--shl-border); background: transparent; color: inherit;
@@ -1342,9 +1354,12 @@ css.textContent = `
   }
   .echo-store-ghost:hover { background: var(--shl-row-hover); }
   .echo-store-card .echo-market-action { min-height: 32px; border-radius: 8px; box-shadow: none; }
-  @media (max-width: 560px) {
+  @media (max-width: 1280px) {
+    .echo-mod-list[data-layout="store"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  }
+  @media (max-width: 760px) {
     .echo-mod-list[data-layout="store"] { grid-template-columns: minmax(0, 1fr) !important; }
-    .echo-store-slot { display: none !important; }
+    .echo-store-card { min-height: 0; }
   }
 
   /* ---- Keyframes ---- */
@@ -1597,7 +1612,7 @@ const setAutoUpdatePreference = async (enabled) => {
 };
 
 const showSteamLaunchReminder = () => {
-  if (!disclaimerAccepted || !steamLaunchReminderEnabled()) return;
+  if (!steamLaunchReminderEnabled()) return;
   if (steamReminderShown || steamReminderEl?.isConnected) return;
   if (!document.querySelector('.app-shell')) return;
   document.querySelectorAll('.echo-steam-reminder').forEach((node) => node.remove());
@@ -3011,7 +3026,6 @@ const syncMarketToolbar = () => {
     chip.classList.toggle('active', chip.dataset.marketFilter === marketFilter);
   });
 };
-const MARKET_STORE_COLS = 3;
 const MARKET_LIST_PAGE = 6;
 const MARKET_REC_PAGE = 3;
 const MARKET_RANDOM_COUNT = 3;
@@ -3029,23 +3043,6 @@ const sliceMarketPage = (items, page, size) => {
   const pages = Math.max(1, Math.ceil((items.length || 0) / size) || 1);
   const current = Math.min(Math.max(1, page || 1), pages);
   return { page: current, pages, items: items.slice((current - 1) * size, current * size) };
-};
-const marketStoreColumns = () => {
-  try { if (window.matchMedia('(max-width: 560px)').matches) return 1; } catch {}
-  return MARKET_STORE_COLS;
-};
-const renderStoreSlot = () => {
-  const slot = document.createElement('div');
-  slot.className = 'echo-store-slot';
-  slot.setAttribute('aria-hidden', 'true');
-  return slot;
-};
-const padStoreRow = (nodes, columns = marketStoreColumns()) => {
-  const list = Array.isArray(nodes) ? [...nodes] : [];
-  if (!list.length || columns < 2) return list;
-  const rem = list.length % columns;
-  if (rem) for (let i = rem; i < columns; i += 1) list.push(renderStoreSlot());
-  return list;
 };
 const paintMarketPager = (host, pages, page, onPage) => {
   if (!host) return;
@@ -3241,7 +3238,7 @@ const renderMarketList = () => {
   const recPage = sliceMarketPage(recPool, marketRecPage, MARKET_REC_PAGE);
   marketRecPage = recPage.page;
   if (recWrap) recWrap.hidden = recPool.length === 0;
-  if (recHost) recHost.replaceChildren(...padStoreRow(recPage.items.map((item, index) => renderMarketCard(item, index, animate))));
+  if (recHost) recHost.replaceChildren(...recPage.items.map((item, index) => renderMarketCard(item, index, animate)));
   paintMarketPager(recPager, recPage.pages, recPage.page, (page) => { marketRecPage = page; renderMarketList(); });
   if (recPager) recPager.hidden = recPool.length === 0;
   if (hideRandom) {
@@ -3263,7 +3260,7 @@ const renderMarketList = () => {
   if (!items.length) {
     list.replaceChildren(renderMarketEmpty(all.length ? 'search' : 'empty'));
   } else {
-    list.replaceChildren(...padStoreRow(listPage.items.map((item, index) => renderMarketCard(item, index, animate))));
+    list.replaceChildren(...listPage.items.map((item, index) => renderMarketCard(item, index, animate)));
   }
   paintMarketPager(listPager, listPage.pages, listPage.page, (page) => { marketListPage = page; renderMarketList(); });
   if (listPager) listPager.hidden = !items.length;
@@ -3272,7 +3269,7 @@ const renderMarketList = () => {
   } else {
     if (!marketRandomPick.length) marketRandomPick = shuffleMarketMods(MARKET_RANDOM_COUNT);
     if (randomWrap) randomWrap.hidden = marketRandomPick.length === 0;
-    if (randomList) randomList.replaceChildren(...padStoreRow(marketRandomPick.map((item, index) => renderMarketCard(item, index, false))));
+    if (randomList) randomList.replaceChildren(...marketRandomPick.map((item, index) => renderMarketCard(item, index, false)));
   }
 };
 const setMarketLoginOpen = (open) => {
@@ -3619,7 +3616,7 @@ const openMarket = async () => {
     return;
   }
   marketPanel = mountPage('echo-external-mod-panel page-surface', `
-    <div class="echo-mod-page">
+    <div class="echo-mod-page echo-market-page">
       <header class="echo-mod-header">
         <div>
           <span class="section-kicker">${T.marketKicker || 'Marketplace'}</span>
@@ -4112,7 +4109,6 @@ const ensure = () => {
   if (!nav) return false;
   ensureLoaderButtons(nav);
   renderSidebarButtons();
-  maybeShowDisclaimer();
   maybeShowSteamLaunchReminder();
   return true;
 };

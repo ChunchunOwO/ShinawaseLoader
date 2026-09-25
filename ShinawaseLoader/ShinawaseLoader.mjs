@@ -2734,14 +2734,13 @@ const printList = () => {
 
 const UPDATE_SKIP = new Set(['node.exe', 'node_modules', 'logs', 'backups', 'modded-runtime', 'loader-state.json', 'loader.config.json', 'loader-debug.log', '.git', '.processed']);
 const UPDATE_REPO = 'ChunchunOwO/ShinawaseLoader';
-const UPDATE_JSON_BASES = [
-  `https://raw.githubusercontent.com/${UPDATE_REPO}/main`,
-  `https://cdn.jsdelivr.net/gh/${UPDATE_REPO}@main`,
-];
-const UPDATE_ARCHIVE_URLS = [
-  `https://codeload.github.com/${UPDATE_REPO}/zip/refs/heads/main`,
-  `https://github.com/${UPDATE_REPO}/archive/refs/heads/main.zip`,
-];
+const updateUsesOfficialSource = () => readJson(selectionPath, {}).nodeMirror === 'official';
+const updateJsonBases = () => updateUsesOfficialSource()
+  ? [`https://raw.githubusercontent.com/${UPDATE_REPO}/main`]
+  : [`https://ghproxy.net/https://raw.githubusercontent.com/${UPDATE_REPO}/main`];
+const updateArchiveUrls = () => updateUsesOfficialSource()
+  ? [`https://codeload.github.com/${UPDATE_REPO}/zip/refs/heads/main`]
+  : [`https://ghproxy.net/https://github.com/${UPDATE_REPO}/archive/refs/heads/main.zip`];
 const UPDATE_PACKAGES = [
   { id: 'echo.community-streaming', manifest: 'examples/ECHO-Streaming/echomod/echo.mod.json', file: 'examples/packages/ECHO-Streaming.echomod' },
   { id: 'echo.mv', manifest: 'examples/ECHO-MV/echomod/echo.mod.json', file: 'examples/packages/ECHO-MV.echomod' },
@@ -2770,7 +2769,7 @@ const fetchUpdateOnce = async (url, timeoutMs, asJson) => {
 };
 const fetchUpdateJson = async (path, timeoutMs = 15000) => {
   let lastError;
-  for (const base of UPDATE_JSON_BASES) {
+  for (const base of updateJsonBases()) {
     try { return await fetchUpdateOnce(`${base}/${path}`, timeoutMs, true); }
     catch (error) { lastError = error; }
   }
@@ -2779,7 +2778,7 @@ const fetchUpdateJson = async (path, timeoutMs = 15000) => {
 const fetchUpdateBuffer = async (pathOrUrl, timeoutMs = 120000) => {
   const urls = /^https?:/i.test(pathOrUrl)
     ? [pathOrUrl]
-    : UPDATE_JSON_BASES.map((base) => `${base}/${pathOrUrl}`);
+    : updateJsonBases().map((base) => `${base}/${pathOrUrl}`);
   let lastError;
   for (const url of urls) {
     try { return await fetchUpdateOnce(url, timeoutMs, false); }
@@ -2848,12 +2847,16 @@ const applySelfUpdate = async (options = {}) => {
     if (status.loaderUpdate) {
       let archive;
       let lastError;
-      for (const url of UPDATE_ARCHIVE_URLS) {
+      for (const url of updateArchiveUrls()) {
         try { archive = await fetchUpdateBuffer(url); break; }
         catch (error) { lastError = error; }
       }
       if (!archive) throw lastError || new Error('update_archive_unreachable');
       const files = readZip(archive, { maxEntries: 20000, maxBytes: 256 * 1024 * 1024 });
+      const versionFile = files.find((file) => String(file.path || '').replaceAll('\\', '/').endsWith('/ShinawaseLoader/loader-version.json'));
+      if (!versionFile || String(JSON.parse(versionFile.data.toString('utf8')).version || '') !== status.remote) {
+        throw new Error('update_archive_version_mismatch');
+      }
       for (const file of files) {
         const normalized = String(file.path || '').replaceAll('\\', '/');
         const marker = '/ShinawaseLoader/';

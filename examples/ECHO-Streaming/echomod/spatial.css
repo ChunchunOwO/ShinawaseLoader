@@ -2628,10 +2628,40 @@
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-accent, #4b55e8) 14%, transparent);
-  color: var(--theme-accent, #4b55e8);
+  flex: none;
+  background: color-mix(in srgb, var(--account-brand, var(--theme-accent, #4b55e8)) 12%, var(--theme-field-bg, #fff));
+  color: var(--account-brand, var(--theme-accent, #4b55e8));
   font-size: 15px;
   font-weight: 800;
+}
+
+.streaming-account-service-logo[data-provider="netease"] { --account-brand: #d43c33; }
+.streaming-account-service-logo[data-provider="qqmusic"] { --account-brand: #11af52; }
+.streaming-account-service-logo[data-provider="kugou"] { --account-brand: #2586d8; }
+.streaming-account-service-logo[data-provider="bilibili"] { --account-brand: #00a1d6; }
+.streaming-account-service-logo[data-provider="youtube"] { --account-brand: #ff0033; }
+.streaming-account-service-logo[data-provider="soundcloud"] { --account-brand: #ff5500; }
+.streaming-account-service-logo[data-provider="spotify"] { --account-brand: #1ed760; }
+.streaming-account-service-logo[data-provider="tidal"] { --account-brand: #555; }
+.streaming-account-service-logo[data-provider="qobuz"] { --account-brand: #394857; }
+.streaming-account-service-logo[data-provider="osu"] { --account-brand: #ff66aa; }
+
+.streaming-account-service-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.streaming-account-service-logo[data-provider="soundcloud"] .streaming-account-service-icon,
+.streaming-account-service-logo[data-provider="tidal"] .streaming-account-service-icon {
+  width: 30px;
+}
+
+.streaming-account-service-logo[data-provider="kugou"] .streaming-account-service-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
 }
 
 .streaming-account-page .settings-account-service-copy {

@@ -14,4 +14,6 @@ The script targets Electron **43.3.0** headers by default (echo-steam **26.9.1**
 
 Do not pass app FileVersion (for example **26.9.1**) to node-gyp — that is not an Electron ABI. Use `-Runtime node` only when testing the addon under the bundled Node runtime; ECHO in-process loading needs the Electron ABI.
 
+The installer's **Download source** choice also controls this build: npm packages and Electron/Node headers use npmmirror by default, or their official sources when direct download is selected.
+
 Current-process `modules/read/write/protect` helpers are for authorized ECHO native-host / DSP development. They do not open other processes.
