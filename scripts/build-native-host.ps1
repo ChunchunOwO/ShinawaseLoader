@@ -11,6 +11,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $FallbackElectron = '43.3.0'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$selectionFile = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }) 'ShinawaseLoader\selection.json'
+$sourceId = ''
+if (Test-Path -LiteralPath $selectionFile) {
+  try { $sourceId = [string]((Get-Content -LiteralPath $selectionFile -Raw | ConvertFrom-Json).nodeMirror) } catch {}
+}
+$officialSource = $sourceId -eq 'official'
+$npmRegistry = if ($officialSource) { 'https://registry.npmjs.org' } else { 'https://registry.npmmirror.com' }
+$headerBase = if ($Runtime -eq 'electron') {
+  if ($officialSource) { 'https://electronjs.org/headers' } else { 'https://npmmirror.com/mirrors/electron' }
+} elseif ($officialSource) { 'https://nodejs.org/dist' } else { 'https://npmmirror.com/mirrors/node' }
 $NativeRoot = Join-Path $ProjectRoot 'ShinawaseLoader\native'
 $Gyp = Join-Path $NativeRoot 'binding.gyp'
 if (-not (Test-Path -LiteralPath $Gyp)) { throw 'native/binding.gyp is missing.' }
@@ -48,23 +58,31 @@ if (-not $PSBoundParameters.ContainsKey('ElectronVersion') -or -not $ElectronVer
 }
 
 Push-Location $NativeRoot
+$previousRegistry = $env:npm_config_registry
+$previousDistUrl = [Environment]::GetEnvironmentVariable('npm_config_dist-url', 'Process')
+$previousTarget = $env:npm_config_target
+$previousArch = $env:npm_config_arch
+$previousRuntime = $env:npm_config_runtime
 try {
   # node-gyp 12 dropped `--target` from nopt defs. Space-separated
   # `--target 43.3.0` leaves `43.3.0` as a leftover gyp input file.
   # Prefer npm_config_* plus `--flag=value` so only Electron headers are used.
+  $env:npm_config_registry = $npmRegistry
+  [Environment]::SetEnvironmentVariable('npm_config_dist-url', $headerBase, 'Process')
   if ($Runtime -eq 'electron') {
     [Environment]::SetEnvironmentVariable('npm_config_target', $ElectronVersion, 'Process')
     [Environment]::SetEnvironmentVariable('npm_config_arch', 'x64', 'Process')
-    [Environment]::SetEnvironmentVariable('npm_config_dist-url', 'https://electronjs.org/headers', 'Process')
     [Environment]::SetEnvironmentVariable('npm_config_runtime', 'electron', 'Process')
   }
-  $gypArgs = @('--yes', '--', 'node-gyp', 'rebuild')
+  $gypArgs = @('--yes', "--registry=$npmRegistry", '--', 'node-gyp', 'rebuild')
   if ($Runtime -eq 'electron') {
     $gypArgs += @(
       "--target=$ElectronVersion",
       '--arch=x64',
-      '--dist-url=https://electronjs.org/headers'
+      "--dist-url=$headerBase"
     )
+  } else {
+    $gypArgs += "--dist-url=$headerBase"
   }
   Write-Host "Building echo-native-host for $Runtime $ElectronVersion (echo-steam Electron ABI)"
   npx @gypArgs
@@ -73,5 +91,10 @@ try {
   Copy-Item -LiteralPath $built -Destination (Join-Path $ProjectRoot 'ShinawaseLoader\echo-native-host.node') -Force
   Write-Host "Native host: $built"
 } finally {
+  $env:npm_config_registry = $previousRegistry
+  [Environment]::SetEnvironmentVariable('npm_config_dist-url', $previousDistUrl, 'Process')
+  $env:npm_config_target = $previousTarget
+  $env:npm_config_arch = $previousArch
+  $env:npm_config_runtime = $previousRuntime
   Pop-Location
 }

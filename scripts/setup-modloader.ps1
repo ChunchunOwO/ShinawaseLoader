@@ -12,12 +12,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalSource = Join-Path $ProjectRoot 'ShinawaseLoader'
-$Repo = 'https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main'
-$Archive = 'https://github.com/ChunchunOwO/ShinawaseLoader/archive/refs/heads/main.zip'
 $BaseData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
 $UserDataRoot = Join-Path $BaseData 'ShinawaseLoader'
 $SelectionFile = Join-Path $UserDataRoot 'selection.json'
 $RuntimeCache = Join-Path $UserDataRoot 'runtimes'
+$script:NodeMirrors = @(
+  @{ Id = 'huawei'; Zh = '华为云'; En = 'Huawei Cloud'; BaseUrl = 'https://mirrors.huaweicloud.com/repository/toolkit/nodejs' },
+  @{ Id = 'aliyun'; Zh = '阿里云'; En = 'Alibaba Cloud'; BaseUrl = 'https://mirrors.aliyun.com/nodejs-release' },
+  @{ Id = 'npmmirror'; Zh = 'npmmirror'; En = 'npmmirror'; BaseUrl = 'https://npmmirror.com/mirrors/node' },
+  @{ Id = 'official'; Zh = 'Node.js 官方'; En = 'Node.js official'; BaseUrl = 'https://nodejs.org/dist' }
+)
 $script:Strings = @{
   zh = @{
     choose = '选择语言'
@@ -29,6 +33,20 @@ $script:Strings = @{
     chooseEcho = '选择 ECHO'
     uninstall = '卸载 Loader'
     isolated = '隔离运行时 (ECHO.modded.exe)'
+    about = '关于'
+    aboutTitle = '关于 ShinawaseLoader'
+    aboutVersion = '安装器版本'
+    aboutInstalledVersion = '已安装版本'
+    aboutSummary = 'Windows 上的 ECHO Steam 社区外部 ModLoader。'
+    aboutRuntime = '使用独立启动器和隔离运行时，不替换 Steam 原版。'
+    aboutDisclaimer = '免责声明'
+    aboutBoundary = 'ShinawaseLoader 独立于 ECHO，不代表 ECHO 官方。'
+    aboutProhibited = '禁止违法、盈利、侵权、未经授权访问或侵犯隐私等用途。'
+    aboutPackages = '第三方包由各自作者提供，请自行核对来源与授权。'
+    aboutConsent = '安装器中请阅读并同意完整免责声明。'
+    nodeMirror = '下载源'
+    nodeMirrorHint = '用于 Node、npm 依赖、原生构建和 Loader 更新；已有缓存不会重新下载。'
+    back = '返回'
     exit = '退出'
     select = '选择'
     pressEnter = '按 Enter 继续'
@@ -37,6 +55,13 @@ $script:Strings = @{
     failed = '失败'
     language = '语言'
     menuHint = '数字键或 ↑↓ 选中    Enter 确认'
+    consentTitle = '免责声明与使用约定'
+    consentBoundary = 'ShinawaseLoader 是独立社区工具，不代表 ECHO 官方。'
+    consentRules = '仅可依法且获授权使用；禁止违法、商业盈利、侵权、未经授权访问、侵犯隐私及传播恶意内容。'
+    consentPackages = '第三方包由各自作者提供，请确认来源、权限和使用条件。'
+    consentRepeat = '每次打开安装器均需同意；不同意或按 Esc 即退出。'
+    consentAgree = '同意并继续'
+    consentDecline = '不同意并退出'
     extrasTitle = '可选包'
     extrasHint = '数字键或 ↑↓ 选中    空格 开关    Enter 下一步'
     pkgStreaming = 'ECHO Streaming'
@@ -71,6 +96,20 @@ $script:Strings = @{
     chooseEcho = 'choose ECHO'
     uninstall = 'uninstall loader'
     isolated = 'isolated runtime (ECHO.modded.exe)'
+    about = 'about'
+    aboutTitle = 'About ShinawaseLoader'
+    aboutVersion = 'Setup version'
+    aboutInstalledVersion = 'Installed version'
+    aboutSummary = 'A community external ModLoader for ECHO Steam on Windows.'
+    aboutRuntime = 'Uses an independent launcher and isolated runtime without replacing the Steam original.'
+    aboutDisclaimer = 'Disclaimer'
+    aboutBoundary = 'ShinawaseLoader is separate from ECHO and does not represent ECHO.'
+    aboutProhibited = 'Unlawful, for-profit, infringing, unauthorized or privacy-violating use is prohibited.'
+    aboutPackages = 'Third-party packages come from their authors; check their source and permissions.'
+    aboutConsent = 'Read and accept the full disclaimer in setup.'
+    nodeMirror = 'Download source'
+    nodeMirrorHint = 'Used for Node, npm packages, native builds and Loader updates; cached files are reused.'
+    back = 'back'
     exit = 'exit'
     select = 'select'
     pressEnter = 'Press Enter to continue'
@@ -79,6 +118,13 @@ $script:Strings = @{
     failed = 'failed'
     language = 'language'
     menuHint = 'Number or arrows to select    Enter to confirm'
+    consentTitle = 'Disclaimer and terms of use'
+    consentBoundary = 'ShinawaseLoader is independent of ECHO and is not an official component.'
+    consentRules = 'Use only lawfully and with permission. Unlawful, commercial, infringing, unauthorized, privacy-violating or malicious use is prohibited.'
+    consentPackages = 'Third-party packages come from their authors; check their source, permissions and terms.'
+    consentRepeat = 'Agree each time you open setup. Decline or press Esc to exit.'
+    consentAgree = 'Agree and continue'
+    consentDecline = 'Disagree and exit'
     extrasTitle = 'optional packages'
     extrasHint = 'Number or arrows    Space toggle    Enter next'
     pkgStreaming = 'ECHO Streaming'
@@ -112,10 +158,7 @@ function Get-LoaderLocale {
   return $null
 }
 function Set-LoaderLocale([string]$value) {
-  $saved = Read-Json $SelectionFile @{}
-  if (-not $saved) { $saved = [pscustomobject]@{} }
-  $saved | Add-Member -NotePropertyName locale -NotePropertyValue $value -Force
-  if ($saved.echoExe) { Write-Json $SelectionFile $saved } else { Write-Json $SelectionFile @{ locale = $value } }
+  Update-Selection @{ locale = $value }
   $cfgPath = Join-Path $LocalSource 'loader.config.json'
   $cfg = Read-Json $cfgPath @{}
   $cfg | Add-Member -NotePropertyName locale -NotePropertyValue $value -Force
@@ -416,6 +459,55 @@ function Write-Json($path, $value) {
   [IO.File]::WriteAllText($path, "$json`n", $utf8)
 }
 
+function Update-Selection([hashtable]$values) {
+  $saved = Read-Json $SelectionFile $null
+  $merged = @{}
+  if ($saved) { foreach ($property in $saved.PSObject.Properties) { $merged[$property.Name] = $property.Value } }
+  foreach ($key in $values.Keys) { $merged[$key] = $values[$key] }
+  Write-Json $SelectionFile $merged
+}
+
+function Get-NodeMirror {
+  $saved = Read-Json $SelectionFile $null
+  $id = if ($saved) { [string]$saved.nodeMirror } else { '' }
+  foreach ($mirror in $script:NodeMirrors) { if ($mirror.Id -eq $id) { return $mirror } }
+  return $script:NodeMirrors[0]
+}
+
+function Get-NodeMirrorLabel($mirror) {
+  if ($script:Locale -eq 'en') { return $mirror.En }
+  return $mirror.Zh
+}
+
+function Get-DownloadSourceLabel($mirror) {
+  if ($mirror.Id -eq 'official') {
+    if ($script:Locale -eq 'en') { return 'Official sources (direct)' }
+    return '官方源（直连）'
+  }
+  $nodeName = Get-NodeMirrorLabel $mirror
+  if ($script:Locale -eq 'en') { return "Mirrors (Node: $nodeName; npm/Electron: npmmirror; updates: ghproxy)" }
+  return "镜像（Node：$nodeName；npm/Electron：npmmirror；更新：ghproxy）"
+}
+
+function Get-NodeDownloadUrl($versionInfo) {
+  $nodeVersion = [string]$versionInfo.nodeVersion
+  if ($nodeVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Node version in loader-version.json.' }
+  $mirror = Get-NodeMirror
+  return "$($mirror.BaseUrl)/v${nodeVersion}/node-v${nodeVersion}-win-x64.zip"
+}
+
+function Get-UpdateUrls {
+  $raw = 'https://raw.githubusercontent.com/ChunchunOwO/ShinawaseLoader/main'
+  $archive = 'https://github.com/ChunchunOwO/ShinawaseLoader/archive/refs/heads/main.zip'
+  if ((Get-NodeMirror).Id -eq 'official') { return @{ Repo = $raw; Archive = $archive } }
+  return @{ Repo = "https://ghproxy.net/$raw"; Archive = "https://ghproxy.net/$archive" }
+}
+
+function Get-NpmRegistry {
+  if ((Get-NodeMirror).Id -eq 'official') { return 'https://registry.npmjs.org' }
+  return 'https://registry.npmmirror.com'
+}
+
 function Read-Version($path) {
   $value = Read-Json $path $null
   if ($value) { return $value.version }
@@ -579,7 +671,7 @@ function Resolve-EchoExecutable {
   $path = Select-EchoExecutable $EchoRoot
   if (-not $path) { throw 'ECHO selection cancelled.' }
   $path = [IO.Path]::GetFullPath($path)
-  Write-Json $SelectionFile @{ echoExe = $path; locale = $script:Locale; selectedAt = (Get-Date).ToUniversalTime().ToString('o') }
+  Update-Selection @{ echoExe = $path; locale = $script:Locale; selectedAt = (Get-Date).ToUniversalTime().ToString('o') }
   return $path
 }
 
@@ -657,7 +749,13 @@ function Get-NodeRuntime($versionInfo, $loaderRoot) {
     $zip = Join-Path $RuntimeCache ("node-" + $versionInfo.nodeVersion + '.zip')
     $extract = Join-Path $RuntimeCache (".node-" + [guid]::NewGuid().ToString('N'))
     try {
-      Download-File $versionInfo.nodeUrl $zip
+      $mirror = Get-NodeMirror
+      Write-Host "Node mirror: $(Get-NodeMirrorLabel $mirror)" -ForegroundColor DarkGray
+      Download-File (Get-NodeDownloadUrl $versionInfo) $zip
+      if ($versionInfo.nodeSha256) {
+        $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+        if ($actualHash -ine [string]$versionInfo.nodeSha256) { throw 'Downloaded Node archive SHA-256 mismatch.' }
+      }
       Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
       $downloaded = Get-ChildItem -LiteralPath $extract -Filter 'node.exe' -File -Recurse | Select-Object -First 1
       if (-not $downloaded) { throw 'node.exe was not found in the downloaded archive.' }
@@ -689,34 +787,48 @@ function Install-StreamingBridgeDeps([string]$loaderRoot, [string]$node) {
     $npmCli = Join-Path (Split-Path -Parent $node) 'node_modules\npm\bin\npm-cli.js'
   }
   $marker = Join-Path $loaderRoot 'node_modules\@neteasecloudmusicapienhanced\api\package.json'
+  $lockFile = Join-Path $loaderRoot 'package-lock.json'
+  $lockStamp = Join-Path $loaderRoot 'node_modules\.shinawase-deps-lock.sha256'
+  $lockHash = if (Test-Path -LiteralPath $lockFile) { (Get-FileHash -LiteralPath $lockFile -Algorithm SHA256).Hash } else { '' }
+  if ($lockHash -and (Test-Path -LiteralPath $marker) -and (Test-Path -LiteralPath $lockStamp)) {
+    if ((Get-Content -LiteralPath $lockStamp -Raw).Trim() -eq $lockHash) { return }
+  }
   $stamp = [guid]::NewGuid().ToString('N')
   $outLog = Join-Path $env:TEMP ("shinawase-npm-install-" + $stamp + ".out.log")
   $errLog = Join-Path $env:TEMP ("shinawase-npm-install-" + $stamp + ".err.log")
   $prev = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   $code = 1
+  $previousRegistry = $env:npm_config_registry
+  $previousEngineStrict = $env:npm_config_engine_strict
   try {
     Push-Location $loaderRoot
     $env:npm_config_engine_strict = 'false'
+    $env:npm_config_registry = Get-NpmRegistry
     if (Test-Path -LiteralPath $npmCli) {
-      $arg = @($npmCli, 'install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false')
+      $arg = @($npmCli, 'install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', "--registry=$($env:npm_config_registry)")
       $p = Start-Process -FilePath $node -ArgumentList $arg -WorkingDirectory $loaderRoot -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
       $code = $p.ExitCode
     } else {
       $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
       if (-not $npmCmd) { $npmCmd = Get-Command npm -ErrorAction SilentlyContinue }
       if (-not $npmCmd) { throw 'npm not found' }
-      $p = Start-Process -FilePath $npmCmd.Source -ArgumentList @('install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false') -WorkingDirectory $loaderRoot -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+      $p = Start-Process -FilePath $npmCmd.Source -ArgumentList @('install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', "--registry=$($env:npm_config_registry)") -WorkingDirectory $loaderRoot -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
       $code = $p.ExitCode
     }
   } catch {
     $code = 1
     $_ | Out-String | Set-Content -LiteralPath $errLog -ErrorAction SilentlyContinue
   } finally {
+    $env:npm_config_registry = $previousRegistry
+    $env:npm_config_engine_strict = $previousEngineStrict
     $ErrorActionPreference = $prev
     Pop-Location
   }
-  if (Test-Path -LiteralPath $marker) { return }
+  if ($code -eq 0 -and (Test-Path -LiteralPath $marker)) {
+    if ($lockHash) { [IO.File]::WriteAllText($lockStamp, $lockHash) }
+    return
+  }
   $hint = @($errLog, $outLog) | ForEach-Object {
     if (Test-Path -LiteralPath $_) { Get-Content -LiteralPath $_ -ErrorAction SilentlyContinue }
   } | Select-Object -Last 8
@@ -836,7 +948,6 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
         '@echo off',
         'chcp 65001 >nul',
         "cd /d `"$escapedRoot`"",
-        "`"$node`" `"%~dp0runtime-sync.mjs`" --echo `"$escapedRoot`"",
         "start `"`" `"$moddedHost`" %*"
       )
     } else {
@@ -848,18 +959,25 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
 }
 
 function Get-RemoteVersion {
-  try { return Invoke-RestMethod -Uri "$Repo/ShinawaseLoader/loader-version.json" -TimeoutSec 15 } catch { return $null }
+  $urls = Get-UpdateUrls
+  try { return Invoke-RestMethod -Uri "$($urls.Repo)/ShinawaseLoader/loader-version.json" -TimeoutSec 15 } catch { return $null }
 }
 
-function Download-RemoteSource {
+function Download-RemoteSource([string]$expectedVersion) {
   $zip = Join-Path ([IO.Path]::GetTempPath()) "shinawase-loader-$([guid]::NewGuid()).zip"
   $dir = Join-Path ([IO.Path]::GetTempPath()) "shinawase-loader-$([guid]::NewGuid())"
-  Download-File $Archive $zip
+  $urls = Get-UpdateUrls
+  Download-File $urls.Archive $zip
   Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
   Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
   $source = Get-ChildItem -LiteralPath $dir -Directory | Select-Object -First 1
   if (-not $source) { Remove-Item -LiteralPath $dir -Recurse -Force; throw 'Remote source archive is empty.' }
-  return @{ Path = (Join-Path $source.FullName 'ShinawaseLoader'); Temp = $dir }
+  $loaderPath = Join-Path $source.FullName 'ShinawaseLoader'
+  if ((Read-Version (Join-Path $loaderPath 'loader-version.json')) -ne $expectedVersion) {
+    Remove-Item -LiteralPath $dir -Recurse -Force
+    throw 'Remote source archive version does not match update metadata.'
+  }
+  return @{ Path = $loaderPath; Temp = $dir }
 }
 
 function Invoke-Install($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStart = $false) {
@@ -875,7 +993,7 @@ function Invoke-Install($selectedExe, [bool]$Update, [bool]$EnableDirectAutoStar
   $remoteSource = $null
   try {
     if ($useRemote -and (Read-Version (Join-Path $loaderRoot 'loader-version.json'))) {
-      if ([version]$remote.version -gt [version](Read-Version (Join-Path $loaderRoot 'loader-version.json'))) { $remoteSource = Download-RemoteSource }
+      if ([version]$remote.version -gt [version](Read-Version (Join-Path $loaderRoot 'loader-version.json'))) { $remoteSource = Download-RemoteSource ([string]$remote.version) }
     }
     $installSource = if ($remoteSource) { $remoteSource.Path } else { $LocalSource }
     return Copy-Loader $installSource $selectedExe $versionInfo $EnableDirectAutoStart
@@ -1057,17 +1175,78 @@ function Invoke-Uninstall($selectedExe) {
 
 function Pause-Menu { [void](Read-Host (T 'pressEnter')) }
 
+function Show-About([string]$SelectedPath) {
+  $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
+  if (-not $version) { $version = 'unknown' }
+  Write-SetupHeader -Subtitle $version -Meta @((T 'aboutTitle'))
+  Write-SetupLine ('  {0}: {1}' -f (T 'aboutVersion'), $version) 'White'
+  if ($SelectedPath) {
+    $installed = Read-Version (Join-Path (Split-Path -Parent $SelectedPath) 'ShinawaseLoader\loader-version.json')
+    if ($installed) { Write-SetupLine ('  {0}: {1}' -f (T 'aboutInstalledVersion'), $installed) 'Gray' }
+  }
+  Write-SetupLine ''
+  Write-SetupLine ('  ' + (T 'aboutSummary'))
+  Write-SetupLine ('  ' + (T 'aboutRuntime'))
+  Write-SetupLine '  https://github.com/ChunchunOwO/ShinawaseLoader' 'DarkGray'
+  Write-SetupLine ''
+  Write-SetupLine ('  ' + (T 'aboutDisclaimer')) 'Cyan'
+  foreach ($key in @('aboutBoundary', 'aboutProhibited', 'aboutPackages', 'aboutConsent')) {
+    Write-SetupLine ('  ' + (T $key)) 'Gray'
+  }
+  Write-SetupLine ''
+  Pause-Menu
+}
+
+function Select-NodeMirror {
+  $current = Get-NodeMirror
+  $labels = @($script:NodeMirrors | ForEach-Object {
+    $name = Get-DownloadSourceLabel $_
+    if ($_.Id -eq $current.Id) { "$name  [*]" } else { $name }
+  })
+  $labels += (T 'back')
+  $values = @('1', '2', '3', '4', '0')
+  $choice = Read-ConsoleMenu -Subtitle (T 'nodeMirror') -Meta @((T 'nodeMirrorHint')) -Labels $labels -Values $values -Hint (T 'menuHint') -CancelValue '0'
+  $index = 0
+  if ([int]::TryParse($choice, [ref]$index) -and $index -ge 1 -and $index -le $script:NodeMirrors.Count) {
+    Update-Selection @{ nodeMirror = $script:NodeMirrors[$index - 1].Id }
+  }
+}
+
+function Show-SetupDisclaimer {
+  $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
+  $choice = Read-ConsoleMenu -Subtitle $version -Meta @(
+    (T 'consentTitle'),
+    (T 'consentBoundary'),
+    (T 'consentRules'),
+    (T 'consentPackages'),
+    (T 'consentRepeat')
+  ) -Labels @((T 'consentAgree'), (T 'consentDecline')) -Values @('1', '0') -Index 1 -Hint (T 'menuHint') -CancelValue '0'
+  return ($choice -eq '1')
+}
+
 function Show-PulseMenu([string]$SelectedPath) {
   $version = Read-Version (Join-Path $LocalSource 'loader-version.json')
-  Read-ConsoleMenu -Subtitle $version -Meta @((T 'target') + '  ' + $(if ($SelectedPath) { $SelectedPath } else { T 'notSelected' })) -Labels @(
+  $selectedMirror = Get-NodeMirror
+  $mirrorName = if ($selectedMirror.Id -eq 'official') {
+    Get-DownloadSourceLabel $selectedMirror
+  } elseif ($script:Locale -eq 'en') {
+    "Mirrors (Node: $(Get-NodeMirrorLabel $selectedMirror))"
+  } else {
+    "镜像（Node：$(Get-NodeMirrorLabel $selectedMirror)）"
+  }
+  Read-ConsoleMenu -Subtitle $version -Meta @(
+    ((T 'target') + '  ' + $(if ($SelectedPath) { $SelectedPath } else { T 'notSelected' }))
+  ) -Labels @(
     (T 'install'),
     (T 'status'),
     (T 'launch'),
     (T 'chooseEcho'),
     (T 'uninstall'),
     (T 'isolated'),
+    ((T 'nodeMirror') + ': ' + $mirrorName),
+    (T 'about'),
     (T 'exit')
-  ) -Values @('1', '2', '3', '4', '5', '6', '0') -Hint (T 'menuHint') -CancelValue '0'
+  ) -Values @('1', '2', '3', '4', '5', '6', '7', '8', '0') -Hint (T 'menuHint') -CancelValue '0'
 }
 
 function Invoke-Menu {
@@ -1096,7 +1275,7 @@ function Invoke-Menu {
           return
         } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
       }
-      '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Write-Json $SelectionFile @{ echoExe = $selected; locale = $script:Locale } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
+      '4' { try { $choice = Select-EchoExecutable $null; if ($choice) { $selected = [IO.Path]::GetFullPath($choice); Update-Selection @{ echoExe = $selected; locale = $script:Locale } } } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '5' { try { if (-not $selected) { $selected = Resolve-EchoExecutable }; Invoke-Uninstall $selected; $selected = $null } catch { Write-Host $_.Exception.Message -ForegroundColor Red }; Pause-Menu }
       '6' {
         try {
@@ -1105,6 +1284,8 @@ function Invoke-Menu {
           return
         } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
       }
+      '7' { Select-NodeMirror }
+      '8' { Show-About $selected }
       '0' { Exit-Setup 0 }
     }
   }
@@ -1113,6 +1294,7 @@ function Invoke-Menu {
 try {
   Initialize-SetupConsole
   Choose-LoaderLocale
+  if (-not (Show-SetupDisclaimer)) { Exit-Setup 0 }
   if ($Action -eq 'menu') { Invoke-Menu; return }
   $selected = Resolve-EchoExecutable
   switch ($Action) {

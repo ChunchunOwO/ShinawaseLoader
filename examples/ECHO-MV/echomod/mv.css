@@ -3229,11 +3229,18 @@ button[data-echo-lmwb-corner] {
   --echo-mv-sheet-soft-bg: rgba(255, 255, 255, .05);
 }
 .echo-mv-sheet.audio-drawer {
-  width: min(440px, calc(100vw - 18px));
+  width: min(480px, calc(100vw - 18px));
 }
 .echo-mv-sheet .audio-drawer-scroll {
-  gap: 16px;
-  padding: 26px 20px 24px;
+  gap: 12px;
+  padding: 18px 18px 24px;
+}
+.echo-mv-sheet .mv-settings-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.echo-mv-sheet .mv-settings-actions button {
+  min-width: 0;
 }
 .echo-mv-sheet .mv-master-toggle {
   width: 100%;
@@ -3325,7 +3332,7 @@ button[data-echo-lmwb-corner] {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   overflow: auto;
   padding: 2px 6px 8px 0;
   scrollbar-width: thin;
@@ -3357,8 +3364,7 @@ button[data-echo-lmwb-corner] {
   flex: 0 0 auto;
   flex-direction: column;
   gap: 8px;
-  max-height: min(360px, 40vh);
-  overflow: auto;
+  overflow: visible;
   align-content: start;
 }
 .echo-mv-candidate {
@@ -3423,6 +3429,14 @@ html[data-theme=dark] .echo-mv-candidate {
 .echo-mv-candidate-copy strong {
   font-size: 12px;
   font-weight: 840;
+}
+.echo-mv-sheet :is(.audio-engine-meter__top strong, .audio-engine-meter__grid strong, .mv-selected-card strong, .echo-mv-candidate-copy strong) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .echo-mv-candidate-copy em {
   color: color-mix(in srgb, var(--echo-mv-sheet-text) 62%, transparent);
@@ -3595,6 +3609,72 @@ html[data-theme=dark] .echo-mv-sheet .mv-current-song-toggle[aria-pressed="true"
 html[data-theme=dark] .echo-mv-sheet .mv-auto-apply-toggle[aria-pressed="true"] .mv-switch-track span {
   background: #10251f !important;
   transform: translateX(14px) !important;
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle {
+  min-height: 58px;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--echo-mv-sheet-field-border);
+  border-radius: 12px;
+  background: var(--echo-mv-sheet-field-bg);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle:hover,
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"],
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"]:hover {
+  border-color: rgba(143, 207, 189, .3);
+  background: color-mix(in srgb, var(--echo-mv-sheet-field-bg) 88%, #8fcfbd 12%);
+}
+.echo-mv-sheet .mv-master-toggle:focus-visible {
+  outline: 2px solid #8fcfbd;
+  outline-offset: 2px;
+}
+.echo-mv-sheet .mv-master-toggle .mv-toggle-copy {
+  order: 0;
+  gap: 2px;
+}
+.echo-mv-sheet .mv-master-toggle .mv-toggle-copy strong {
+  font-size: 13px;
+  font-weight: 760;
+}
+.echo-mv-sheet .mv-master-toggle .mv-toggle-copy em {
+  color: var(--echo-mv-sheet-muted);
+  font-size: 11px;
+  font-weight: 620;
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle .mv-switch-track,
+html[data-theme=dark] .echo-mv-sheet .mv-source-toggle.mv-master-toggle .mv-switch-track {
+  order: 1;
+  width: 40px;
+  height: 24px;
+  margin-left: auto;
+  background: rgba(220, 231, 255, .22);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .24);
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle .mv-switch-track span,
+html[data-theme=dark] .echo-mv-sheet .mv-source-toggle.mv-master-toggle .mv-switch-track span {
+  width: 18px;
+  height: 18px;
+  margin-left: 3px;
+  background: #f5f8fb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"] .mv-switch-track,
+html[data-theme=dark] .echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"] .mv-switch-track {
+  background: #71bbaa !important;
+}
+.echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"] .mv-switch-track span,
+html[data-theme=dark] .echo-mv-sheet .mv-source-toggle.mv-master-toggle[aria-pressed="true"] .mv-switch-track span {
+  background: #fff !important;
+  transform: translateX(16px) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .echo-mv-sheet .mv-master-toggle,
+  .echo-mv-sheet .mv-master-toggle .mv-switch-track,
+  .echo-mv-sheet .mv-master-toggle .mv-switch-track span {
+    transition: none;
+  }
 }
 .echo-mv-sheet .mv-sync-mode-buttons button[aria-pressed="true"],
 .echo-mv-sheet .mv-offset-step-row button[aria-pressed="true"] {
