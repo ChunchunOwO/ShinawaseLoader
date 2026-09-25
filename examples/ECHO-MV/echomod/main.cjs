@@ -13,9 +13,10 @@ const {
 const { stat } = require('node:fs/promises');
 const { basename, dirname, extname, join, resolve, normalize } = require('node:path');
 const { Readable } = require('node:stream');
+const { detectAudioOnset } = require('./audio-onset.cjs');
 
-const MOD_VERSION = '1.0.18';
-const MV_MATCH_ALGORITHM_VERSION = 5;
+const MOD_VERSION = '1.0.24';
+const MV_MATCH_ALGORITHM_VERSION = 6;
 const MV_AUTO_MATCH_THRESHOLD = 0.7;
 const MV_AUTO_MATCH_MIN_MARGIN = 0.08;
 const MV_AUTO_MATCH_HIGH_CONFIDENCE = 0.86;
@@ -331,7 +332,16 @@ const normalizeMvText = (value) =>
     .trim();
 
 const comparableTokens = (value) => normalizeMvText(value).match(/[\p{L}\p{N}]+/gu)?.filter((token) => token.length > 1) ?? [];
-const phraseIncluded = (haystack, needle) => Boolean(haystack && needle && ` ${haystack} `.includes(` ${needle} `));
+const phraseIncluded = (haystack, needle) => {
+  if (!haystack || !needle) return false;
+  if (` ${haystack} `.includes(` ${needle} `)) return true;
+  // CJK titles and artist names are commonly adjacent to other CJK words.
+  // Keep word boundaries for Latin text (e.g. "rain" must not match "train").
+  return /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー\s]{2,}$/u.test(needle) && haystack.includes(needle);
+};
+const cleanTrackSearchTitle = (value) => String(value ?? '')
+  .replace(/[（(\[【]\s*(?:ltd|osu!?|[47]k|marathon)\s*[）)\]】]/giu, ' ')
+  .replace(/\s+/g, ' ').trim();
 const tokenCoverage = (haystack, needle) => {
   const expected = comparableTokens(needle);
   if (expected.length === 0) return 0;
@@ -433,12 +443,12 @@ const variantLabels = [
 ];
 
 const scoreNetworkMvCandidate = (track, candidate) => {
-  const trackTitle = normalizeMvText(track.title);
+  const trackTitle = normalizeMvText(cleanTrackSearchTitle(track.title));
   const rawTrackTitle = normalizeMvSemanticText(track.title);
   const rawCandidateTitle = normalizeMvSemanticText(candidate.title);
   const reasons = [];
   let score = 0;
-  const titleComparison = compareWritingSystemAliases(candidate.title, track.title);
+  const titleComparison = compareWritingSystemAliases(candidate.title, cleanTrackSearchTitle(track.title));
   const { coverage, exact: titleExact, phrase: titlePhrase, usedAlias: writingSystemAlias } = titleComparison;
   if (titleExact) {
     score += 0.58;
@@ -535,13 +545,15 @@ const scoreNetworkMvCandidate = (track, candidate) => {
   const titleTokens = comparableTokens(trackTitle);
   const shortOrAmbiguousTitle = trackTitle.length <= 3 || titleTokens.length === 0 || (titleTokens.length === 1 && titleTokens[0].length <= 5);
   const shortTitleCorroborated = !shortOrAmbiguousTitle || Boolean(artistEvidence) || (durationCorroborated && hasOfficialVideoSignal);
-  const titleEvidenceEligible = strongTitleMatch ? corroborated : substantialTitleMatch && doublyCorroborated;
+  const titleEvidenceEligible = strongTitleMatch ? (corroborated || (!shortOrAmbiguousTitle && hasOfficialVideoSignal)) : substantialTitleMatch && doublyCorroborated;
   const autoEligible = titleEvidenceEligible && shortTitleCorroborated && !durationConflict && !contentConflict;
+  if (autoEligible && strongTitleMatch && durationCorroborated) score = Math.max(score, 0.72);
   if (!corroborated) {
     // Strong title matches may still auto-apply (default threshold 0.7).
     // Weak titles stay capped under the default threshold.
-    score = Math.min(score, strongTitleMatch ? 0.78 : 0.69);
-    reasons.push('auto blocked: no artist or duration evidence');
+    if (autoEligible) score = Math.max(score, 0.72);
+    else score = Math.min(score, strongTitleMatch ? 0.78 : 0.69);
+    reasons.push(autoEligible ? 'strong title with MV signal' : 'auto blocked: no artist or duration evidence');
   }
   if (!autoEligible && (durationConflict || contentConflict || !substantialTitleMatch || !shortTitleCorroborated)) {
     score = Math.min(score, 0.49);
@@ -795,10 +807,11 @@ const customMvFromUrl = (value) => {
 };
 
 const directTrackSearchQuery = (track) => {
-  const query = [track.title, track.artist || track.albumArtist].map((value) => value?.trim()).filter(Boolean).join(' ');
+  const artist = [track.artist, track.albumArtist].find((value) => value?.trim() && !/^(?:unknown artist|various artists?|未知歌手|群星)$/iu.test(value.trim()));
+  const query = [cleanTrackSearchTitle(track.title), artist].map((value) => value?.trim()).filter(Boolean).join(' ');
   return query || undefined;
 };
-const titleOnlyTrackSearchQuery = (track) => track.title?.trim() || undefined;
+const titleOnlyTrackSearchQuery = (track) => cleanTrackSearchTitle(track.title) || undefined;
 const networkSearchPlan = (track, settings, query) => {
   const explicitQuery = query?.trim();
   if (explicitQuery) return { primaryQuery: explicitQuery, fallbackQuery: undefined };
@@ -1102,6 +1115,11 @@ function createEngine(options = {}) {
   const store = createJsonStore(join(dataDir, 'store.json'), log);
   const ephemeralStreams = new Map();
   const resolveStreamsInFlight = new Map();
+  const networkSearchInFlight = new Map();
+  const networkSearchCache = new Map();
+  const selectionRevisions = new Map();
+  const audioSources = new Map();
+  const audioStartJobs = new Map();
   const lastResolveIssueByVideoId = new Map();
   const playurlBanUntilByBvid = new Map();
   let wbiKeyCache = null;
@@ -1262,7 +1280,7 @@ function createEngine(options = {}) {
       typeSearchUrl.searchParams.set('keyword', query);
       typeSearchUrl.searchParams.set('page', '1');
       typeSearchUrl.searchParams.set('order', 'totalrank');
-      typeSearchUrl.searchParams.set('page_size', '8');
+      typeSearchUrl.searchParams.set('page_size', '20');
       if (wbiMixinKey) appendWbiSignature(typeSearchUrl, wbiMixinKey);
       let typeResults = [];
       try {
@@ -1314,7 +1332,7 @@ function createEngine(options = {}) {
           if (scoreDelta !== 0) return scoreDelta;
           return settings.preferHighestViewCount ? (right.viewCount ?? -1) - (left.viewCount ?? -1) : 0;
         })
-        .slice(0, 8);
+        .slice(0, 12);
     } catch (error) {
       log('WARN', `mv: bilibili search failed ${error instanceof Error ? error.message : String(error)}`);
       return [];
@@ -1459,6 +1477,14 @@ function createEngine(options = {}) {
         const actualQuality = actualQn ? BILI_QUALITY_MAP[actualQn] ?? quality : quality;
         const availableQn = isObject(playData) ? Array.from(new Set([...numericArray(playData.accept_quality), ...numericArray(playData.acceptQuality)])) : [];
         const dash = isObject(playData) && isObject(playData.dash) ? playData.dash : null;
+        const audio = asArray(dash?.audio).filter(isObject)
+          .filter((stream) => !stream.codecs || /^mp4a/i.test(stream.codecs))
+          .sort((a, b) => (Number(a.bandwidth) || 0) - (Number(b.bandwidth) || 0))[0];
+        const audioUrl = audio && firstUrl(audio.baseUrl, audio.base_url, audio.backupUrl, audio.backup_url);
+        if (audioUrl?.startsWith('https://')) {
+          if (audioSources.size >= 64) audioSources.delete(audioSources.keys().next().value);
+          audioSources.set(video.id, { input: audioUrl, headers, expiresAt: Date.now() + 10 * 60 * 1000 });
+        }
         const dashStreams = asArray(dash?.video)
           .filter(isObject)
           .filter((stream) => {
@@ -1753,6 +1779,7 @@ function createEngine(options = {}) {
       qualityLabel: selectedStream?.label ?? (useRowSnapshot ? row.qualityLabel ?? null : null),
       fps: selectedStream?.fps ?? (useRowSnapshot ? row.fps ?? null : null),
       offsetMs: clampOffsetMs(row.offsetMs ?? 0),
+      audioStartMs: Number.isFinite(row.audioStartMs) ? row.audioStartMs : null,
       score: Number(row.score ?? 0),
       selected: row.selected === true,
       selectionOrigin: selectionOriginName(row.selectionOrigin),
@@ -1858,6 +1885,7 @@ function createEngine(options = {}) {
   };
 
   const deselectTrack = (trackId) => {
+    selectionRevisions.set(trackId, (selectionRevisions.get(trackId) || 0) + 1);
     const track = ensureTrack(trackId);
     const timestamp = nowIso();
     for (const video of track.videos) {
@@ -1949,7 +1977,7 @@ function createEngine(options = {}) {
   const shouldAutoSelectNetworkCandidate = (trackId) => {
     const selected = getSelectedVideo(trackId);
     if (!selected) return true;
-    return selected.sourceType === 'search_candidate' && (!selected.playableInApp || !selected.mediaUrl);
+    return selected.selectionOrigin !== 'manual' && selected.sourceType === 'search_candidate' && (!selected.playableInApp || !selected.mediaUrl);
   };
 
   const rankAutoCandidates = (candidates, settings) => {
@@ -1975,12 +2003,6 @@ function createEngine(options = {}) {
       });
   };
 
-  const sameUploaderAutoResolutionCandidates = (candidates) => {
-    const first = candidates[0];
-    if (!first) return [];
-    if (!first.uploaderId) return [first];
-    return candidates.filter((candidate) => candidate.id === first.id || (candidate.provider === first.provider && candidate.uploaderId === first.uploaderId));
-  };
   const hasConfidentAutoMatchLead = (candidates) => {
     const first = candidates[0];
     if (!first) return false;
@@ -2018,10 +2040,10 @@ function createEngine(options = {}) {
     return { video: mapRow(requireRow(row.id)), variants: getStreamRows(row.id).map(sanitizeVariant) };
   };
 
-  const resolveStreams = async (videoId) => {
+  const resolveStreams = async (videoId, optionsResolve = {}) => {
     const inFlight = resolveStreamsInFlight.get(videoId);
     if (inFlight) return inFlight;
-    const task = resolveStreamsUnsafe(videoId).finally(() => {
+    const task = resolveStreamsUnsafe(videoId, optionsResolve).finally(() => {
       if (resolveStreamsInFlight.get(videoId) === task) resolveStreamsInFlight.delete(videoId);
     });
     resolveStreamsInFlight.set(videoId, task);
@@ -2039,12 +2061,61 @@ function createEngine(options = {}) {
     }
   };
 
-  const selectFirstResolvedAutoCandidate = async (trackId, candidates, settings) => {
+  const detectVideoAudioStart = async (videoId) => {
+    if (audioStartJobs.has(videoId)) return audioStartJobs.get(videoId).promise;
+    // Analysis is explicit and bounded; avoid multiple decoder processes.
+    if (audioStartJobs.size) throw new Error('mv_audio_start_busy');
+    const controller = new AbortController();
+    let onAbort;
+    const cancelled = new Promise((_, reject) => {
+      onAbort = () => reject(new Error(controller.signal.reason?.message === 'mv_audio_start_timeout' ? 'mv_audio_start_timeout' : 'mv_audio_start_cancelled'));
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const timer = setTimeout(() => controller.abort(new Error('mv_audio_start_timeout')), 25000);
+    const work = (async () => {
+      const row = requireRow(videoId);
+      let source;
+      if (row.provider === 'local' && row.internalFilePath && existsSync(row.internalFilePath)) {
+        source = { input: row.internalFilePath };
+      } else if (row.provider === 'bilibili') {
+        source = audioSources.get(videoId);
+        if (!source || source.expiresAt <= Date.now()) {
+          await resolveStreams(videoId, { forceRefresh: true });
+          source = audioSources.get(videoId);
+        }
+        if (!source || source.expiresAt <= Date.now()) {
+          const stream = getValidStreamRows(videoId).find((item) => recordFromUnknown(item.rawProviderJson)?.source === 'durl' && item.url?.startsWith('https://'));
+          source = stream ? { input: stream.url, headers: stream.headers } : null;
+        }
+      } else {
+        throw new Error('mv_audio_start_unsupported');
+      }
+      if (controller.signal.aborted) throw new Error('mv_audio_start_cancelled');
+      if (!source) throw new Error('mv_audio_start_no_audio');
+      const result = await (options.detectAudioOnset || detectAudioOnset)({ ...source, ffmpegPath: options.ffmpegPath, signal: controller.signal });
+      if (controller.signal.aborted) throw new Error('mv_audio_start_cancelled');
+      if (!Number.isFinite(result.startMs) || result.startMs < 0 || result.startMs > 120000) throw new Error('mv_audio_start_failed');
+      return { videoId, startMs: Math.round(result.startMs) };
+    })();
+    const promise = Promise.race([work, cancelled]).finally(() => {
+      clearTimeout(timer);
+      controller.signal.removeEventListener('abort', onAbort);
+      audioStartJobs.delete(videoId);
+    });
+    audioStartJobs.set(videoId, { promise, controller });
+    return promise;
+  };
+
+  const selectFirstResolvedAutoCandidate = async (trackId, candidates, settings, revision = selectionRevisions.get(trackId) || 0) => {
     const threshold = normalizeAutoApplyThreshold(settings.autoApplyThreshold);
+    const attempted = new Set();
     const tryCommit = async (ranked) => {
-      for (const candidate of ranked) {
+      for (const candidate of ranked.slice(0, 3)) {
+        if (attempted.has(candidate.id)) continue;
+        attempted.add(candidate.id);
         try {
-          const resolved = await resolvePlayableCandidateForSelection(candidate.id);
+          const resolved = await resolveStreams(candidate.id);
+          if ((selectionRevisions.get(trackId) || 0) !== revision || !getSettings().autoSearch || !getSettings().enabled) return null;
           if (resolved.video.playableInApp && resolved.video.mediaUrl) {
             return commitSelectedVideo(trackId, candidate.id, 'auto');
           }
@@ -2053,19 +2124,19 @@ function createEngine(options = {}) {
       return null;
     };
 
-    // Strict path (ECHODev): autoEligible + threshold + confident lead.
-    const strictRanked = sameUploaderAutoResolutionCandidates(rankAutoCandidates(candidates, settings));
-    if (hasConfidentAutoMatchLead(strictRanked)) {
+    // Every candidate must independently pass the title/content/duration gates.
+    const strictRanked = rankAutoCandidates(candidates, settings);
+    if (strictRanked.length) {
       const strict = await tryCommit(strictRanked);
       if (strict) return strict;
     }
 
-    // Fallback: still auto-apply a clear playable winner so users are not forced
-    // to pick from the sheet on every track when title match is already strong.
+    // A lower-scoring candidate still needs current evidence and a clear lead.
     const enabledProviders = new Set(settings.enabledProviders);
     const softFloor = Math.min(threshold, 0.6);
     const fallbackRanked = [...candidates]
       .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider))
+      .filter((candidate) => candidate.playableInApp && hasCurrentAutoDecision(candidate))
       .filter((candidate) => candidate.score >= softFloor)
       .sort(compareNetworkCandidates(settings));
     if (!fallbackRanked.length) return null;
@@ -2099,21 +2170,36 @@ function createEngine(options = {}) {
   const searchNetworkForTrack = async (track, query, allowAutoSelect) => {
     const settings = getSettings();
     if (settings.enabled === false) return [];
+    const revision = selectionRevisions.get(track.id) || 0;
     const searchPlan = networkSearchPlan(track, settings, query);
     const enabled = new Set(settings.enabledProviders);
     const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
-    const providerResults = await Promise.all(orderedProviders.map(async (providerId) => {
-      try {
-        return await searchProviderWithFallback(providerId, track, settings, searchPlan);
-      } catch (error) {
-        log('WARN', `mv: ${providerId} search failed ${error instanceof Error ? error.message : String(error)}`);
-        return [];
-      }
-    }));
-    const candidates = providerResults.flat().sort(compareNetworkCandidates(settings));
+    const key = JSON.stringify([track.id, track.title, track.artist, track.albumArtist, track.duration, searchPlan, orderedProviders, settings.preferHighestViewCount, settings.autoApplyThreshold]);
+    const cached = networkSearchCache.get(key);
+    let task = cached && cached.expiresAt > Date.now() ? Promise.resolve(cached.candidates) : networkSearchInFlight.get(key);
+    if (!task) {
+      task = Promise.all(orderedProviders.map(async (providerId) => {
+        try {
+          return await searchProviderWithFallback(providerId, track, settings, searchPlan);
+        } catch (error) {
+          log('WARN', `mv: ${providerId} search failed ${error instanceof Error ? error.message : String(error)}`);
+          return [];
+        }
+      })).then((results) => {
+        const candidates = results.flat().sort(compareNetworkCandidates(settings));
+        // Do not retain transient failures/empty results. Bound metadata cache memory.
+        if (candidates.length) {
+          if (networkSearchCache.size >= 32) networkSearchCache.delete(networkSearchCache.keys().next().value);
+          networkSearchCache.set(key, { candidates, expiresAt: Date.now() + 60000 });
+        }
+        return candidates;
+      }).finally(() => networkSearchInFlight.delete(key));
+      networkSearchInFlight.set(key, task);
+    }
+    const candidates = await task;
     const upserted = candidates.map((candidate) => upsertNetworkCandidate(track, candidate));
     if (allowAutoSelect && settings.autoSearch && shouldAutoSelectNetworkCandidate(track.id)) {
-      await selectFirstResolvedAutoCandidate(track.id, upserted, settings);
+      await selectFirstResolvedAutoCandidate(track.id, upserted, settings, revision);
     }
     return upserted;
   };
@@ -2364,7 +2450,7 @@ function createEngine(options = {}) {
       }
       return null;
     },
-    resolveStreams: async (payload) => resolveStreams(requireText(payloadObj(payload).videoId, 'videoId')),
+    resolveStreams: async (payload) => resolveStreams(requireText(payloadObj(payload).videoId, 'videoId'), { forceRefresh: payloadObj(payload).forceRefresh === true }),
     setQuality: async (payload) => {
       const body = payloadObj(payload);
       const videoId = requireText(body.videoId, 'videoId');
@@ -2387,10 +2473,32 @@ function createEngine(options = {}) {
       const selected = getSelectedVideo(trackId);
       if (!selected) return null;
       const row = requireRow(selected.id);
+      if (body.videoId && row.id !== body.videoId) throw new Error('mv_audio_start_selection_changed');
       row.offsetMs = offsetMs;
       row.updatedAt = nowIso();
       store.save();
       return getSelectedVideo(trackId);
+    },
+    detectAudioStart: async (payload) => detectVideoAudioStart(requireText(payloadObj(payload).videoId, 'videoId')),
+    cancelAudioStart: (payload) => {
+      audioStartJobs.get(requireText(payloadObj(payload).videoId, 'videoId'))?.controller.abort();
+      return true;
+    },
+    applyAudioStart: (payload) => {
+      const body = payloadObj(payload);
+      const trackId = requireText(body.trackId, 'trackId');
+      const videoId = requireText(body.videoId, 'videoId');
+      const selected = getSelectedVideo(trackId);
+      if (!selected || selected.id !== videoId) throw new Error('mv_audio_start_selection_changed');
+      const startMs = Number(body.startMs);
+      if (!Number.isFinite(startMs) || startMs < 0 || startMs > 120000) throw new Error('mv_audio_start_failed');
+      const row = requireRow(videoId);
+      if (Number(row.offsetMs || 0) !== Number(body.expectedOffsetMs || 0)) throw new Error('mv_audio_start_selection_changed');
+      row.offsetMs = Math.round(startMs);
+      row.audioStartMs = row.offsetMs;
+      row.updatedAt = nowIso();
+      store.save();
+      return mapRow(row);
     },
     chooseLocalVideo: async (payload) => {
       const trackId = requireText(payloadObj(payload).trackId, 'trackId');
@@ -2417,6 +2525,7 @@ function createEngine(options = {}) {
       const videoId = requireText(body.videoId, 'videoId');
       const row = getRow(videoId);
       if (!row || row.trackId !== trackId) throw new Error(`Unknown MV candidate ${videoId}`);
+      selectionRevisions.set(trackId, (selectionRevisions.get(trackId) || 0) + 1);
       const provider = providerName(row.provider);
       if (provider !== 'local' && row.sourceType === 'search_candidate') {
         try {
@@ -2489,9 +2598,18 @@ function createEngine(options = {}) {
     setProtocolsRegistered: (value) => {
       protocolsRegistered = Boolean(value);
     },
+    cancelAudioAnalysis: () => {
+      for (const job of audioStartJobs.values()) job.controller.abort();
+    },
     dispose: () => {
+      for (const job of audioStartJobs.values()) job.controller.abort();
+      audioStartJobs.clear();
+      audioSources.clear();
       ephemeralStreams.clear();
       resolveStreamsInFlight.clear();
+      networkSearchInFlight.clear();
+      networkSearchCache.clear();
+      selectionRevisions.clear();
       store.dispose();
     },
     flush: () => store.flush(),
@@ -2727,6 +2845,9 @@ const RPC_METHODS = {
   'mv.resolveStreams': 'resolveStreams',
   'mv.setQuality': 'setQuality',
   'mv.setOffset': 'setOffset',
+  'mv.detectAudioStart': 'detectAudioStart',
+  'mv.cancelAudioStart': 'cancelAudioStart',
+  'mv.applyAudioStart': 'applyAudioStart',
   'mv.chooseLocalVideo': 'chooseLocalVideo',
   'mv.bindLocalVideo': 'bindLocalVideo',
   'mv.bindUrl': 'bindUrl',
@@ -2787,6 +2908,7 @@ async function activate(host) {
       try { disposeHandler(); } catch {}
     }
     try { unhandleProtocols(); } catch {}
+    try { engine.cancelAudioAnalysis?.(); } catch {}
     try { engine.flush(); } catch {}
     try { delete globalThis.__echoMvProtoLog; } catch {}
   };

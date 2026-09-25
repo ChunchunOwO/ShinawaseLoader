@@ -6,9 +6,10 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 
 ## 使用
 
-- 播放条 **MV 按钮**：开启 / 关闭 MV 并自动匹配加载，**不会**弹出设置
+- 播放条 **MV 按钮**：进入 MV 模式并自动匹配加载，**不会**弹出设置
 - 歌词页 **右上角胶片图标**（或标题栏 MV 设置、`app:open-mv-settings`）：拉开右侧 MV 设置抽屉
-- 抽屉里的 **「启用 MV」总开关**：控制歌词页是否显示 MV 视图
+- 普通 **歌词入口** 只显示歌词；从 MV 切回歌词立即停止并移除视频。只有明确进入 MV 模式才显示、播放视频，重载 Mod 不恢复上次的 MV 模式。
+- 抽屉里的 **「启用 MV」总开关**：控制 MV 功能是否可用，不会让普通歌词页自动播放视频；后台预加载仅准备匹配结果。
 - 抽屉内按 `Esc` 或点遮罩关闭
 - 注意：没有正在播放的曲目时，播放条与歌词页由应用本身隐藏，MV 按钮也会跟着不可见
 
@@ -19,8 +20,11 @@ Restores the music-video backend that shipping ECHO builds omit. ShinawaseLoader
 - 在线视频源：搜索、DASH（AVC / AV1 可内嵌，无音轨；HEVC / 杜比视界除外）与 MP4 直链；流经 `echo-mv://` 代理
 - 外部搜索：配置 API Key 后可搜索，解析结果恒为外部打开
 - 自定义链接：视频页 URL 或源站视频编号
-- 自动匹配：默认阈值 0.7；强标题匹配即使缺少艺人/时长佐证也可自动应用（不再卡在 0.69）；严格路径失败时回退到可播放的领先候选（`selectionOrigin=auto`）
+- 自动匹配：默认阈值 0.7；清理 `(LTD)` / `(Marathon)` 等曲库标签与通用艺人名，识别无空格中日文标题。强标题加时长或 MV 标记可自动应用；最多尝试 3 个相关候选，解析可播后提交（`selectionOrigin=auto`），保留手动绑定。
+- 加载：自动预加载开启时随播放提前匹配；进入页面补加载、合并重复请求，近期搜索结果缓存 60 秒。空结果不缓存，再次进入可重试；播放错误自动刷新一次，并显示加载/失败状态。
+- 播放恢复：歌曲恢复播放或视频缓冲完成后自动续播；各视频独立控制 seek 冷却，不打断未完成的自动跳转。可见页面中连续 12 秒无播放进展时，每个 MV 自动重载一次，仍失败则显示重试提示；暂停与隐藏页面不触发卡顿恢复。
 - 临时流：不写盘，TTL ≤ 15 分钟，`echo-mv://ephemeral/{token}`
+- 对齐音频起点：选中 MV 后，在「MV 音画校准」里点击「检测并对齐」。支持本地视频与 Bilibili 独立音轨，分析前 120 秒的首次持续声音并保存为该 MV 的起点；片头对白/音效也算声音，不做歌曲指纹匹配。可取消、手动微调或归零；失败不修改起点。需要应用附带或 PATH 中的 FFmpeg，检测最长 25 秒，MV 始终静音。
 
 设置保存在 Steam 稳定版 `%APPDATA%\ECHO Steam\echo-mv-mod\store.json`，**不会**改写 `echo-settings.json`。
 
@@ -50,6 +54,9 @@ MV 面板里的选项（自动搜索、清晰度上限、沉浸背景等）走 `
 
 ```powershell
 node --check .\examples\ECHO-MV\echomod\main.cjs
+node --test .\examples\ECHO-MV\dev\matching-regression.test.mjs
+node --test .\examples\ECHO-MV\dev\audio-start.test.mjs
+node --test .\examples\ECHO-MV\dev\playback-recovery.test.mjs
 node .\examples\ECHO-MV\dev\test-engine.mjs
 ```
 
