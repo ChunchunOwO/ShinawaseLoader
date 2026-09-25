@@ -160,6 +160,7 @@ const defaultUiSettings = Object.freeze({
   modFilter: 'all',
   // Default off: the Steam launch reminder popup is opt-in.
   steamLaunchReminder: false,
+  showTitlebarBrand: true,
 });
 const sanitizeUiSettings = (value) => {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -177,6 +178,7 @@ const sanitizeUiSettings = (value) => {
     modSort: pick('modSort', ['name', 'recent', 'enabled']),
     modFilter: pick('modFilter', ['all', 'active', 'inactive']),
     steamLaunchReminder: bool('steamLaunchReminder'),
+    showTitlebarBrand: bool('showTitlebarBrand'),
   };
 };
 
@@ -1613,7 +1615,7 @@ const injectEnabled = async () => {
       const targetState = probe?.result?.value;
       if (targetState?.ready !== true) continue;
       lastCycleReadyCount += 1;
-      const uiReloaded = targetState.uiVersion < 59;
+      const uiReloaded = targetState.uiVersion < 60;
       if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
       if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
       if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));

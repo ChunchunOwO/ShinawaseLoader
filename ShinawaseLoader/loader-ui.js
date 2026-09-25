@@ -1,6 +1,6 @@
-// Loader UI generation 56. Keep this guard in sync with
-// window.__echoExternalLoaderUi.version and ShinawaseLoader.mjs (uiVersion < 56).
-if (window.__echoExternalLoaderUi?.version >= 56) return 'already';
+// Keep this guard in sync with window.__echoExternalLoaderUi.version
+// and ShinawaseLoader.mjs (uiVersion < 60).
+if (window.__echoExternalLoaderUi?.version >= 60) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -16,6 +16,7 @@ const defaultUiSettings = {
   modSort: 'name',
   modFilter: 'all',
   steamLaunchReminder: false,
+  showTitlebarBrand: true,
 };
 let uiSettings = {
   ...defaultUiSettings,
@@ -1269,6 +1270,73 @@ css.textContent = `
   .app-titlebar-brand > button {
     order: 3;
   }
+  html[data-shl-hide-titlebar-brand] .app-titlebar-brand::after { content: none; display: none; }
+
+  /* ---- Loader control page ---- */
+  .echo-external-loader-panel .echo-loader-layout {
+    width: min(100%, 1220px); margin: 0 auto; padding: 28px 32px 112px;
+    box-sizing: border-box; display: grid; gap: 18px;
+  }
+  .echo-external-loader-panel .echo-loader-hero {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 22px;
+    margin: 0; padding: 27px 30px; border-radius: 20px;
+    border: 1px solid color-mix(in srgb, var(--shl-accent) 22%, var(--shl-border));
+    background: radial-gradient(70% 150% at 100% 0%, color-mix(in srgb, var(--shl-accent) 15%, transparent), transparent 75%),
+      linear-gradient(115deg, color-mix(in srgb, var(--shl-accent) 6%, var(--shl-panel)), var(--shl-panel));
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--shl-accent) 7%, transparent);
+  }
+  .echo-external-loader-panel .echo-loader-hero h1 {
+    margin: 7px 0 2px; font-size: clamp(30px, 3vw, 40px); line-height: 1.08;
+    font-weight: 760; letter-spacing: -0.055em;
+  }
+  .echo-external-loader-panel .echo-loader-hero p { margin: 8px 0 0; color: var(--shl-muted); font-size: 13px; }
+  .echo-external-loader-panel .echo-loader-hero .plugins-header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end; }
+  .echo-external-loader-panel .echo-loader-hero .settings-action-button {
+    min-height: 36px; padding: 0 13px; border: 1px solid var(--shl-border); border-radius: 10px;
+    background: var(--shl-panel); color: var(--theme-page-text, inherit); font: 600 12px var(--shl-font);
+    box-shadow: none; cursor: pointer;
+  }
+  .echo-external-loader-panel .echo-loader-hero .settings-action-button:hover { border-color: var(--shl-accent); color: var(--shl-accent-strong); }
+  .echo-external-loader-panel .echo-loader-hero .settings-action-button:focus-visible,
+  .echo-external-loader-panel .echo-appearance-row button:focus-visible {
+    outline: 2px solid var(--shl-accent); outline-offset: 2px;
+  }
+  .echo-external-loader-panel .echo-loader-layout .settings-section {
+    margin: 0; min-width: 0; padding: 21px 24px 23px; border: 1px solid var(--shl-border);
+    border-radius: 18px; background: var(--shl-panel); box-shadow: 0 8px 26px rgba(22, 25, 32, .045);
+  }
+  .echo-external-loader-panel .echo-loader-layout .settings-section > .section-title {
+    margin: 0 0 17px; padding: 0 0 12px; border-bottom: 1px solid var(--shl-border);
+    color: var(--theme-heading-text, inherit); font-size: 16px; font-weight: 720; letter-spacing: -.025em;
+  }
+  .echo-external-loader-panel .echo-status-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+  .echo-external-loader-panel .echo-status-chip {
+    min-width: 0; padding: 12px 13px; border-radius: 11px; background: var(--theme-page-bg, var(--shl-panel));
+    box-shadow: none;
+  }
+  .echo-external-loader-panel .echo-status-chip strong { overflow-wrap: anywhere; font-size: 12.5px; }
+  .echo-external-loader-panel .echo-loader-two-col { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr); align-items: stretch; gap: 18px; }
+  .echo-external-loader-panel .echo-loader-two-col > .settings-section { height: 100%; box-sizing: border-box; }
+  .echo-external-loader-panel .echo-loader-two-col .echo-steam-banner {
+    border: 0; border-radius: 0; background: transparent; padding: 0; gap: 10px;
+  }
+  .echo-external-loader-panel .echo-steam-launch-copy { padding: 12px 13px; }
+  .echo-external-loader-panel .echo-steam-banner-toggle { margin-top: 8px; padding-top: 14px; }
+  .echo-external-loader-panel .echo-appearance-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .echo-external-loader-panel .echo-appearance-row { min-width: 0; background: var(--theme-page-bg, var(--shl-panel)); border-radius: 11px; }
+  @media (max-width: 1050px) {
+    .echo-external-loader-panel .echo-loader-two-col { grid-template-columns: 1fr; }
+    .echo-external-loader-panel .echo-appearance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .echo-external-loader-panel .echo-loader-layout { padding: 18px 16px 100px; gap: 12px; }
+    .echo-external-loader-panel .echo-loader-hero { padding: 22px 20px; }
+    .echo-external-loader-panel .echo-loader-layout .settings-section { padding: 18px; }
+    .echo-external-loader-panel .echo-status-grid, .echo-external-loader-panel .echo-appearance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 480px) {
+    .echo-external-loader-panel .echo-status-grid, .echo-external-loader-panel .echo-appearance-grid { grid-template-columns: 1fr; }
+  }
 
   /* ---- Density: compact ---- */
   [data-density="compact"] .echo-mod-page { padding: 20px 24px 100px; gap: 14px; }
@@ -1435,6 +1503,7 @@ accentCss.id = 'echo-loader-ui-accent';
 const motionCss = document.createElement('style');
 motionCss.id = 'echo-loader-ui-motion';
 document.head.append(css, accentCss, motionCss);
+document.documentElement.toggleAttribute('data-shl-hide-titlebar-brand', uiSettings.showTitlebarBrand === false);
 
 const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group]';
 const hexToRgba = (hex, alpha) => {
@@ -1691,6 +1760,7 @@ const syncModsToolbar = () => {
 };
 
 const applyUiSettings = () => {
+  document.documentElement.toggleAttribute('data-shl-hide-titlebar-brand', uiSettings.showTitlebarBrand === false);
   const density = uiSettings.density === 'compact' ? 'compact' : 'comfortable';
   const panels = [modsPanel, marketPanel, loaderPanel, ...sidebarPages.values()];
   panels.forEach((panel) => { if (panel) panel.dataset.density = density; });
@@ -2076,11 +2146,12 @@ const renderAppearance = () => {
     select.onchange = () => void saveUiSettings({ [key]: select.value }).catch((error) => toast(error.message, 'error'));
     return select;
   };
-  const switchControl = (key) => {
+  const switchControl = (key, label) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'echo-switch';
     button.setAttribute('role', 'switch');
+    if (label) button.setAttribute('aria-label', label);
     button.setAttribute('aria-checked', uiSettings[key] === true ? 'true' : 'false');
     button.innerHTML = '<span class="echo-switch-thumb"></span>';
     button.onclick = () => void saveUiSettings({ [key]: uiSettings[key] !== true }).catch((error) => toast(error.message, 'error'));
@@ -2101,6 +2172,7 @@ const renderAppearance = () => {
     return wrap;
   };
   grid.replaceChildren(
+    row(T.showTitlebarBrand, switchControl('showTitlebarBrand', T.showTitlebarBrand)),
     row(T.density, selectControl('density', [['comfortable', T.densityComfortable], ['compact', T.densityCompact]])),
     row(T.cardLayout, selectControl('cardLayout', [['list', T.layoutList], ['grid', T.layoutGrid]])),
     row(T.accentColor, accentControl()),
@@ -2155,8 +2227,8 @@ const openLoader = async () => {
     return;
   }
   loaderPanel = mountPage('echo-external-loader-panel page-surface', `
-    <div class="page-stack plugins-page">
-      <header class="plain-page-header plugins-header">
+    <div class="page-stack plugins-page echo-loader-layout">
+      <header class="plain-page-header plugins-header echo-loader-hero">
         <div>
           <div class="echo-kicker-row">
             <span class="section-kicker">${T.loaderKicker}</span>
@@ -2176,41 +2248,43 @@ const openLoader = async () => {
         <h2 class="section-title">${T.status}</h2>
         <div class="echo-status-grid" data-status-grid></div>
       </section>
-      <section class="settings-section">
-        <h2 class="section-title">${T.steamLaunchSection || 'Steam launch options'}</h2>
-        <div class="echo-steam-banner" data-steam-banner>
-          <p class="echo-steam-banner-title">${T.steamLaunchTitle || ''}</p>
-          <p>${T.steamLaunchBody || ''}</p>
-          <p class="echo-steam-banner-hint">${T.steamLaunchHint || ''}</p>
-          <button type="button" class="echo-steam-launch-copy" data-steam-launch-copy title="${T.steamLaunchClickCopy || 'Click to copy'}">
-            <code></code>
-            <small>${T.steamLaunchClickCopy || 'Click to copy'}</small>
-          </button>
-          <div class="echo-steam-banner-toggle">
-            <div class="echo-steam-banner-toggle-copy">
-              <strong>${T.steamLaunchReminderToggle || '启动时弹出提示'}</strong>
-              <span>${T.steamLaunchReminderHint || ''}</span>
-            </div>
-            <button type="button" class="echo-switch" role="switch" data-steam-reminder-toggle aria-checked="false">
-              <span class="echo-switch-thumb"></span>
+      <div class="echo-loader-two-col">
+        <section class="settings-section">
+          <h2 class="section-title">${T.steamLaunchSection || 'Steam launch options'}</h2>
+          <div class="echo-steam-banner" data-steam-banner>
+            <p class="echo-steam-banner-title">${T.steamLaunchTitle || ''}</p>
+            <p>${T.steamLaunchBody || ''}</p>
+            <p class="echo-steam-banner-hint">${T.steamLaunchHint || ''}</p>
+            <button type="button" class="echo-steam-launch-copy" data-steam-launch-copy title="${T.steamLaunchClickCopy || 'Click to copy'}">
+              <code></code>
+              <small>${T.steamLaunchClickCopy || 'Click to copy'}</small>
             </button>
-          </div>
-        </div>
-      </section>
-      <section class="settings-section">
-        <h2 class="section-title">${T.autoUpdateSection || 'Updates'}</h2>
-        <div class="echo-steam-banner">
-          <div class="echo-steam-banner-toggle">
-            <div class="echo-steam-banner-toggle-copy">
-              <strong>${T.autoUpdateToggle || 'Check GitHub updates on launch'}</strong>
-              <span>${T.autoUpdateHint || ''}</span>
+            <div class="echo-steam-banner-toggle">
+              <div class="echo-steam-banner-toggle-copy">
+                <strong>${T.steamLaunchReminderToggle || '启动时弹出提示'}</strong>
+                <span>${T.steamLaunchReminderHint || ''}</span>
+              </div>
+              <button type="button" class="echo-switch" role="switch" data-steam-reminder-toggle aria-checked="false">
+                <span class="echo-switch-thumb"></span>
+              </button>
             </div>
-            <button type="button" class="echo-switch" role="switch" data-auto-update-toggle aria-checked="true">
-              <span class="echo-switch-thumb"></span>
-            </button>
           </div>
-        </div>
-      </section>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-title">${T.autoUpdateSection || 'Updates'}</h2>
+          <div class="echo-steam-banner">
+            <div class="echo-steam-banner-toggle">
+              <div class="echo-steam-banner-toggle-copy">
+                <strong>${T.autoUpdateToggle || 'Check GitHub updates on launch'}</strong>
+                <span>${T.autoUpdateHint || ''}</span>
+              </div>
+              <button type="button" class="echo-switch" role="switch" data-auto-update-toggle aria-checked="true">
+                <span class="echo-switch-thumb"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
       <section class="settings-section">
         <h2 class="section-title">${T.appearance}</h2>
         <p class="echo-appearance-hint">${T.appearanceHint}</p>
@@ -4161,7 +4235,7 @@ const onNavControlClick = (event) => {
 window.addEventListener('click', onNavControlClick, true);
 
 window.__echoExternalLoaderUi = {
-  version: 59,
+  version: 60,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
@@ -4190,6 +4264,7 @@ window.__echoExternalLoaderUi = {
     configModalCleanup = null;
     configModal?.remove();
     css.remove();
+    document.documentElement.removeAttribute('data-shl-hide-titlebar-brand');
     accentCss.remove();
     motionCss.remove();
     legacyThemeBridge?.remove();

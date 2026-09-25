@@ -65,6 +65,7 @@ The Loader page has an Appearance section. Every option persists in `loader.conf
 | `density` | `comfortable` (default), `compact` | Spacing and control sizes on loader-owned pages. |
 | `accentColor` | `''` (default) or `#rrggbb` | Overrides `--theme-accent` on loader-owned surfaces only; empty follows the ECHO theme. |
 | `animations` | `true` (default), `false` | Loader UI animations and transitions. |
+| `showTitlebarBrand` | `true` (default), `false` | Show or hide the injected Shiawase label in ECHO's title bar. |
 | `cardLayout` | `list` (default), `grid` | Mods page card arrangement. |
 | `showModDescriptions` | `true` (default), `false` | Description line on mod cards. |
 | `showModVersions` | `true` (default), `false` | Version badge on mod cards. |

@@ -323,17 +323,21 @@ const biliIdFromTarget = (target) => {
   }
   return rawId.match(/^BV[A-Za-z0-9]+$/iu)?.[0] || rawId.match(/^av\d+$/iu)?.[0] || null;
 };
-const youtubeEmbedUrl = (video, options) => {
+const youtubeEmbedUrl = (video, options = {}) => {
   if (!video || video.provider !== 'youtube' || video.sourceType !== 'manual') return null;
   const videoId = youtubeIdFromValue(video.providerUrl || video.url || video.sourceId);
   if (!videoId) return null;
   const url = new URL(`https://www.youtube.com/embed/${videoId}`);
-  url.searchParams.set('autoplay', options.autoplay ? '1' : '0');
+  url.searchParams.set('autoplay', '0');
   url.searchParams.set('mute', '1');
+  url.searchParams.set('enablejsapi', '1');
   url.searchParams.set('controls', options.controls === false ? '0' : '1');
   url.searchParams.set('rel', '0');
   url.searchParams.set('playsinline', '1');
   url.searchParams.set('iv_load_policy', '3');
+  try {
+    if (location.origin && location.origin !== 'null') url.searchParams.set('origin', location.origin);
+  } catch {}
   if (options.controls === false) {
     url.searchParams.set('disablekb', '1');
     url.searchParams.set('fs', '0');
@@ -345,6 +349,39 @@ const youtubeEmbedUrl = (video, options) => {
   }
   return url.toString();
 };
+const commandYoutube = (iframe, func, args = []) => {
+  if (!iframe?.contentWindow) return;
+  try {
+    iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+  } catch {}
+};
+const syncYoutube = (iframe, options = {}) => {
+  if (!iframe) return;
+  commandYoutube(iframe, 'mute');
+  commandYoutube(iframe, 'setVolume', [0]);
+  if (state.isAudioPlaying && panelActive() && lyricsVisible()) {
+    commandYoutube(iframe, 'playVideo');
+    if (options.seek) {
+      const seconds = Math.max(0, estimateClockPosition(state.audioClock) + (Number(state.selectedVideo?.offsetMs) || 0) / 1000);
+      commandYoutube(iframe, 'seekTo', [seconds, true]);
+    }
+  } else {
+    commandYoutube(iframe, 'pauseVideo');
+  }
+};
+const silenceVideo = (video) => {
+  if (!video) return;
+  try { video.muted = true; } catch {}
+  try { video.defaultMuted = true; } catch {}
+  try { video.volume = 0; } catch {}
+  try { video.setAttribute('muted', ''); } catch {}
+  try { video.playsInline = true; } catch {}
+  try { video.disableRemotePlayback = true; } catch {}
+  try {
+    const tracks = video.audioTracks;
+    if (tracks) for (let i = 0; i < tracks.length; i += 1) tracks[i].enabled = false;
+  } catch {}
+};
 
 const HOST_LYRICS_STYLES = new Set(['editorial', 'folded', 'roseVinyl', 'cinemaStage', 'kineticPoster', 'coverStage', 'cutBoard']);
 const STAGE_LYRICS_STYLES = new Set(['cinemaStage', 'coverStage']);
@@ -354,15 +391,6 @@ const isLyricsStageStyle = (page) => STAGE_LYRICS_STYLES.has(lyricsPageStyle(pag
 const rememberViewMode = (mode) => {
   try { window.sessionStorage.setItem(MV_VIEW_MODE_KEY, mode); } catch {}
   try { window.sessionStorage.setItem(LYRICS_VIEW_MODE_KEY, 'lyrics'); } catch {}
-};
-const readViewMode = () => {
-  try {
-    const ours = window.sessionStorage.getItem(MV_VIEW_MODE_KEY);
-    if (ours === 'mv' || ours === 'lyrics') return ours;
-    return window.sessionStorage.getItem(LYRICS_VIEW_MODE_KEY) === 'mv' ? 'mv' : 'lyrics';
-  } catch {
-    return 'lyrics';
-  }
 };
 const readDiagnostics = () => {
   try { return window.localStorage.getItem(DIAGNOSTICS_KEY) === 'true'; } catch { return false; }
@@ -417,14 +445,33 @@ const signedDrift = (video, targetTime) => {
   }
   return drift;
 };
+const videoRuntime = new WeakMap();
+const runtimeForVideo = (video) => {
+  let runtime = videoRuntime.get(video);
+  if (!runtime) {
+    runtime = { lastSeekAt: -Infinity, lastPlayAt: -Infinity, playPending: false, lastTickAt: Date.now(), lastProgressAt: Date.now(), lastTime: Number(video.currentTime) || 0 };
+    videoRuntime.set(video, runtime);
+  }
+  return runtime;
+};
 const playVideo = (video) => {
+  if (!video?.isConnected || !panelActive() || !lyricsVisible()) return;
+  const runtime = runtimeForVideo(video);
+  const now = Date.now();
+  if (runtime.playPending || now - runtime.lastPlayAt < 1000) return;
+  runtime.lastPlayAt = now;
+  silenceVideo(video);
   try {
     const result = video.play();
-    if (result && typeof result.catch === 'function') void result.catch(() => undefined);
+    if (result && typeof result.then === 'function') {
+      runtime.playPending = true;
+      void result.catch(() => undefined).finally(() => { runtime.playPending = false; });
+    }
   } catch {}
 };
 const releaseVideo = (video) => {
   if (!video) return;
+  videoRuntime.delete(video);
   try { video.pause(); } catch {}
   try {
     video.removeAttribute('src');
@@ -501,9 +548,12 @@ const mvApi = {
   searchNetworkCandidatesForSnapshot: (request) => invoke('mv.searchNetworkCandidatesForSnapshot', { snapshot: request }),
   getTemporaryPlayableForSnapshot: (request) => invoke('mv.getTemporaryPlayableForSnapshot', { snapshot: request }),
   getCandidates: (trackId) => invoke('mv.getCandidates', { trackId }),
-  resolveStreams: (videoId) => invoke('mv.resolveStreams', { videoId }),
+  resolveStreams: (videoId, options = {}) => invoke('mv.resolveStreams', { videoId, forceRefresh: options.forceRefresh === true }),
   setQuality: (videoId, qualityId) => invoke('mv.setQuality', { videoId, qualityId }),
-  setOffset: (trackId, offsetMs) => invoke('mv.setOffset', { trackId, offsetMs }),
+  setOffset: (trackId, offsetMs, videoId) => invoke('mv.setOffset', { trackId, offsetMs, videoId }),
+  detectAudioStart: (videoId) => invoke('mv.detectAudioStart', { videoId }),
+  cancelAudioStart: (videoId) => invoke('mv.cancelAudioStart', { videoId }),
+  applyAudioStart: (trackId, videoId, startMs, expectedOffsetMs) => invoke('mv.applyAudioStart', { trackId, videoId, startMs, expectedOffsetMs }),
   chooseLocalVideo: (trackId) => invoke('mv.chooseLocalVideo', { trackId }),
   bindLocalVideo: (trackId, filePath) => invoke('mv.bindLocalVideo', { trackId, filePath }),
   bindUrl: (trackId, url) => invoke('mv.bindUrl', { trackId, url }),
@@ -575,7 +625,9 @@ const state = {
   noticeDismissed: false,
   copiedDiagnostics: false,
   diagnosticsEnabled: readDiagnostics(),
-  viewMode: readViewMode(),
+  // MV is an explicit view choice, never restored from a previous injection.
+  viewMode: 'lyrics',
+  viewRequestId: 0,
   isAudioPlaying: false,
   audioClock: normalizeClock({ positionSeconds: 0, updatedAtMs: performance.now(), playbackRate: 1, durationSeconds: null, state: 'idle' }),
   playbackStatus: null,
@@ -583,8 +635,8 @@ const state = {
   requestId: 0,
   preloadAttempt: null,
   preloadRetryAttempt: null,
-  lastSyncAt: 0,
-  seeking: false,
+  lastSearchAt: 0,
+  videoRecoveryAttempt: null,
   failedCovers: new Set(),
   failedThumbs: new Set(),
   immersiveBounds: null,
@@ -606,6 +658,9 @@ const state = {
   immersiveOpen: readImmersiveOpen(),
   offsetOpen: false,
   offsetSaving: false,
+  audioStartVideoId: null,
+  audioStartToken: 0,
+  audioStartMessage: null,
   offsetStep: 500,
   draggedProvider: null,
   dragOverProvider: null,
@@ -619,6 +674,7 @@ const refs = {
   background: null,
   foregroundVideo: null,
   backgroundVideo: null,
+  youtubeIframe: null,
   notice: null,
   diagnostics: null,
   settingsBtn: null,
@@ -653,6 +709,13 @@ const isLyricsPageVisible = () => {
   const rect = page.getBoundingClientRect();
   return rect.width > 1 && rect.height > 1;
 };
+const waitForLyricsPage = async (tries = 40) => {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (isLyricsPageVisible()) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  return isLyricsPageVisible();
+};
 const lyricsPageEl = () => document.querySelector('.lyrics-page');
 const isDrawerDomOpen = () => Boolean(refs.drawerRoot?.isConnected && state.drawerOpen && state.drawerRender);
 const hideOfficialMvChrome = (page) => {
@@ -682,10 +745,10 @@ const teardownOwnedPanel = () => {
   refs.foregroundVideo = null;
 };
 const shouldAutoSearch = () => {
-  if (!state.trackId || state.settings.autoSearch === false) return false;
-  return state.isAudioPlaying || isReceiverTrackId(state.trackId) || (state.settings.autoPreload !== false && shouldUseSnapshotSearch(state.currentTrack, state.trackId));
+  if (!state.trackId || state.settings.enabled === false || state.settings.autoSearch === false) return false;
+  return panelActive() || (state.settings.autoPreload !== false && state.isAudioPlaying);
 };
-const panelActive = () => state.settings.enabled !== false;
+const panelActive = () => state.settings.enabled !== false && state.viewMode === 'mv';
 const lyricsVisible = () => isLyricsPageVisible() && !document.hidden;
 
 const applyLocaleFromApp = async () => {
@@ -753,11 +816,12 @@ const summarizeActionError = (error) => {
   return message.trim() || t('mvSettings.error.actionFailed');
 };
 
-const resolveNetworkVideo = async (video) => {
+const resolveNetworkVideo = async (video, options = {}) => {
   if (!video || video.temporary || video.provider === 'local') return video;
+  const requestId = state.requestId;
   try {
-    const resolved = await mvApi.resolveStreams(video.id);
-    if (resolved?.variants) state.variants = resolved.variants;
+    const resolved = await mvApi.resolveStreams(video.id, options);
+    if (requestId === state.requestId && resolved?.variants) state.variants = resolved.variants;
     const next = resolved?.video || resolved;
     return isPlayableVideo(video) && !isPlayableVideo(next) ? video : next;
   } catch (error) {
@@ -778,26 +842,46 @@ const snapshotForActive = (options = {}) => snapshotFromTrack(state.currentTrack
 
 const searchCandidatesForActive = async (options = {}) => {
   if (!state.trackId) return null;
-  if ((options.forceSnapshot || shouldUseSnapshotSearch(state.currentTrack, state.trackId))) {
-    const request = { ...snapshotForActive(options), autoSelect: true };
-    await mvApi.searchNetworkCandidatesForSnapshot(request);
-    return mvApi.getSelected(request.trackId);
+  const requestId = state.requestId;
+  const request = { ...snapshotForActive(options), autoSelect: true };
+  if (!options.forceSnapshot && !shouldUseSnapshotSearch(state.currentTrack, state.trackId)) {
+    try { await mvApi.findLocalCandidates(request.trackId); } catch {}
+    if (requestId !== state.requestId) return null;
+    const afterLocal = await mvApi.getSelected(request.trackId);
+    if (isPlayableVideo(afterLocal)) return afterLocal;
   }
-  try { await mvApi.findLocalCandidates(state.trackId); } catch {}
-  const afterLocal = await mvApi.getSelected(state.trackId);
-  if (isPlayableVideo(afterLocal)) return afterLocal;
-  await mvApi.searchNetworkCandidates(state.trackId, options.query);
-  return mvApi.getSelected(state.trackId);
+  if (requestId !== state.requestId) return null;
+  const candidates = await mvApi.searchNetworkCandidatesForSnapshot(request);
+  if (requestId !== state.requestId) return null;
+  if (Array.isArray(candidates)) state.candidates = candidates;
+  return mvApi.getSelected(request.trackId);
 };
 
-const loadSelected = async (options = {}) => {
-  if (!lyricsVisible()) return;
+let activeLoad = null;
+const loadSelected = (options = {}) => {
+  if (disposed) return Promise.resolve();
+  const key = JSON.stringify([state.trackId, state.title, state.artist, state.settings, state.viewRequestId]);
+  if (!options.forceRefresh && activeLoad?.key === key) return activeLoad.promise;
+  const promise = performLoadSelected(options).finally(() => {
+    if (activeLoad?.promise === promise) activeLoad = null;
+  });
+  activeLoad = { key, promise };
+  return promise;
+};
+const performLoadSelected = async (options = {}) => {
+  const canPreload = state.settings.enabled !== false && state.isAudioPlaying && state.settings.autoPreload !== false;
+  if (!(panelActive() && lyricsVisible()) && !canPreload) return;
   if (!panelActive() && !shouldAutoSearch()) return;
   const requestId = ++state.requestId;
+  const trackId = state.trackId;
+  const streamingTarget = state.streamingTarget;
+  const effectiveId = snapshotTrackIdFor(state.currentTrack, trackId) || trackId;
+  const isCurrent = () => !disposed && state.requestId === requestId && state.trackId === trackId;
   if (!options.preserveCurrent) state.selectedVideo = null;
   state.isLoading = Boolean(state.trackId);
-  state.error = null;
+  if (!options.preserveCurrent) state.error = null;
   state.videoError = false;
+  scheduleRender();
   if (!state.trackId) {
     state.isLoading = false;
     scheduleRender();
@@ -805,48 +889,64 @@ const loadSelected = async (options = {}) => {
   }
   try {
     const nextSettings = await loadSettings();
-    if (state.requestId !== requestId) return;
+    if (!isCurrent()) return;
     if (nextSettings.enabled === false) {
       state.selectedVideo = null;
       state.isLoading = false;
       scheduleRender();
       return;
     }
-    const effectiveId = snapshotTrackIdFor(state.currentTrack, state.trackId) || state.trackId;
     let video = await mvApi.getSelected(effectiveId);
-    if (state.streamingTarget) {
-      const biliId = biliIdFromTarget(state.streamingTarget);
-      const rawBili = String(state.streamingTarget.providerTrackId || '').trim();
-      const biliUrl = state.streamingTarget.provider === 'bilibili'
+    if (!isCurrent()) return;
+    if (!video && trackId && trackId !== effectiveId) video = await mvApi.getSelected(trackId);
+    if (!isCurrent()) return;
+    const canReuseSelected = Boolean(
+      video
+      && (
+        video.selectionOrigin === 'manual'
+        || video.sourceType === 'manual'
+        || (video.playableInApp && video.mediaUrl)
+        || youtubeEmbedUrl(video, {})
+      )
+    );
+    if (streamingTarget && !canReuseSelected) {
+      const biliId = biliIdFromTarget(streamingTarget);
+      const rawBili = String(streamingTarget.providerTrackId || '').trim();
+      const biliUrl = streamingTarget.provider === 'bilibili'
         ? (/^https?:\/\//i.test(rawBili) ? rawBili : (biliId ? `https://www.bilibili.com/video/${encodeURIComponent(biliId)}` : null))
         : null;
-      const ytId = state.streamingTarget.provider === 'youtube' ? youtubeIdFromValue(state.streamingTarget.providerTrackId) : null;
+      const ytId = streamingTarget.provider === 'youtube' ? youtubeIdFromValue(streamingTarget.providerTrackId) : null;
       const ytUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : null;
-      if (biliUrl && (!video || video.provider !== 'bilibili' || video.sourceId !== biliId)) {
+      if (biliUrl) {
         try { video = await mvApi.bindUrl(effectiveId, biliUrl); } catch {}
       }
-      if (ytUrl && (!video || video.provider !== 'youtube' || video.sourceId !== ytId)) {
+      if (ytUrl && (!video || video.provider !== 'youtube')) {
         try { video = await mvApi.bindUrl(effectiveId, ytUrl); } catch {}
       }
     }
+    if (!isCurrent()) return;
     const canSearch = shouldAutoSearch() && (panelActive() || nextSettings.autoSearch !== false);
-    const alreadyPreloaded = state.preloadAttempt === state.trackId;
-    if (!video && canSearch && !alreadyPreloaded) {
-      state.preloadAttempt = state.trackId;
-      video = (await searchCandidatesForActive()) || (await mvApi.getSelected(effectiveId));
-    }
-    let resolved = await resolveNetworkVideo(video);
-    // Retry once when the first hit is an unplayable search stub (resolve may still succeed on next pass).
-    if (isUnplayableSearchCandidate(resolved) && canSearch && state.preloadRetryAttempt !== state.trackId) {
-      state.preloadRetryAttempt = state.trackId;
-      state.preloadAttempt = state.trackId;
-      video = (await searchCandidatesForActive()) || (await mvApi.getSelected(effectiveId));
+    let resolved = await resolveNetworkVideo(video, options);
+    if (!isCurrent()) return;
+    const canRetry = options.forceRefresh || state.preloadAttempt !== trackId || Date.now() - state.lastSearchAt >= 12000;
+    if ((!resolved || (isUnplayableSearchCandidate(resolved) && resolved.selectionOrigin !== 'manual')) && canSearch && canRetry) {
+      state.preloadAttempt = trackId;
+      state.lastSearchAt = Date.now();
+      video = await searchCandidatesForActive();
+      if (!isCurrent()) return;
       resolved = await resolveNetworkVideo(video);
     }
-    if (state.requestId !== requestId) return;
-    state.selectedVideo = resolved;
+    if (!isCurrent()) return;
+    if (resolved) {
+      state.selectedVideo = resolved;
+      state.videoError = false;
+      if (options.forceRefresh) lastBgKey = '';
+      state.error = null;
+    } else if (!options.preserveCurrent) {
+      state.selectedVideo = null;
+    }
   } catch (error) {
-    if (state.requestId !== requestId) return;
+    if (!isCurrent()) return;
     if (isMvDatabaseError(error)) {
       try {
         const fallback = await mvApi.getTemporaryPlayableForSnapshot({ ...snapshotForActive({ forceSnapshot: true }) });
@@ -860,34 +960,44 @@ const loadSelected = async (options = {}) => {
         }
       } catch {}
     }
+    if (!isCurrent()) return;
     state.error = error instanceof Error ? error.message : String(error);
     state.selectedVideo = null;
     toast(summarizeLoadError(state.error));
   } finally {
-    if (state.requestId === requestId) {
+    if (isCurrent()) {
       state.isLoading = false;
       scheduleRender();
     }
   }
 };
 
-const refreshPlayback = async () => {
+let playbackRefresh = null;
+const refreshPlayback = () => {
+  if (playbackRefresh) return playbackRefresh;
+  playbackRefresh = readPlayback().finally(() => { playbackRefresh = null; });
+  return playbackRefresh;
+};
+const readPlayback = async () => {
   const echo = echoApi();
   let playback = null;
   let audio = null;
   try { playback = await echo.playback?.getStatus?.(); } catch {}
   try { audio = await echo.audio?.getStatus?.(); } catch {}
+  if (disposed) return;
   state.playbackStatus = playback;
   state.audioStatus = audio;
   const queued = currentQueueTrack();
   const trackId = audio?.currentTrackId || playback?.currentTrackId || queued?.id || queued?.stableKey || null;
-  const playing = audio?.state === 'playing' || playback?.state === 'playing';
+  const audioState = audio?.state || playback?.state || 'idle';
+  const playing = audioState === 'playing';
   const positionSeconds = numOf(audio?.positionSeconds, playback?.positionMs != null ? playback.positionMs / 1000 : null) || 0;
   const durationSeconds = numOf(audio?.durationSeconds, playback?.durationMs != null ? playback.durationMs / 1000 : queued?.duration) || null;
   const playbackRate = numOf(audio?.playbackRate) || 1;
-  const audioState = audio?.state || playback?.state || 'idle';
   const prevTrackId = state.trackId;
+  const previousMetadata = [state.title, state.artist].join('\0');
   const wasPlaying = state.isAudioPlaying;
+  const previousPosition = estimateClockPosition(state.audioClock);
   state.audioClock = normalizeClock({
     positionSeconds,
     updatedAtMs: performance.now(),
@@ -896,8 +1006,18 @@ const refreshPlayback = async () => {
     state: audioState,
   });
   state.isAudioPlaying = playing;
-  if (trackId && trackId !== state.trackId) {
+  if (trackId !== state.trackId) {
+    cancelAudioStartDetection();
+    ++state.requestId;
     state.trackId = trackId;
+    state.selectedVideo = null;
+    state.candidates = [];
+    state.variants = [];
+    state.isLoading = false;
+    state.videoError = false;
+    state.videoRecoveryAttempt = null;
+    state.error = null;
+    scheduleRender();
     state.currentTrack = queued && (queued.id === trackId || queued.stableKey === trackId || streamingTrackKey(queued) === trackId) ? queued : state.currentTrack;
     if (!state.currentTrack || (state.currentTrack.id !== trackId && state.currentTrack.stableKey !== trackId)) {
       try { state.currentTrack = asObject(await echo.library?.getTrack?.(trackId)) || queued; } catch { state.currentTrack = queued; }
@@ -912,20 +1032,21 @@ const refreshPlayback = async () => {
     }
     state.preloadAttempt = null;
     state.preloadRetryAttempt = null;
-    state.lastSyncAt = 0;
-    state.seeking = false;
+    state.lastSearchAt = 0;
     state.noticeDismissed = false;
-    if (lyricsVisible() && (panelActive() || shouldAutoSearch())) void loadSelected();
+    if (panelActive() || shouldAutoSearch()) void loadSelected();
   } else {
     if (!state.title) state.title = textOf(queued?.title, audio?.currentTrackTitle);
     if (!state.artist) state.artist = textOf(queued?.artist, audio?.currentTrackArtist);
     if (!state.coverUrl) state.coverUrl = queued?.coverThumb || audio?.currentTrackCoverUrl || null;
-    if (!wasPlaying && playing && !state.selectedVideo && state.trackId && lyricsVisible() && shouldAutoSearch()) {
+    const metadataArrived = previousMetadata !== [state.title, state.artist].join('\0');
+    if (metadataArrived) state.preloadAttempt = null;
+    if (((!wasPlaying && playing) || metadataArrived) && !state.selectedVideo && state.trackId && shouldAutoSearch()) {
       void loadSelected();
     }
   }
   if (prevTrackId && trackId !== prevTrackId) scheduleRender();
-  if (panelActive()) syncVideos({ bypassCooldown: Math.abs(positionSeconds - (state.audioClock.positionSeconds || 0)) > 2 });
+  if (panelActive()) syncVideos({ bypassCooldown: Math.abs(positionSeconds - previousPosition) > 2 });
 };
 
 const applyRate = (video) => {
@@ -934,12 +1055,15 @@ const applyRate = (video) => {
 };
 const syncOne = (video, options = {}) => {
   const follow = shouldFollowMusic(state.settings, state.selectedVideo, state.streamingTarget);
-  if (!video || isEchoLive(state.selectedVideo) || state.seeking || (!follow && !options.force)) return false;
+  if (!video?.isConnected || video.readyState < 1 || isEchoLive(state.selectedVideo) || (!follow && !options.force)) return false;
+  const runtime = runtimeForVideo(video);
+  // Never interrupt an unfinished seek with another automatic correction.
+  if (video.seeking && !options.force && !options.bypassCooldown) return false;
   const target = targetVideoTime(video, state.audioClock, state.selectedVideo?.offsetMs || 0);
   const driftSigned = signedDrift(video, target);
   const drift = Math.abs(driftSigned);
   const profile = isDirectBili(state.selectedVideo, state.streamingTarget) ? DIRECT_BILI_SYNC : (SYNC_PROFILES[state.settings.syncMode || 'balanced'] || SYNC_PROFILES.balanced);
-  const cooldown = isDirectBili(state.selectedVideo, state.streamingTarget) ? 150 : SYNC_COOLDOWN_MS;
+  const cooldown = SYNC_COOLDOWN_MS;
   const now = Date.now();
   if (!options.force && drift <= profile.toleranceSeconds) {
     applyRate(video);
@@ -954,27 +1078,68 @@ const syncOne = (video, options = {}) => {
       return false;
     }
   }
-  if (!options.force && !options.bypassCooldown && now - state.lastSyncAt < cooldown) return false;
+  if (!options.force && !options.bypassCooldown && now - runtime.lastSeekAt < cooldown) return false;
   try {
     video.currentTime = target;
     applyRate(video);
-    if (options.recordCooldown !== false) state.lastSyncAt = now;
+    runtime.lastSeekAt = now;
     return true;
   } catch {
     return false;
   }
 };
+const recoverVideo = (video) => {
+  if (!video?.isConnected || (video !== refs.foregroundVideo && video !== refs.backgroundVideo) || state.isLoading) return;
+  const selected = state.selectedVideo;
+  if (!selected) return;
+  state.videoError = true;
+  scheduleRender();
+  if (state.videoRecoveryAttempt === selected.id) return;
+  state.videoRecoveryAttempt = selected.id;
+  lastBgKey = '';
+  if (selected.temporary) {
+    state.videoError = false;
+    scheduleRender();
+  } else {
+    void loadSelected({ preserveCurrent: true, forceRefresh: true });
+  }
+};
+const maintainVideoPlayback = (video) => {
+  if (!video?.isConnected) return;
+  const runtime = runtimeForVideo(video);
+  const now = Date.now();
+  if (now - runtime.lastTickAt > 2000 || !state.isAudioPlaying) runtime.lastProgressAt = now;
+  runtime.lastTickAt = now;
+  if (!state.isAudioPlaying) {
+    if (!video.paused) video.pause();
+    return;
+  }
+  if (video.paused) playVideo(video);
+  const currentTime = Number(video.currentTime) || 0;
+  // A seek changes currentTime even if no frame has decoded. Do not count it
+  // as playback progress or keep retrying seeks while the buffer is stalled.
+  if (!video.paused && !video.seeking && video.readyState >= 2 && now - runtime.lastSeekAt > 500
+      && Math.abs(currentTime - runtime.lastTime) > 0.01) runtime.lastProgressAt = now;
+  runtime.lastTime = currentTime;
+  if (now - runtime.lastProgressAt >= 12000) {
+    runtime.lastProgressAt = now;
+    recoverVideo(video);
+  }
+};
 const syncVideos = (options = {}) => {
-  if (!panelActive() || document.hidden) return false;
+  if (!panelActive() || !lyricsVisible()) return false;
+  maintainVideoPlayback(refs.foregroundVideo);
+  maintainVideoPlayback(refs.backgroundVideo);
   const a = syncOne(refs.foregroundVideo, options);
-  const b = syncOne(refs.backgroundVideo, { ...options, recordCooldown: false });
+  const b = syncOne(refs.backgroundVideo, options);
+  syncYoutube(refs.youtubeIframe, { seek: options.force || options.bypassCooldown });
   return a || b;
 };
 
 const unavailableReason = () => {
   const video = state.selectedVideo;
   const showVideo = Boolean(state.settings.enabled !== false && video?.playableInApp && video.mediaUrl && !state.videoError);
-  const yt = youtubeEmbedUrl(video, { autoplay: state.isAudioPlaying, controls: false });
+  const yt = youtubeEmbedUrl(video, { controls: false });
   if (showVideo || yt) return showVideo && video?.temporary && !isEchoLive(video) ? t('mvPanel.status.temporaryPlayback') : null;
   if (state.error) return summarizeLoadError(state.error);
   if (state.isLoading) return t('mvPanel.status.loading');
@@ -1015,16 +1180,21 @@ const applyPageFlags = () => {
 };
 
 const bindVideoEvents = (video, kind) => {
-  video.muted = true;
-  video.playsInline = true;
+  silenceVideo(video);
   video.preload = 'metadata';
+  video.addEventListener('volumechange', () => silenceVideo(video));
+  video.addEventListener('play', () => silenceVideo(video));
   video.addEventListener('error', () => {
-    state.videoError = true;
-    scheduleRender();
+    recoverVideo(video);
   });
-  video.addEventListener('seeking', () => { state.seeking = true; });
-  video.addEventListener('seeked', () => { state.seeking = false; });
+  const resume = () => {
+    if (!video.isConnected || (video !== refs.backgroundVideo && video !== refs.foregroundVideo)) return;
+    if (panelActive() && !document.hidden && state.isAudioPlaying) playVideo(video);
+  };
+  video.addEventListener('canplay', resume);
+  video.addEventListener('seeked', resume);
   video.addEventListener('loadedmetadata', () => {
+    silenceVideo(video);
     if (kind === 'background') {
       const width = Math.round(video.videoWidth || state.selectedVideo?.width || 0);
       const height = Math.round(video.videoHeight || state.selectedVideo?.height || 0);
@@ -1032,7 +1202,7 @@ const bindVideoEvents = (video, kind) => {
     }
     applyRate(video);
     syncVideos({ force: true, bypassCooldown: true });
-    if (state.isAudioPlaying) playVideo(video);
+    if (state.isAudioPlaying && !document.hidden) playVideo(video);
     else video.pause();
     scheduleRender();
   });
@@ -1126,15 +1296,27 @@ const ensureBackground = (page, mediaUrl, adaptive, youtubeUrl) => {
     }, { passive: false });
   }
   if (youtubeUrl) {
-    lastBgKey = `yt:${youtubeUrl}`;
-    background.replaceChildren(el('iframe', 'lyrics-mv-background-video lyrics-mv-background-video--youtube', {
-      src: youtubeUrl,
-      allow: 'autoplay; encrypted-media; picture-in-picture',
-      referrerpolicy: 'strict-origin-when-cross-origin',
-      tabindex: '-1',
-      title: '',
-    }));
+    const videoId = youtubeIdFromValue(state.selectedVideo?.providerUrl || state.selectedVideo?.url || state.selectedVideo?.sourceId) || youtubeUrl;
+    const key = `yt:${videoId}`;
+    let iframe = background.querySelector('iframe.lyrics-mv-background-video--youtube');
+    if (!iframe || lastBgKey !== key) {
+      iframe = el('iframe', 'lyrics-mv-background-video lyrics-mv-background-video--youtube', {
+        src: youtubeUrl,
+        allow: 'autoplay; encrypted-media; picture-in-picture',
+        referrerpolicy: 'strict-origin-when-cross-origin',
+        tabindex: '-1',
+        title: '',
+      });
+      iframe.addEventListener('load', () => {
+        try { iframe.contentWindow?.postMessage('{"event":"listening","id":1}', '*'); } catch {}
+        syncYoutube(iframe, { seek: true });
+      });
+      background.replaceChildren(iframe);
+      lastBgKey = key;
+    }
+    refs.youtubeIframe = iframe;
     refs.backgroundVideo = null;
+    syncYoutube(iframe);
     return;
   }
   const key = `bg:${state.selectedVideo?.id || 'unknown'}:${mediaUrl || 'none'}`;
@@ -1148,7 +1330,7 @@ const ensureBackground = (page, mediaUrl, adaptive, youtubeUrl) => {
   }
   refs.backgroundVideo = video;
   if (!adaptive && video.getAttribute('src') !== mediaUrl) video.src = mediaUrl || '';
-  video.muted = true;
+  silenceVideo(video);
   video.loop = true;
 };
 
@@ -1159,6 +1341,7 @@ const removeBackground = (page) => {
   });
   refs.background = null;
   refs.backgroundVideo = null;
+  refs.youtubeIframe = null;
   lastBgKey = '';
 };
 
@@ -1177,10 +1360,17 @@ const renderPanel = () => {
     lastPanelSignature = '';
     return;
   }
+  const reason = unavailableReason();
+  if (reason) {
+    page.append(el('div', 'lyrics-mv-unavailable-reason', { role: 'status', 'aria-live': 'polite' }, [
+      el('strong', '', null, reason),
+      btn('', { title: t('mvSettings.action.refresh'), 'aria-label': t('mvSettings.action.refresh'), disabled: state.isLoading, onclick: () => void loadSelected({ preserveCurrent: true, forceRefresh: true }) }, [svgIcon('rotate', 15)]),
+    ]));
+  }
   const video = state.selectedVideo;
   const mediaUrl = video?.playableInApp && video.mediaUrl && !state.videoError ? video.mediaUrl : null;
-  const yt = youtubeEmbedUrl(video, { autoplay: state.isAudioPlaying, controls: false });
-  const ytBg = youtubeEmbedUrl(video, { autoplay: state.isAudioPlaying, controls: false, loop: true });
+  const yt = youtubeEmbedUrl(video, { controls: false });
+  const ytBg = youtubeEmbedUrl(video, { controls: false, loop: true });
   const showVideo = Boolean(mediaUrl);
   const live = isEchoLive(video);
   const immersive = Boolean(!live && ((state.settings.immersiveBackground !== false && showVideo) || (yt && ytBg)));
@@ -1230,41 +1420,22 @@ const runBusy = async (work) => {
   }
 };
 
-const bestAutoCandidate = (candidates) => {
-  const threshold = state.settings.autoApplyThreshold ?? 0.7;
-  const softFloor = Math.min(threshold, 0.6);
-  const ranked = [...(candidates || [])]
-    .filter((item) => Number(item.score) >= softFloor)
-    .sort((left, right) => (Number(right.score) || 0) - (Number(left.score) || 0));
-  if (!ranked.length) return null;
-  const best = ranked[0];
-  const second = ranked[1];
-  if (Number(best.score) >= threshold) return best;
-  // Soft fallback: clear lead or solitary candidate above the soft floor.
-  if (!second || Number(best.score) - Number(second.score) >= 0.08) return best;
-  return null;
-};
-
 const searchNetwork = () => runBusy(async () => {
   if (!state.trackId) throw new Error(t('mvSettings.error.noActiveTrackNetworkSearch'));
-  const query = state.searchQuery;
+  const query = state.useCurrentSong ? undefined : state.searchQuery;
+  const requestId = ++state.requestId;
+  state.isLoading = false;
   const track = state.currentTrack;
   const effectiveId = snapshotTrackIdFor(track, state.trackId);
   const autoSelect = state.settings.autoSearch !== false;
   const next = track && shouldUseSnapshotSearch(track, effectiveId)
     ? await mvApi.searchNetworkCandidatesForSnapshot(snapshotFromTrack(track, effectiveId, { query, title: state.title, artist: state.artist, coverUrl: state.coverUrl, autoSelect }))
     : await mvApi.searchNetworkCandidates(effectiveId, query);
+  if (requestId !== state.requestId || effectiveId !== snapshotTrackIdFor(state.currentTrack, state.trackId)) return;
   state.candidates = Array.isArray(next) ? next : [];
   state.networkNotice = state.candidates.length === 0 ? t('mvSettings.error.noNetworkCandidates') : null;
   let selected = await resolveNetworkVideo(await mvApi.getSelected(effectiveId));
-  if (autoSelect && !isPlayableVideo(selected)) {
-    const best = bestAutoCandidate(state.candidates);
-    if (best?.id) {
-      try {
-        selected = await resolveNetworkVideo(await mvApi.selectVideo(effectiveId, best.id));
-      } catch {}
-    }
-  }
+  if (requestId !== state.requestId) return;
   state.selectedVideo = selected;
   if (selected) notifyMvChanged(effectiveId);
 });
@@ -1278,6 +1449,7 @@ const findLocal = () => runBusy(async () => {
 
 const chooseLocal = () => runBusy(async () => {
   if (!state.trackId) throw new Error(t('mvSettings.error.noActiveTrackBinding'));
+  cancelAudioStartDetection();
   const video = await mvApi.chooseLocalVideo(state.trackId);
   if (video) {
     state.selectedVideo = video;
@@ -1289,6 +1461,7 @@ const chooseLocal = () => runBusy(async () => {
 
 const bindCustom = () => runBusy(async () => {
   if (!state.trackId) throw new Error(t('mvSettings.error.noActiveTrackBinding'));
+  cancelAudioStartDetection();
   const video = await mvApi.bindUrl(state.trackId, state.customUrl);
   state.selectedVideo = await resolveNetworkVideo(video);
   state.candidates = [];
@@ -1298,10 +1471,17 @@ const bindCustom = () => runBusy(async () => {
 
 const selectCandidate = (candidateId) => runBusy(async () => {
   if (!state.trackId) throw new Error(t('mvSettings.error.noActiveTrackBinding'));
+  cancelAudioStartDetection();
   state.busyCandidateId = candidateId;
+  const requestId = ++state.requestId;
+  state.isLoading = false;
   const effectiveId = snapshotTrackIdFor(state.currentTrack, state.trackId);
   const video = await mvApi.selectVideo(effectiveId, candidateId);
-  state.selectedVideo = await resolveNetworkVideo(video);
+  const resolved = await resolveNetworkVideo(video);
+  if (requestId !== state.requestId) return;
+  state.selectedVideo = resolved;
+  state.videoError = false;
+  state.videoRecoveryAttempt = null;
   state.candidates = [];
   state.busyCandidateId = null;
   notifyMvChanged(effectiveId);
@@ -1310,9 +1490,16 @@ const selectCandidate = (candidateId) => runBusy(async () => {
 
 const clearSelected = () => runBusy(async () => {
   if (!state.trackId) return;
-  await mvApi.clearSelected(state.trackId);
+  cancelAudioStartDetection();
+  const requestId = ++state.requestId;
+  const trackId = state.trackId;
+  state.preloadAttempt = trackId;
+  state.lastSearchAt = Date.now();
+  state.isLoading = false;
+  await mvApi.clearSelected(snapshotTrackIdFor(state.currentTrack, trackId));
+  if (requestId !== state.requestId) return;
   state.selectedVideo = null;
-  notifyMvChanged(state.trackId);
+  notifyMvChanged(trackId);
 });
 
 const openExternal = async () => {
@@ -1321,16 +1508,61 @@ const openExternal = async () => {
   catch (error) { state.error = summarizeActionError(error); toast(state.error); scheduleRender(); }
 };
 
+const cancelAudioStartDetection = () => {
+  const videoId = state.audioStartVideoId;
+  ++state.audioStartToken;
+  state.audioStartVideoId = null;
+  state.audioStartMessage = null;
+  if (videoId) void mvApi.cancelAudioStart(videoId).catch(() => {});
+};
+
+const alignAudioStart = async () => {
+  const video = state.selectedVideo;
+  if (!video || state.audioStartVideoId || state.offsetSaving) return;
+  const trackId = snapshotTrackIdFor(state.currentTrack, state.trackId);
+  const token = ++state.audioStartToken;
+  const initialOffset = video.offsetMs || 0;
+  const isCurrent = () => !disposed && token === state.audioStartToken
+    && state.selectedVideo?.id === video.id && (state.selectedVideo.offsetMs || 0) === initialOffset
+    && snapshotTrackIdFor(state.currentTrack, state.trackId) === trackId;
+  state.audioStartVideoId = video.id;
+  state.audioStartMessage = null;
+  scheduleRender();
+  try {
+    const result = await mvApi.detectAudioStart(video.id);
+    if (!isCurrent()) return;
+    const next = await mvApi.applyAudioStart(trackId, video.id, result.startMs, initialOffset);
+    if (!isCurrent()) return;
+    state.selectedVideo = next;
+    state.audioStartMessage = t('mvSettings.offset.audioStartApplied', { seconds: formatSecondsInput(result.startMs / 1000) });
+    syncVideos({ force: true, bypassCooldown: true });
+  } catch (error) {
+    if (!isCurrent()) return;
+    const code = String(error?.message || error).match(/mv_audio_start_([a-z_]+)/)?.[1] || 'failed';
+    const known = ['ffmpeg_missing', 'unsupported', 'no_audio', 'silent', 'timeout', 'busy', 'cancelled', 'selection_changed'];
+    state.audioStartMessage = t(`mvSettings.offset.audioStartError.${known.includes(code) ? code : 'failed'}`);
+  } finally {
+    if (token === state.audioStartToken) {
+      state.audioStartVideoId = null;
+      scheduleRender();
+    }
+  }
+};
+
 const changeOffset = async (nextOffsetMs) => {
   if (!state.trackId || !state.selectedVideo) return;
+  cancelAudioStartDetection();
+  const videoId = state.selectedVideo.id;
+  const trackId = snapshotTrackIdFor(state.currentTrack, state.trackId);
   const clamped = clampOffset(nextOffsetMs);
   state.selectedVideo = { ...state.selectedVideo, offsetMs: clamped };
   state.offsetSaving = true;
   scheduleRender();
   try {
-    const next = await mvApi.setOffset(state.trackId, clamped);
-    if (next) state.selectedVideo = await resolveNetworkVideo(next);
-    notifyMvChanged(state.trackId);
+    const next = await mvApi.setOffset(trackId, clamped, videoId);
+    if (state.selectedVideo?.id !== videoId || snapshotTrackIdFor(state.currentTrack, state.trackId) !== trackId) return;
+    if (next) state.selectedVideo = next;
+    notifyMvChanged(trackId);
     syncVideos({ force: true, bypassCooldown: true });
   } catch (error) {
     state.error = summarizeActionError(error);
@@ -1383,7 +1615,11 @@ const renderOffset = () => {
       'aria-label': t('mvSettings.offset.replayTitle'),
       title: t('mvSettings.offset.replayTitle'),
       disabled: state.busy || !state.currentTrack,
-      onclick: () => { notifyMvChanged(state.trackId); void replayCurrent(); },
+      onclick: () => {
+        notifyMvChanged(state.trackId);
+        void echoApi().audio?.seek?.(0)?.catch?.(() => undefined);
+        void replayCurrent();
+      },
     }, [svgIcon('play', 14), el('span', '', null, t('mvSettings.offset.replay'))]),
   );
   const collapse = btn('mv-offset-collapse-toggle', {
@@ -1396,6 +1632,21 @@ const renderOffset = () => {
   section.append(startCard, collapse);
   if (state.offsetOpen) {
     const advanced = el('div', 'mv-offset-advanced');
+    const canAnalyze = !state.selectedVideo.temporary && ['local', 'bilibili'].includes(state.selectedVideo.provider);
+    advanced.append(el('div', 'mv-audio-start-control', null, [
+      el('strong', '', null, t('mvSettings.offset.audioStartTitle')),
+      el('p', '', null, t('mvSettings.offset.audioStartDescription')),
+      btn('mv-offset-replay-button', {
+        disabled: !canAnalyze || state.offsetSaving || state.busy,
+        onclick: () => {
+          if (state.audioStartVideoId) { cancelAudioStartDetection(); scheduleRender(); }
+          else void alignAudioStart();
+        },
+      }, state.audioStartVideoId ? t('mvSettings.offset.audioStartCancel') : t('mvSettings.offset.audioStartAction')),
+      el('p', '', { role: 'status', 'aria-live': 'polite' }, state.audioStartVideoId
+        ? t('mvSettings.offset.audioStartDetecting')
+        : state.audioStartMessage || (!canAnalyze ? t('mvSettings.offset.audioStartError.unsupported') : '')),
+    ]));
     const slider = el('input', '', {
       type: 'range',
       min: String(MV_OFFSET_MIN),
@@ -1545,6 +1796,9 @@ const sheetSignature = () => {
     (settings.providerOrder || []).join(','),
     selected?.id,
     selected?.offsetMs,
+    selected?.audioStartMs,
+    state.audioStartVideoId,
+    state.audioStartMessage,
     selected?.qualityLabel,
     selected?.selectedQualityId,
     selected?.mediaUrl,
@@ -1631,7 +1885,7 @@ const renderDrawer = () => {
       btn('', { disabled: state.busy || !enabled, onclick: () => void searchNetwork() }, [svgIcon('globe', 15), t('mvSettings.action.searchNetwork')]),
       btn('', { disabled: state.busy, onclick: () => void findLocal() }, [svgIcon('search', 15), t('mvSettings.action.findLocal')]),
       btn('', { disabled: state.busy, onclick: () => void chooseLocal() }, [svgIcon('folder', 15), t('mvSettings.action.chooseFile')]),
-      btn('', { disabled: state.busy, onclick: () => void loadSelected({ preserveCurrent: true }) }, [svgIcon('rotate', 15), t('mvSettings.action.refresh')]),
+      btn('', { disabled: state.busy, onclick: () => void loadSelected({ preserveCurrent: true, forceRefresh: true }) }, [svgIcon('rotate', 15), t('mvSettings.action.refresh')]),
     ]),
   );
   if (selected) {
@@ -1777,22 +2031,19 @@ const renderDrawer = () => {
         scheduleRender();
       }),
       switchRow(settings.preferHighestViewCount !== false, t('mvSettings.network.preferHighestViewCount'), t('mvSettings.network.preferHighestViewCountDescription'), () => void patchSettings({ preferHighestViewCount: !(settings.preferHighestViewCount !== false) })),
-      switchRow(settings.restartAudioOnLoad, t('mvSettings.network.restartAudioOnLoad'), t('mvSettings.network.restartAudioOnLoadDescription'), () => void patchSettings({ restartAudioOnLoad: !settings.restartAudioOnLoad })),
+      switchRow(settings.restartAudioOnLoad !== false, t('mvSettings.network.restartAudioOnLoad'), t('mvSettings.network.restartAudioOnLoadDescription'), () => void patchSettings({ restartAudioOnLoad: settings.restartAudioOnLoad === false })),
     );
-    if (settings.restartAudioOnLoad) {
-      const modes = el('div', 'mv-sync-mode-control');
-      const group = el('div', 'mv-sync-mode-buttons', { role: 'group', 'aria-label': t('mvSettings.network.syncMode') });
-      SYNC_MODES.forEach((mode) => {
-        group.append(btn('', {
-          'aria-pressed': (settings.syncMode || 'balanced') === mode,
-          onclick: () => void patchSettings({ syncMode: mode }),
-        }, t(`mvSettings.network.syncMode.${mode}`)));
-      });
-      modes.append(el('span', 'mv-threshold-copy', null, [el('strong', '', null, t('mvSettings.network.syncMode')), el('em', '', null, t('mvSettings.network.syncModeDescription'))]), group);
-      network.append(modes);
-    }
+    const modes = el('div', 'mv-sync-mode-control');
+    const group = el('div', 'mv-sync-mode-buttons', { role: 'group', 'aria-label': t('mvSettings.network.syncMode') });
+    SYNC_MODES.forEach((mode) => {
+      group.append(btn('', {
+        'aria-pressed': (settings.syncMode || 'balanced') === mode,
+        onclick: () => void patchSettings({ syncMode: mode }),
+      }, t(`mvSettings.network.syncMode.${mode}`)));
+    });
+    modes.append(el('span', 'mv-threshold-copy', null, [el('strong', '', null, t('mvSettings.network.syncMode')), el('em', '', null, t('mvSettings.network.syncModeDescription'))]), group);
+    network.append(modes);
     network.append(
-      switchRow(settings.replayAudioOnChange !== false, t('mvSettings.network.replayAudioOnChange'), t('mvSettings.network.replayAudioOnChangeDescription'), () => void patchSettings({ replayAudioOnChange: settings.replayAudioOnChange === false })),
       switchRow(settings.immersiveBackground !== false, t('mvSettings.immersive.title'), t('mvSettings.immersive.description'), () => void patchSettings({ immersiveBackground: settings.immersiveBackground === false })),
       switchRow(settings.hideLyrics === true, t('mvSettings.immersive.hideLyrics'), t('mvSettings.immersive.hideLyricsDescription'), () => void patchSettings({ hideLyrics: !settings.hideLyrics })),
       switchRow(settings.lyricsReadabilityEnhanced === true, t('mvSettings.immersive.lyricsReadability'), t('mvSettings.immersive.lyricsReadabilityDescription'), () => void patchSettings({ lyricsReadabilityEnhanced: !settings.lyricsReadabilityEnhanced })),
@@ -2052,14 +2303,29 @@ const openDrawer = (open) => {
 };
 
 const setViewMode = (mode, navigate) => {
-  state.viewMode = mode;
-  rememberViewMode(mode);
+  const next = mode === 'mv' ? 'mv' : 'lyrics';
+  if (state.viewMode !== next) {
+    state.viewMode = next;
+    ++state.viewRequestId;
+  }
+  rememberViewMode(next);
+  if (next !== 'mv') {
+    ++state.requestId;
+    state.isLoading = false;
+    commandYoutube(refs.youtubeIframe, 'pauseVideo');
+    releaseVideo(refs.backgroundVideo);
+    removeBackground(lyricsPageEl());
+    releaseVideo(refs.foregroundVideo);
+    refs.foregroundVideo = null;
+    lastPanelSignature = '';
+  }
   applyPageFlags();
-  if (mode === 'mv' && isLyricsPageVisible()) {
+  if (next === 'mv' && panelActive() && isLyricsPageVisible()) {
     void loadSelected({ preserveCurrent: true });
   }
   if (navigate && !isLyricsPageVisible()) {
-    window.dispatchEvent(new CustomEvent(NAV_LYRICS_EVENT, { detail: { mode } }));
+    // The host renders its normal lyrics layout; only this Mod owns MV mode.
+    window.dispatchEvent(new CustomEvent(NAV_LYRICS_EVENT, { detail: { mode: 'lyrics', echoMv: next === 'mv' } }));
   }
   scheduleRender();
 };
@@ -2083,14 +2349,15 @@ const onMvButtonClick = (event) => {
   const now = performance.now();
   if (now - lastEntryToggleAt < 250) return;
   lastEntryToggleAt = now;
-  if (!isLyricsPageVisible()) {
-    window.dispatchEvent(new CustomEvent(NAV_LYRICS_EVENT, { detail: { mode: 'lyrics' } }));
-  }
+  const needLyrics = !isLyricsPageVisible();
+  setViewMode('mv', true);
+  const viewRequestId = state.viewRequestId;
   void (async () => {
     if (state.settings.enabled === false) {
       await patchSettings({ enabled: true });
     }
-    void loadSelected();
+    if (needLyrics) await waitForLyricsPage();
+    if (!disposed && state.viewRequestId === viewRequestId && panelActive()) void loadSelected({ preserveCurrent: true });
   })();
 };
 
@@ -2207,7 +2474,8 @@ const onSettingsChanged = (event) => {
 
 const onMvChanged = (event) => {
   const trackId = event instanceof CustomEvent ? event.detail?.trackId : null;
-  if (!trackId || trackId === state.trackId) void loadSelected({ preserveCurrent: true });
+  const activeId = snapshotTrackIdFor(state.currentTrack, state.trackId);
+  if (!trackId || trackId === state.trackId || trackId === activeId) void loadSelected({ preserveCurrent: true });
 };
 
 const onCandidatesChanged = (event) => {
@@ -2229,18 +2497,32 @@ const onSeeked = (event) => {
 };
 
 const onNavigateLyrics = (event) => {
-  const mode = event instanceof CustomEvent ? event.detail?.mode : null;
-  applyPageFlags();
-  if (mode === 'mv' || isLyricsPageVisible()) {
-    if (panelActive() || shouldAutoSearch()) void loadSelected({ preserveCurrent: true });
+  const detail = event instanceof CustomEvent ? event.detail : null;
+  const mode = detail?.echoMv === true || detail?.mode === 'mv' ? 'mv' : 'lyrics';
+  setViewMode(mode, false);
+  if (mode === 'mv' && !isLyricsPageVisible()) {
+    const viewRequestId = state.viewRequestId;
+    void waitForLyricsPage().then((ok) => {
+      if (ok && !disposed && state.viewRequestId === viewRequestId && panelActive()) void loadSelected({ preserveCurrent: true });
+    });
   }
 };
 
+const onLyricsEntryClick = (event) => {
+  // Some host versions navigate directly without dispatching NAV_LYRICS_EVENT.
+  if (event.target?.closest?.('button.transport-lyrics-button')) setViewMode('lyrics', false);
+};
+
 const startTimers = () => {
+  let visiblePage = null;
   const tick = () => {
     if (disposed) return;
     void refreshPlayback();
-    if (panelActive() && state.isAudioPlaying && shouldFollowMusic(state.settings, state.selectedVideo, state.streamingTarget)) {
+    const page = lyricsVisible() ? lyricsPageEl() : null;
+    if (!document.hidden && visiblePage && !page && state.viewMode === 'mv') setViewMode('lyrics', false);
+    if (page && page !== visiblePage && panelActive()) void loadSelected({ preserveCurrent: true });
+    visiblePage = page;
+    if (panelActive() && shouldFollowMusic(state.settings, state.selectedVideo)) {
       syncVideos();
     }
   };
@@ -2249,14 +2531,20 @@ const startTimers = () => {
 };
 
 const observeDom = () => {
+  let lyricsWasVisible = isLyricsPageVisible();
   const scan = () => {
     const lyricsButton = document.querySelector('button.transport-lyrics-button');
     if (lyricsButton) mountTransportButton(lyricsButton);
     mountSettingsButton();
     applyPageFlags();
-    if (!isLyricsPageVisible()) return;
+    const visible = isLyricsPageVisible();
+    if (visible && !lyricsWasVisible && (panelActive() || shouldAutoSearch())) {
+      void loadSelected({ preserveCurrent: true });
+    }
+    lyricsWasVisible = visible;
+    if (!visible) return;
     if (ownedPanelEl()) ownedPanelEl().remove();
-    if (panelActive() && !refs.background) renderPanel();
+    if (panelActive() && (refs.lyricsPage !== lyricsPageEl() || (refs.background && !refs.background.isConnected))) renderPanel();
   };
   scan();
   let scanTimer = 0;
@@ -2298,6 +2586,8 @@ const onVisibility = () => {
     if (refs.foregroundVideo) playVideo(refs.foregroundVideo);
     if (refs.backgroundVideo) playVideo(refs.backgroundVideo);
     syncVideos({ force: true, bypassCooldown: true });
+  } else {
+    syncYoutube(refs.youtubeIframe);
   }
 };
 
@@ -2307,6 +2597,7 @@ const addWin = (type, handler, options) => {
 };
 
 addWin('keydown', onKeyDown, true);
+addWin('click', onLyricsEntryClick, true);
 addWin(SETTINGS_CHANGED_EVENT, onSettingsChanged);
 addWin(MV_CHANGED_EVENT, onMvChanged);
 addWin(MV_CANDIDATES_EVENT, onCandidatesChanged);
@@ -2361,7 +2652,9 @@ log('ECHO-MV renderer ready');
 
 const dispose = () => {
   if (disposed) return;
+  cancelAudioStartDetection();
   disposed = true;
+  ++state.requestId;
   window.__echoMvModActive = false;
   Object.values(timers).forEach((id) => {
     window.clearTimeout(id);

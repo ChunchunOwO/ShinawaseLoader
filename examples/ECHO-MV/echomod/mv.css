@@ -1832,6 +1832,16 @@ html[data-theme="dark"] .lyrics-mv-unavailable-close:focus-visible {
   gap: 8px;
   padding-top: 2px;
 }
+.mv-audio-start-control {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--echo-mv-sheet-border, rgba(128, 128, 128, .2));
+  border-radius: 12px;
+  background: var(--echo-mv-sheet-field-bg);
+}
+.mv-audio-start-control > button { justify-self: start; }
+.mv-audio-start-control > p:empty { display: none; }
 .mv-drawer-offset .mv-offset-advanced p {
   margin: 0;
   color: rgba(220, 231, 255, 0.62);
