@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,7 +27,15 @@ const knownAsarHashes = new Set(Object.values(KNOWN_STOCK_ASAR_SHA256));
 const knownHeaderHashes = new Set(Object.values(KNOWN_STOCK_HEADER_SHA256));
 const align4 = (value) => (value + 3) & ~3;
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
-const archiveFor = (root) => join(root, 'resources', 'app.asar');
+const archiveFor = (root) => {
+  const windowsArchive = join(root, 'resources', 'app.asar');
+  if (process.platform === 'win32') return windowsArchive;
+  for (const name of ['ECHO.app', 'ECHO Steam.app', 'ECHO NEXT.app', 'ECHO Playtest.app']) {
+    const macArchive = join(root, name, 'Contents', 'Resources', 'app.asar');
+    if (existsSync(macArchive)) return macArchive;
+  }
+  return windowsArchive;
+};
 const loaderFor = (root) => join(root, 'ShinawaseLoader');
 const backupFor = (root) => join(loaderFor(root), 'backups', 'app.asar.original');
 const stateFor = (root) => join(loaderFor(root), 'backups', 'app.asar.json');
@@ -34,18 +43,26 @@ const normalizeFsPath = (value) => String(value || '').replace(/\\/g, '/');
 const isIsolatedRuntimePath = (value) => /\/modded-runtime(?:\/|$)/iu.test(normalizeFsPath(value));
 // Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
 // older folder layouts and are only resolved inside an isolated runtime copy.
-const echoExeFor = (root) => ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
-  .map((name) => join(root, name))
-  .find((file) => existsSync(file));
+const echoExeFor = (root) => {
+  const windows = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
+    .map((name) => join(root, name))
+    .find((file) => existsSync(file));
+  if (windows || process.platform === 'win32') return windows;
+  return ['ECHO.app', 'ECHO Steam.app', 'ECHO NEXT.app', 'ECHO Playtest.app']
+    .map((name) => join(root, name, 'Contents', 'MacOS', 'ECHO'))
+    .find((file) => existsSync(file));
+};
 const isSteamStockArchive = (archive) => {
   const n = normalizeFsPath(archive);
+  if (isIsolatedRuntimePath(n)) return false;
   return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/resources\/app\.asar$/iu.test(n)
-    && !isIsolatedRuntimePath(n);
+    || /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.app\/Contents\/Resources\/app\.asar$/iu.test(n);
 };
 const isSteamStockExe = (exePath) => {
   const n = normalizeFsPath(exePath);
+  if (isIsolatedRuntimePath(n)) return false;
   return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.exe$/iu.test(n)
-    && !isIsolatedRuntimePath(n);
+    || /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.app\/Contents\/MacOS\/ECHO$/iu.test(n);
 };
 const headerJsonBytes = (parsed) => {
   const headerSize = parsed.bytes.readUInt32LE(4);
@@ -53,7 +70,81 @@ const headerJsonBytes = (parsed) => {
   const jsonSize = header.readInt32LE(4);
   return header.subarray(8, 8 + jsonSize);
 };
+const readHeaderJson = (file) => {
+  const fd = openSync(file, 'r');
+  try {
+    const prefix = Buffer.alloc(16);
+    if (readSync(fd, prefix, 0, 16, 0) < 16) throw new Error('asar_header_missing');
+    const headerSize = prefix.readUInt32LE(4);
+    if (headerSize <= 8 || headerSize > 64 * 1024 * 1024) throw new Error('asar_header_missing');
+    const header = Buffer.alloc(headerSize);
+    if (readSync(fd, header, 0, headerSize, 8) < headerSize) throw new Error('asar_header_missing');
+    const jsonSize = header.readInt32LE(4);
+    if (jsonSize < 2 || jsonSize > header.length - 8) throw new Error('asar_header_missing');
+    return header.subarray(8, 8 + jsonSize);
+  } finally {
+    closeSync(fd);
+  }
+};
 const headerJsonHash = (file) => sha256(headerJsonBytes(readArchive(file)));
+const plistText = (plistPath) => {
+  const raw = readFileSync(plistPath);
+  if (raw.subarray(0, 6).toString('utf8') !== 'bplist') return raw.toString('utf8');
+  const converted = spawnSync('/usr/bin/plutil', ['-convert', 'xml1', '-o', '-', plistPath]);
+  if (converted.status !== 0) return null;
+  return Buffer.from(converted.stdout).toString('utf8');
+};
+const replacePlistIntegrityHashes = (xml, hash) => {
+  const keyAt = xml.indexOf('<key>ElectronAsarIntegrity</key>');
+  if (keyAt < 0) return null;
+  const dictAt = xml.indexOf('<dict>', keyAt);
+  if (dictAt < 0) return null;
+  const marker = /<dict>|<\/dict>/g;
+  marker.lastIndex = dictAt;
+  let depth = 0;
+  let end = -1;
+  for (let match = marker.exec(xml); match; match = marker.exec(xml)) {
+    depth += match[0] === '<dict>' ? 1 : -1;
+    if (depth === 0) {
+      end = match.index + match[0].length;
+      break;
+    }
+  }
+  if (end < 0) return null;
+  const block = xml.slice(dictAt, end);
+  const hashPattern = /(<key>hash<\/key>\s*<string>)([0-9a-fA-F]{64})(<\/string>)/g;
+  if (!hashPattern.test(block)) return null;
+  hashPattern.lastIndex = 0;
+  let changed = false;
+  let previous = null;
+  const nextBlock = block.replace(hashPattern, (all, open, current, close) => {
+    previous = previous || current;
+    if (current.toLowerCase() === hash) return all;
+    changed = true;
+    return `${open}${hash}${close}`;
+  });
+  return {
+    xml: xml.slice(0, dictAt) + nextBlock + xml.slice(end),
+    changed,
+    previous,
+  };
+};
+// macOS Electron stores the asar header hash in Info.plist rather than in the
+// main executable. The isolated copy must follow the patched archive.
+const syncDarwinPlistIntegrity = (archive) => {
+  if (process.platform !== 'darwin') return { status: 'skipped' };
+  const plistPath = join(dirname(dirname(archive)), 'Info.plist');
+  if (!existsSync(plistPath)) return { status: 'no-plist' };
+  if (isSteamStockArchive(archive)) return { status: 'refused-steam-original' };
+  const hash = sha256(readHeaderJson(archive));
+  const xml = plistText(plistPath);
+  if (xml == null) return { status: 'plist-unreadable' };
+  const replaced = replacePlistIntegrityHashes(xml, hash);
+  if (!replaced) return { status: 'no-plist-integrity' };
+  if (!replaced.changed) return { status: 'already-synced', hash };
+  writeFileSync(plistPath, replaced.xml);
+  return { status: 'updated', previous: replaced.previous, hash };
+};
 const APP_ASAR_INTEGRITY_PREFIX = Buffer.from('"file":"resources\\\\app.asar","alg":"SHA256","value":"', 'utf8');
 
 const replaceAppAsarIntegrity = (exePath, nextHash) => {
@@ -61,9 +152,21 @@ const replaceAppAsarIntegrity = (exePath, nextHash) => {
   if (isSteamStockExe(exePath)) return { status: 'refused-steam-original' };
   if (!/^[0-9a-f]{64}$/u.test(nextHash)) throw new Error('asar_integrity_hash_invalid');
   const bytes = Buffer.from(readFileSync(exePath));
-  const index = bytes.indexOf(APP_ASAR_INTEGRITY_PREFIX);
+  const prefixes = [APP_ASAR_INTEGRITY_PREFIX];
+  if (process.platform !== 'win32') {
+    prefixes.push(
+      Buffer.from('"file":"Contents/Resources/app.asar","alg":"SHA256","value":"', 'utf8'),
+      Buffer.from('"file":"resources/app.asar","alg":"SHA256","value":"', 'utf8'),
+    );
+  }
+  let index = -1;
+  let prefix = APP_ASAR_INTEGRITY_PREFIX;
+  for (const candidate of prefixes) {
+    index = bytes.indexOf(candidate);
+    if (index >= 0) { prefix = candidate; break; }
+  }
   if (index < 0) return { status: 'no-integrity-resource' };
-  const hashAt = index + APP_ASAR_INTEGRITY_PREFIX.length;
+  const hashAt = index + prefix.length;
   const current = bytes.subarray(hashAt, hashAt + 64).toString('utf8');
   if (!/^[0-9a-f]{64}$/u.test(current)) throw new Error('asar_integrity_value_invalid');
   if (current === nextHash) return { status: 'already-synced', hash: nextHash };
@@ -75,7 +178,16 @@ const replaceAppAsarIntegrity = (exePath, nextHash) => {
   return { status: 'updated', previous: current, hash: nextHash };
 };
 
-const syncIntegrity = (root, archive = archiveFor(root)) => replaceAppAsarIntegrity(echoExeFor(root), headerJsonHash(archive));
+const syncIntegrity = (root, archive = archiveFor(root)) => {
+  const exe = replaceAppAsarIntegrity(echoExeFor(root), headerJsonHash(archive));
+  if (process.platform !== 'darwin') return exe;
+  const plist = syncDarwinPlistIntegrity(archive);
+  if (plist.status === 'updated' || (plist.status === 'already-synced' && exe.status !== 'updated')) {
+    return { status: plist.status, hash: plist.hash, previous: plist.previous, exe, plist };
+  }
+  if (plist.status === 'refused-steam-original' && exe.status !== 'updated') return plist;
+  return exe;
+};
 
 const bridge = `${marker}
 (() => {
@@ -85,7 +197,13 @@ const bridge = `${marker}
   const url = builtin('node:url');
   const childProcess = builtin('node:child_process');
   if (!fs || !path || !url || !childProcess || typeof app === 'undefined') return;
-  const installRoot = process.env.ECHO_MOD_ROOT || path.dirname(process.resourcesPath);
+  const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
+    ? (() => {
+      const appBundle = path.dirname(path.dirname(process.resourcesPath));
+      const parent = path.dirname(appBundle);
+      return path.basename(parent) === 'modded-runtime' ? path.dirname(path.dirname(parent)) : path.dirname(appBundle);
+    })()
+    : path.dirname(process.resourcesPath));
   const loaderRoot = process.env.ECHO_MOD_HOME || path.join(installRoot, 'ShinawaseLoader');
   const script = path.join(loaderRoot, 'ShinawaseLoader.mjs');
   const configPath = path.join(loaderRoot, 'loader.config.json');
@@ -132,6 +250,12 @@ const bridge = `${marker}
       stdio: showConsole ? 'inherit' : 'ignore',
     });
     globalThis.__shinawaseLoaderProcess = child;
+    child.once('error', (error) => {
+      try {
+        fs.mkdirSync(path.join(loaderRoot, 'Logs'), { recursive: true });
+        fs.appendFileSync(path.join(loaderRoot, 'Logs', 'errors.log'), '[' + new Date().toISOString() + '] loader spawn failed\\n' + (error && error.message) + '\\n');
+      } catch {}
+    });
     child.once('exit', () => { globalThis.__shinawaseLoaderProcess = null; });
     const bridge = path.join(loaderRoot, 'streaming-bridge.cjs');
     if (fs.existsSync(bridge) && !globalThis.__shinawaseStreamingBridge) {
@@ -163,7 +287,13 @@ const nativeHostBridge = `${nativeHostMarker}
   const path = builtin('node:path');
   const url = builtin('node:url');
   if (!fs || !path || !url || typeof app === 'undefined') return;
-  const installRoot = process.env.ECHO_MOD_ROOT || path.dirname(process.resourcesPath);
+  const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
+    ? (() => {
+      const appBundle = path.dirname(path.dirname(process.resourcesPath));
+      const parent = path.dirname(appBundle);
+      return path.basename(parent) === 'modded-runtime' ? path.dirname(path.dirname(parent)) : path.dirname(appBundle);
+    })()
+    : path.dirname(process.resourcesPath));
   const loaderRoot = process.env.ECHO_MOD_HOME || path.join(installRoot, 'ShinawaseLoader');
   const script = path.join(loaderRoot, 'native-host.cjs');
   const configPath = path.join(loaderRoot, 'loader.config.json');

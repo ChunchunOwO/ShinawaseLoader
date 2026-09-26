@@ -9,6 +9,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './runtime-sync.mjs';
+import {
+  DARWIN_APP_NAMES,
+  echoUserDataDirectory,
+  installRootFromTarget,
+  isEchoExecutablePath,
+  isPlaytestPath,
+  loaderStateDirectory,
+  rankEchoInstall,
+  resourcesDirForExecutable,
+} from './platform.mjs';
 
 const c = {
   reset: '\x1b[0m',
@@ -261,14 +271,9 @@ const nativePort = Number(option('--native-port', process.env.ECHO_NATIVE_PORT |
 const inspectPort = Number(option('--inspect-port', process.env.ECHO_INSPECT_PORT || loaderConfig.inspectPort || 9230));
 const nativeStatusPath = join(root, 'native-host.json');
 const echoExe = option('--echo', null);
-const userDataRoot = join(process.env.LOCALAPPDATA || process.env.APPDATA || homedir(), 'ShinawaseLoader');
+const userDataRoot = loaderStateDirectory();
 const selectionPath = join(userDataRoot, 'selection.json');
-const echoUserDataPath = () => {
-  const override = String(process.env.ECHO_USER_DATA_PATH_OVERRIDE || '').trim();
-  if (override) return resolve(override);
-  const appData = process.env.APPDATA || (process.env.USERPROFILE ? join(process.env.USERPROFILE, 'AppData', 'Roaming') : join(homedir(), 'AppData', 'Roaming'));
-  return join(appData, echoUserDataFolderName);
-};
+const echoUserDataPath = () => echoUserDataDirectory({ folderName: echoUserDataFolderName });
 const persistLocale = (value) => {
   const localeValue = normalizeLocale(value) || 'zh';
   const selection = readJson(selectionPath, {});
@@ -1816,14 +1821,8 @@ const startWatch = () => {
   watchTimer = setTimeout(tick, startupDelayMs);
   log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
-const echoFileName = (name) => /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
 const echoExeNames = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
-const isPlaytestInstall = (exePath) => {
-  const normalized = String(exePath || '').replaceAll('/', '\\');
-  const name = basename(normalized);
-  const parent = basename(dirname(normalized));
-  return /^ECHO Playtest\.exe$/iu.test(name) || /ECHO Playtest/i.test(parent) || /\\ECHO Playtest\\/i.test(normalized);
-};
+const isPlaytestInstall = (exePath) => isPlaytestPath(exePath);
 const addSteamCommonRoots = (roots, libraryRoot) => {
   if (!libraryRoot) return;
   const common = join(libraryRoot, 'steamapps', 'common');
@@ -1846,6 +1845,7 @@ const echoCandidateRoots = () => {
     process.env['ProgramFiles(x86)'] && join(process.env['ProgramFiles(x86)'], 'Steam', 'steamapps', 'libraryfolders.vdf'),
     process.env.ProgramFiles && join(process.env.ProgramFiles, 'Steam', 'steamapps', 'libraryfolders.vdf'),
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Steam', 'steamapps', 'libraryfolders.vdf'),
+    ...(process.platform === 'darwin' ? [join(homedir(), 'Library', 'Application Support', 'Steam', 'steamapps', 'libraryfolders.vdf')] : []),
   ];
   for (const vdf of vdfRoots) {
     if (!vdf || !existsSync(vdf)) continue;
@@ -1861,21 +1861,13 @@ const echoCandidateRoots = () => {
       roots.add(join(drive, 'steamapps', 'common', 'ECHO'));
     }
   }
+  if (process.platform === 'darwin') {
+    addSteamCommonRoots(roots, join(homedir(), 'Library', 'Application Support', 'Steam'));
+  }
   return [...roots].filter(Boolean).map((value) => resolve(String(value)));
 };
 // localeCompare puts "...\ECHO Playtest\ECHO.exe" ahead of "...\ECHO\ECHO.exe"
 // because a space sorts before '\'. Prefer the stable Steam install.
-const rankEchoInstall = (exePath) => {
-  const normalized = String(exePath || '').replaceAll('/', '\\');
-  const name = basename(normalized);
-  const parent = basename(dirname(normalized));
-  if (isPlaytestInstall(normalized)) return 80;
-  if (/\bNEXT\b/i.test(name) || /^ECHO NEXT$/i.test(parent)) return 70;
-  if (/\\common\\ECHO\\ECHO\.exe$/i.test(normalized)) return 0;
-  if (/^ECHO Steam\.exe$/iu.test(name)) return 10;
-  if (/^ECHO\.exe$/iu.test(name)) return 20;
-  return 40;
-};
 const readAsarJson = (archive, relativePath) => {
   let fd;
   try {
@@ -1908,7 +1900,7 @@ const readAsarJson = (archive, relativePath) => {
 let echoProductCache = { key: '', value: null };
 const readEchoProduct = (exePath) => {
   const dir = dirname(exePath);
-  const asar = join(dir, 'resources', 'app.asar');
+  const asar = join(resourcesDirForExecutable(exePath), 'app.asar');
   const versionFile = join(dir, 'version');
   let cacheKey = exePath;
   try { cacheKey += `|${statSync(asar).mtimeMs}|${statSync(asar).size}`; } catch {}
@@ -1921,7 +1913,8 @@ const readEchoProduct = (exePath) => {
     if (/^\d+\.\d+\.\d+/.test(text)) electronVersion = text.split(/\s/u)[0];
   } catch {}
   const playtest = isPlaytestInstall(exePath);
-  const nextName = /^ECHO NEXT\.exe$/iu.test(basename(exePath)) || /^ECHO NEXT$/i.test(basename(dir));
+  const nextName = /^ECHO NEXT\.exe$/iu.test(basename(exePath)) || /^ECHO NEXT$/i.test(basename(dir))
+    || /\/ECHO NEXT\.app\/Contents\/MacOS\/ECHO$/i.test(String(exePath || '').replaceAll('\\', '/'));
   const value = {
     path: exePath,
     product: asarPackage?.name || null,
@@ -1949,7 +1942,7 @@ const discoverEchoes = (hint = null) => {
   const add = (value) => {
     if (!value) return;
     const candidate = resolve(String(value));
-    try { if (existsSync(candidate) && statSync(candidate).isFile() && echoFileName(basename(candidate))) found.add(candidate); } catch {}
+    try { if (existsSync(candidate) && statSync(candidate).isFile() && isEchoExecutablePath(candidate)) found.add(candidate); } catch {}
   };
   const walk = (directory, depth = 0) => {
     if (!directory || depth > 5 || !existsSync(directory)) return;
@@ -1957,7 +1950,7 @@ const discoverEchoes = (hint = null) => {
     try { entries = readdirSync(directory, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       const path = join(directory, entry.name);
-      if (entry.isFile() && echoFileName(entry.name)) add(path);
+      if (entry.isFile() && isEchoExecutablePath(path)) add(path);
       else if (entry.isDirectory() && !['node_modules', 'app.asar.unpacked', '.git', 'Mods', 'installed', 'ShinawaseLoader', 'modded-runtime'].includes(entry.name)) walk(path, depth + 1);
     }
   };
@@ -1968,7 +1961,15 @@ const discoverEchoes = (hint = null) => {
   }
   for (const candidate of echoCandidateRoots()) {
     for (const name of echoExeNames) add(join(candidate, name));
+    if (process.platform === 'darwin') {
+      for (const name of DARWIN_APP_NAMES) add(join(candidate, name, 'Contents', 'MacOS', 'ECHO'));
+    }
     walk(candidate);
+  }
+  if (process.platform === 'darwin') {
+    for (const base of ['/Applications', join(homedir(), 'Applications')]) {
+      for (const name of DARWIN_APP_NAMES) add(join(base, name, 'Contents', 'MacOS', 'ECHO'));
+    }
   }
   const list = [...found].sort((left, right) => {
     const delta = rankEchoInstall(left) - rankEchoInstall(right);
@@ -1982,10 +1983,13 @@ const resolveEchoHint = (hint) => {
   const path = resolve(String(hint).trim());
   try {
     if (!existsSync(path)) return null;
-    if (statSync(path).isFile()) return echoFileName(basename(path)) ? path : null;
+    if (statSync(path).isFile()) return isEchoExecutablePath(path) ? path : null;
     if (!statSync(path).isDirectory()) return null;
-    const direct = echoExeNames.map((name) => join(path, name)).filter((file) => {
-      try { return existsSync(file) && statSync(file).isFile(); } catch { return false; }
+    const direct = [
+      ...echoExeNames.map((name) => join(path, name)),
+      ...(process.platform === 'darwin' ? DARWIN_APP_NAMES.map((name) => join(path, name, 'Contents', 'MacOS', 'ECHO')) : []),
+    ].filter((file) => {
+      try { return existsSync(file) && statSync(file).isFile() && isEchoExecutablePath(file); } catch { return false; }
     });
     if (!direct.length) return null;
     return direct.sort((left, right) => rankEchoInstall(left) - rankEchoInstall(right) || left.localeCompare(right))[0];
@@ -2014,6 +2018,8 @@ const findEcho = () => {
   return found[0];
 };
 const echoRootFromExe = (exePath) => {
+  const macRoot = process.platform === 'win32' ? null : installRootFromTarget(exePath);
+  if (macRoot) return macRoot;
   try { return statSync(exePath).isDirectory() ? exePath : dirname(exePath); } catch { return dirname(exePath); }
 };
 const describeRuntimeSync = () => {
@@ -2081,7 +2087,7 @@ const launchEcho = () => {
   const executable = findEcho();
   if (echoProcess && !echoProcess.killed) return executable;
   echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`, `--inspect=${inspectPort}`], {
-    cwd: dirname(executable),
+    cwd: process.platform === 'darwin' ? echoRootFromExe(executable) : dirname(executable),
     env: {
       ...process.env,
       ECHO_MOD_ROOT: gameRoot,

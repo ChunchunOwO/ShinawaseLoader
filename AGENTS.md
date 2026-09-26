@@ -6,7 +6,7 @@ These instructions apply to the repository root and all descendant directories; 
 
 ## Project overview
 
-ShinawaseLoader is a community external ModLoader for ECHO Steam, separate from ECHO's built-in sandboxed Plugin VM. The default `external-cdp` mode injects enabled packages into the main renderer over a local Chrome DevTools Protocol (CDP) connection. Main-process support uses Node inspector bootstrap or an asar bridge, with extra preload code and an in-process native host. The installer creates an independent `ECHO.modded.exe` launcher and an isolated runtime that follows updates to the installed `app.asar` and executable. Preserve the original Steam executable and archive; apply runtime patches to the isolated copies.
+ShinawaseLoader is a community external ModLoader for ECHO Steam, separate from ECHO's built-in sandboxed Plugin VM. The default `external-cdp` mode injects enabled packages into the main renderer over a local Chrome DevTools Protocol (CDP) connection. Main-process support uses Node inspector bootstrap or an asar bridge, with extra preload code and an in-process native host. The installer creates an independent `ECHO.modded.exe` launcher and an isolated runtime that follows updates to the installed `app.asar` and executable. On macOS the same role is filled by `ECHO.modded.command` and a copied `ECHO.app`; do not retarget the Windows launcher, PowerShell installer, or `modded-host.cs` when adding Darwin behavior. Preserve the original Steam executable and archive; apply runtime patches to the isolated copies.
 
 There is no root `package.json` or repository-wide formatter. Repository self-tests live in `tests/` and run offline with `node --test "tests/*.test.mjs"` (pass the glob; this Node line does not expand a bare directory argument). The Shinawase Testing SDK under `ShinawaseLoader/testing/` is the standard entry point for package validation and acceptance. The root batch files are Windows entry points, while Node dependencies live under `ShinawaseLoader/`. Start with `git status --short` and the tracked file list to distinguish source from installed packages and runtime output. Read `README.md`, `ShinawaseLoader/SDK.md`, `ShinawaseLoader/TESTING.md`, and the relevant module or template before changing behavior; the README, SDK, and TESTING documents are the public user, Mod-author, and testing contracts.
 
@@ -19,17 +19,17 @@ There is no root `package.json` or repository-wide formatter. Repository self-te
 - `ShinawaseLoader/main-bootstrap.cjs`, `ShinawaseLoader/streaming-bridge.ts`, `ShinawaseLoader/streaming-preload.cjs`, and `ShinawaseLoader/playback-shim.cjs`: main-process bootstrap, streaming/account integration, renderer exposure, and playback compatibility.
 - `ShinawaseLoader/native-host.cjs` and `ShinawaseLoader/native/`: package main-script lifecycle, in-process native extensions, and the C addon/host-DLL interface. `ShinawaseLoader/native-shell-host.cjs` instead manages separate native-shell executables over a pipe protocol.
 - `ShinawaseLoader/auxiliary-remap.cjs`, `ShinawaseLoader/auxiliary-guard-preload.cjs`, and `ShinawaseLoader/auxiliary-page-boot.js`: auxiliary-window routing and startup compatibility.
-- `ShinawaseLoader/runtime-sync.mjs`, `ShinawaseLoader/echo-asar.mjs`, and `ShinawaseLoader/modded-host.cs`: runtime fingerprinting/copying, asar bridge patching, and the independent launcher.
+- `ShinawaseLoader/runtime-sync.mjs`, `ShinawaseLoader/echo-asar.mjs`, and `ShinawaseLoader/modded-host.cs`: runtime fingerprinting/copying, asar bridge patching, and the independent Windows launcher. `ShinawaseLoader/platform.mjs` holds path and executable classification; `ShinawaseLoader/echo-modded-host.mjs` is the macOS isolated-runtime host.
 - `ShinawaseLoader/echomod-archive.mjs` and `scripts/pack-echomod.mjs`: ZIP archive handling and Mod/Plugin packaging; package import and manifest normalization also live in the Loader CLI.
 - `ShinawaseLoader/loader.config.json` and `ShinawaseLoader/loader-version.json`: distributable configuration defaults and release/Node runtime metadata. Keep local test settings out of these tracked defaults.
 - `ShinawaseLoader/mod-template/`, `ShinawaseLoader/plugin-template/`, and `ShinawaseLoader/native-plugin-template/`: starting points for external Mods, Plugins, and native extensions. Keep manifests and cleanup patterns aligned with the SDK.
-- `scripts/setup-modloader.ps1`, `scripts/dev-with-latest-mods.ps1`, and `scripts/build-release.ps1`: installation, example development, and release assembly. Other scripts cover bridge builds, runtime verification, and diagnostics.
+- `scripts/setup-modloader.ps1`, `scripts/dev-with-latest-mods.ps1`, and `scripts/build-release.ps1`: Windows installation, example development, and release assembly. `setup-modloader.sh` and `scripts/setup-modloader-macos.mjs` install against an `ECHO.app` content root. Other scripts cover bridge builds, runtime verification, and diagnostics.
 - `scripts/mod-market.json`, `scripts/build-mod-market.mjs`, and `scripts/mod-market-web/`: catalog inputs, catalog generation, and the standalone market website. `scripts/mod-market-server.py` provides the Python API; `scripts/echo-hub-mod-market.js` integrates with the Hub.
 - `examples/ECHO-MV/`, `examples/ECHO-Streaming/`, and `examples/ECHO-LyricsMatchWhitebox/`: example sources under each `echomod/` directory. Only MV and Streaming are installer optional packages; LyricsMatchWhitebox is an extra package. See `examples/README.md`.
 - `examples/reference/`: archived reference Mods and their separate packages under `examples/reference/packages/`; these are not installer defaults.
 - `examples/packages/`: distributable packages generated from the active example sources.
-- `tests/`: offline repository self-tests for the loader contract and the testing SDK (`node --test "tests/*.test.mjs"`): contract sync, mock DOM, harness lifecycle, validation and package-archive rules, template acceptance, and live-client degradation. They need no ECHO, no network, and no dependency install, and are not copied into releases.
-- Root `*.bat` files: Windows wrappers for setup, local development, packaging, testing (`test-mod.bat`), and release scripts.
+- `tests/`: offline repository self-tests for the loader contract and the testing SDK (`node --test "tests/*.test.mjs"`): contract sync, mock DOM, harness lifecycle, validation and package-archive rules, template acceptance, live-client degradation, and macOS path/runtime fixtures (`platform-macos.test.mjs`). They need no ECHO, no network, and no dependency install, and are not copied into releases.
+- Root `*.bat` files: Windows wrappers for setup, local development, packaging, testing (`test-mod.bat`), and release scripts. `setup-modloader.sh` is the macOS installer entry and `start-mac.command` finds `ECHO.app`, installs, and launches. Neither replaces those wrappers.
 - Root `index.js`: a large Electron host bundle, not the Loader entry point. Unless a task explicitly targets it, do not hand-edit, reformat, or replace it. If it must change, preserve `/* shinawase-loader-bridge-v1 */` and document provenance and the generation process.
 
 ## Source and generated files
@@ -56,7 +56,7 @@ Keep this guide and new contributor-facing documentation in en-US. Preserve the 
 
 ## Environment and dependencies
 
-- The Loader targets Windows. The installer and development wrappers use Windows PowerShell; the development script requires PowerShell 5.1 or later. The optional market server uses Python 3 and the standard library; it is not required for Loader or Mod development.
+- Windows remains the PowerShell target. The installer and development wrappers use Windows PowerShell; the development script requires PowerShell 5.1 or later. macOS support is additive: `./setup-modloader.sh --echo "<ECHO_ROOT>"` expects a directory that contains `ECHO.app` (or the bundle or `Contents/MacOS/ECHO` path) and does not run `setup-modloader.ps1` or compile `modded-host.cs`. The optional market server uses Python 3 and the standard library; it is not required for Loader or Mod development.
 - `ShinawaseLoader/package.json` currently requires Node `>=22.23.2`; `ShinawaseLoader/loader-version.json` selects the installer runtime. Use the checked-in lockfile for dependencies, and update it with the manifest when dependencies change. From the repository root:
 
   ```powershell
@@ -113,6 +113,15 @@ This is an installation operation, not a test: it can download Node and release 
 ```
 
 Use `-Action update` for updates. Installation includes interactive package selection and a launch prompt. `-Action check` reports local, installed, and remote versions, so it also contacts the network. These workflows are not offline validation; select checks from the validation section when installation is outside the task.
+
+macOS installation is separate and still writes into the selected ECHO content root:
+
+```bash
+./setup-modloader.sh --echo "<ECHO_ROOT>" --no-packages
+./start-mac.command
+```
+
+`<ECHO_ROOT>` is the directory containing `ECHO.app`. Omit `--echo` (or double-click `start-mac.command`) to search Steam `libraryfolders.vdf`, `/Applications`, `~/Applications`, the saved selection, and Spotlight for `app.echo.steam`. Playtest is not auto-selected. `start-mac.command` also launches `ECHO.modded.command`. Omit `--no-packages` to import the bundled Streaming and MV packages. The script refuses to run on Windows.
 
 ### Package a Mod or Plugin
 
