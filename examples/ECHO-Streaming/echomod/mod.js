@@ -3239,8 +3239,14 @@ const installNativePlaylistImport = () => {
         .playlist-home-header:has([${buttonMarker}]),
         .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 40px 40px; }
       }
-      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 34px 34px; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) repeat(3, 34px); }
       .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import { grid-column: auto; }
+      .echo-streaming-link-import { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 8px 10px 2px; }
+      .echo-streaming-link-import input { min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--theme-panel-border, rgba(0,0,0,.12)); border-radius: 8px; background: var(--theme-input-bg, var(--theme-panel-bg, #fff)); color: inherit; font: inherit; }
+      .echo-streaming-link-import button[type="submit"] { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--theme-accent, #5b5ce6); color: #fff; font: 650 12px inherit; cursor: pointer; }
+      .echo-streaming-link-import button[type="submit"]:disabled { opacity: .45; cursor: default; }
+      .echo-streaming-link-import-status { grid-column: 1 / -1; margin: 0; font-size: 11px; line-height: 1.4; color: var(--theme-muted-text, #6c7179); }
+      .echo-streaming-link-import-status[data-error="true"] { color: var(--theme-danger, #c2414a); }
       [${buttonMarker}] { display: grid; width: 34px; height: 34px; place-items: center; flex: none; }
       .playlist-home-header [${buttonMarker}] { width: 40px; height: 40px; }
       .playlist-collection-home > .echo-streaming-import-form { display: flex; justify-self: end; width: auto; max-width: min(100%, 560px); }
@@ -3310,6 +3316,72 @@ const installNativePlaylistImport = () => {
     form.append(input, submit, cancel);
     header.insertAdjacentElement('afterend', form);
     input.focus();
+  };
+  const linkMarker = 'data-echo-streaming-link-import';
+  const playlistUrlFromText = (value) => {
+    const text = String(value || '').trim();
+    const match = text.match(/https?:\/\/[^\s<>"']+/iu);
+    return (match ? match[0] : text).replace(/[),.;，。]+$/u, '');
+  };
+  const ensureLinkRow = (sidebar) => {
+    if (!sidebar) return;
+    const header = sidebar.querySelector(':scope > header, .collection-playlist-sidebar-header, .playlist-sidebar-header') || findHeader();
+    if (!header) return;
+    let form = sidebar.querySelector(`form[${linkMarker}]`);
+    if (form) return;
+    ensureImportStyle();
+    form = document.createElement('form');
+    form.className = 'echo-streaming-link-import';
+    form.setAttribute(linkMarker, 'true');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = copy.playlistPlaceholderShort;
+    input.setAttribute('aria-label', copy.addPlaylist);
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.textContent = copy.add;
+    submit.disabled = true;
+    const status = document.createElement('p');
+    status.className = 'echo-streaming-link-import-status';
+    status.hidden = true;
+    const setStatus = (text, error = false) => {
+      status.hidden = !text;
+      status.dataset.error = error ? 'true' : 'false';
+      status.textContent = text || '';
+    };
+    input.addEventListener('input', () => { submit.disabled = !playlistUrlFromText(input.value); });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const url = playlistUrlFromText(input.value);
+      if (!url || input.disabled) return;
+      const stream = streamApi();
+      if (!stream?.importPlaylistFromUrl) {
+        setStatus(copy.noBridge, true);
+        return;
+      }
+      input.disabled = true;
+      submit.disabled = true;
+      const previous = submit.textContent;
+      submit.textContent = copy.adding;
+      setStatus(chinese ? '正在添加歌单…' : 'Adding playlist…');
+      try {
+        const imported = await stream.importPlaylistFromUrl(url);
+        input.value = '';
+        setStatus(copy.imported(imported?.playlistName, imported?.importedCount));
+        await openImportedPlaylist(imported);
+        showChromeNotice(copy.imported(imported?.playlistName, imported?.importedCount));
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error), true);
+      } finally {
+        input.disabled = false;
+        submit.disabled = !playlistUrlFromText(input.value);
+        submit.textContent = previous;
+      }
+    });
+    form.append(input, submit, status);
+    header.insertAdjacentElement('afterend', form);
   };
   const dailyMarker = 'data-echo-streaming-daily';
   const dailyDetailMarker = 'data-echo-streaming-daily-detail';
@@ -3544,7 +3616,14 @@ const installNativePlaylistImport = () => {
       button.setAttribute('aria-label', copy.addPlaylist);
       button.title = copy.addPlaylist;
       button.innerHTML = cloudDownIcon(17);
-      button.addEventListener('click', () => openForm(header));
+      button.addEventListener('click', () => {
+        const input = findSidebar()?.querySelector(`form[${linkMarker}] input`);
+        if (input) {
+          input.focus();
+          return;
+        }
+        openForm(header);
+      });
       const nativeImport = header.querySelector(':scope > .collection-playlist-import, :scope > .tool-button');
       if (nativeImport) header.insertBefore(button, nativeImport);
       else header.append(button);
@@ -3555,6 +3634,7 @@ const installNativePlaylistImport = () => {
     }
     mountDaily();
     mountDailyDetail();
+    ensureLinkRow(findSidebar());
     return true;
   };
   let mountTimer = 0;
@@ -3595,6 +3675,234 @@ const installNativePlaylistImport = () => {
   };
 };
 playlistPageUnsubscribe = installNativePlaylistImport();
+const installLikedSourceSwitch = () => {
+  const marker = 'data-echo-streaming-liked-source';
+  const styleId = 'echo-streaming-liked-source-style';
+  const likedTitle = /喜欢的歌曲|Liked Songs|Liked tracks/iu;
+  const view = { provider: 'local', loading: false, error: '', title: '', tracks: [], token: 0 };
+  const providerConnected = (name) => {
+    const status = state.accountStatuses.find((item) => item.provider === name);
+    if (status) return status.connected === true;
+    return Boolean(state.providers.find((item) => item.name === name && item.accountConnected));
+  };
+  const ensureStyle = () => {
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .echo-streaming-liked-switch { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; padding: 3px; border-radius: 999px; background: var(--theme-panel-bg, rgba(120, 120, 128, 0.12)); }
+      .echo-streaming-liked-switch button { border: 0; border-radius: 999px; min-height: 28px; padding: 0 10px; background: transparent; color: inherit; font: 650 12px inherit; cursor: pointer; }
+      .echo-streaming-liked-switch button[data-active="true"] { background: var(--theme-accent, #5b5ce6); color: #fff; }
+      .echo-streaming-liked-switch button:disabled { opacity: 0.45; cursor: default; }
+      .echo-streaming-liked-list { display: flex; flex-direction: column; min-height: 120px; }
+      .echo-streaming-liked-row { display: grid; grid-template-columns: 28px 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 7px 12px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+      .echo-streaming-liked-row:hover { background: var(--theme-row-hover, rgba(120, 120, 128, 0.08)); }
+      .echo-streaming-liked-row img { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; background: rgba(120, 120, 128, 0.12); }
+      .echo-streaming-liked-row strong, .echo-streaming-liked-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .echo-streaming-liked-row small { color: var(--theme-muted-text, #6c7179); }
+      .echo-streaming-liked-note { padding: 28px 16px; color: var(--theme-muted-text, #6c7179); }
+    `;
+    document.head.append(style);
+  };
+  const likedRoot = () => {
+    const root = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden]) .liked-library-workspace');
+    if (!root || !likedTitle.test(root.querySelector('.liked-collection-copy h1')?.textContent || '')) return null;
+    return root;
+  };
+  const pickLiked = (playlists) => {
+    const items = Array.isArray(playlists) ? playlists : [];
+    return items.find((item) => /我喜欢的音乐|我喜歡的音樂/u.test(item?.title || ''))
+      || items.find((item) => /我喜欢|我喜歡|^like$/iu.test(item?.title || ''))
+      || null;
+  };
+  const restoreNative = (root) => {
+    root?.querySelector('.liked-track-table')?.removeAttribute('hidden');
+    root?.querySelector(`[${marker}="list"]`)?.remove();
+    const count = root?.querySelector('.liked-collection-copy p');
+    if (count?.dataset.echoLikedCount) {
+      count.textContent = count.dataset.echoLikedCount;
+      delete count.dataset.echoLikedCount;
+    }
+  };
+  const playLiked = async (track) => {
+    const provider = view.provider;
+    const playable = view.tracks.filter((item) => item.playable !== false).map((item) => ({ ...item, provider: item.provider || provider }));
+    await playViaQueue({ ...track, provider: track.provider || provider }, {
+      replaceQueueWith: playable.map((item) => toLibraryTrack(item)),
+      source: sourceFor(provider, view.title || (chinese ? '我喜欢' : 'Liked')),
+    });
+  };
+  const paintList = (root) => {
+    let list = root.querySelector(`[${marker}="list"]`);
+    if (view.provider === 'local') {
+      restoreNative(root);
+      return;
+    }
+    root.querySelector('.liked-track-table')?.setAttribute('hidden', '');
+    if (!list) {
+      list = document.createElement('div');
+      list.className = 'echo-streaming-liked-list';
+      list.setAttribute(marker, 'list');
+      root.append(list);
+    }
+    const count = root.querySelector('.liked-collection-copy p');
+    if (count && !count.dataset.echoLikedCount) count.dataset.echoLikedCount = count.textContent || '';
+    list.dataset.key = `${view.provider}:${view.loading ? 1 : 0}:${view.error}:${view.tracks.length}`;
+    list.replaceChildren();
+    if (view.loading) {
+      if (count) count.textContent = chinese ? '正在读取…' : 'Loading…';
+      list.append(Object.assign(document.createElement('div'), { className: 'echo-streaming-liked-note', textContent: chinese ? '正在读取流媒体「我喜欢」…' : 'Loading streaming likes…' }));
+      return;
+    }
+    if (view.error) {
+      if (count) count.textContent = chinese ? '读取失败' : 'Failed';
+      list.append(Object.assign(document.createElement('div'), { className: 'echo-streaming-liked-note', textContent: view.error }));
+      return;
+    }
+    if (count) count.textContent = chinese ? `${view.tracks.length} 项` : `${view.tracks.length} items`;
+    if (!view.tracks.length) {
+      list.append(Object.assign(document.createElement('div'), { className: 'echo-streaming-liked-note', textContent: chinese ? '这个「我喜欢」里没有歌曲。' : 'This liked playlist is empty.' }));
+      return;
+    }
+    view.tracks.forEach((track, index) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'echo-streaming-liked-row';
+      const number = document.createElement('span');
+      number.textContent = String(index + 1);
+      const image = document.createElement('img');
+      image.alt = '';
+      image.src = track.coverThumb || track.coverUrl || defaultCover;
+      const copyBox = document.createElement('span');
+      const title = document.createElement('strong');
+      title.textContent = track.title || 'Untitled';
+      const artist = document.createElement('small');
+      artist.textContent = [track.artist, track.album].filter(Boolean).join(' · ');
+      copyBox.append(title, artist);
+      const duration = document.createElement('span');
+      duration.textContent = formatDuration(track.duration);
+      row.append(number, image, copyBox, duration);
+      row.addEventListener('click', () => { void playLiked(track).catch((error) => { view.error = error instanceof Error ? error.message : String(error); paintList(root); }); });
+      list.append(row);
+    });
+  };
+  const loadProvider = async (provider) => {
+    const token = ++view.token;
+    view.provider = provider;
+    view.loading = true;
+    view.error = '';
+    view.tracks = [];
+    view.title = '';
+    const root = likedRoot();
+    if (root) paintList(root);
+    if (provider === 'local') {
+      view.loading = false;
+      if (likedRoot()) paintList(likedRoot());
+      return;
+    }
+    try {
+      const lists = await invokeMain(provider === 'qqmusic' ? 'qqAccountPlaylists' : 'neteaseAccountPlaylists', {});
+      if (token !== view.token) return;
+      const playlist = pickLiked(lists?.playlists);
+      if (!playlist?.providerPlaylistId) throw new Error(chinese ? '这个账号里没有找到「我喜欢」。' : 'No liked playlist was found on this account.');
+      const detail = await invokeMain(provider === 'qqmusic' ? 'qqPlaylist' : 'neteasePlaylist', { playlistId: playlist.providerPlaylistId });
+      if (token !== view.token) return;
+      view.title = playlist.title || (chinese ? '我喜欢' : 'Liked');
+      view.tracks = (detail?.tracks || []).map((track) => ({ ...track, provider: track.provider || provider }));
+    } catch (error) {
+      if (token !== view.token) return;
+      const message = error instanceof Error ? error.message : String(error);
+      view.error = /netease_login_required|netease_session_expired/u.test(message)
+        ? (chinese ? '请先在流媒体账号里登录网易云音乐。' : 'Connect NetEase Cloud Music first.')
+        : /qq_login_required/u.test(message)
+          ? (chinese ? '请先在流媒体账号里登录 QQ 音乐。' : 'Connect QQ Music first.')
+          : message;
+    } finally {
+      if (token === view.token) {
+        view.loading = false;
+        const current = likedRoot();
+        if (current) paintList(current);
+      }
+    }
+  };
+  const mount = () => {
+    ensureStyle();
+    const root = likedRoot();
+    document.querySelectorAll(`[${marker}="switch"]`).forEach((node) => {
+      if (!root || !root.contains(node)) node.remove();
+    });
+    if (!root) return;
+    const actions = root.querySelector('.liked-collection-actions') || root.querySelector('.liked-workspace-header');
+    if (!actions) return;
+    let bar = actions.querySelector(`[${marker}="switch"]`);
+    const choices = [
+      ['local', chinese ? '本地' : 'Local'],
+      ...(providerConnected('netease') ? [['netease', chinese ? '网易云我喜欢' : 'NetEase likes']] : []),
+      ...(providerConnected('qqmusic') ? [['qqmusic', chinese ? 'QQ 我喜欢' : 'QQ likes']] : []),
+    ];
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'echo-streaming-liked-switch';
+      bar.setAttribute(marker, 'switch');
+      actions.prepend(bar);
+      if (!root.dataset.echoLikedPlayBound) {
+        root.dataset.echoLikedPlayBound = 'true';
+        root.addEventListener('click', (event) => {
+          if (view.provider === 'local' || view.loading || !view.tracks.length) return;
+          const play = event.target?.closest?.('.liked-primary-action');
+          if (!play || !root.contains(play)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void playLiked(view.tracks.find((track) => track.playable !== false) || view.tracks[0]).catch((error) => {
+            view.error = error instanceof Error ? error.message : String(error);
+            paintList(root);
+          });
+        }, true);
+      }
+    }
+    const signature = `${choices.map((item) => item[0]).join(',')}:${view.provider}`;
+    if (bar.dataset.signature !== signature) {
+      bar.dataset.signature = signature;
+      bar.replaceChildren();
+      for (const [id, label] of choices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.provider = id;
+        button.textContent = label;
+        button.dataset.active = String(view.provider === id);
+        button.disabled = view.loading && view.provider === id;
+        button.addEventListener('click', () => {
+          if (view.provider === id || view.loading) return;
+          void loadProvider(id);
+          mount();
+        });
+        bar.append(button);
+      }
+    } else {
+      bar.querySelectorAll('button').forEach((button) => {
+        button.dataset.active = String(view.provider === button.dataset.provider);
+        button.disabled = view.loading && view.provider === button.dataset.provider;
+      });
+    }
+    const list = root.querySelector(`[${marker}="list"]`);
+    const listKey = `${view.provider}:${view.loading ? 1 : 0}:${view.error}:${view.tracks.length}`;
+    if (view.provider !== 'local') {
+      if (!list || list.dataset.key !== listKey) paintList(root);
+    } else restoreNative(root);
+  };
+  const observer = new MutationObserver(() => mount());
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const poll = window.setInterval(mount, 1200);
+  mount();
+  return () => {
+    observer.disconnect();
+    window.clearInterval(poll);
+    document.querySelectorAll(`[${marker}]`).forEach((node) => node.remove());
+    document.querySelectorAll('.liked-track-table[hidden]').forEach((node) => node.removeAttribute('hidden'));
+    document.getElementById(styleId)?.remove();
+  };
+};
+const likedSourceUnsubscribe = installLikedSourceSwitch();
 const installNativeArtistStreamingAlbums = () => {
   const enabled = config.artistStreamingAlbumsEnabled !== false;
   if (!enabled) return () => {};
