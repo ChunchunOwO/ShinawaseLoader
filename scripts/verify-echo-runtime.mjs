@@ -3,17 +3,20 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
+import {
+  DARWIN_APP_NAMES,
+  echoUserDataDirectory,
+  isEchoExecutablePath,
+  isPlaytestPath,
+  loaderStateDirectory,
+  rankEchoInstall,
+  resourcesDirForExecutable,
+} from '../ShinawaseLoader/platform.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const loaderRoot = join(repoRoot, 'ShinawaseLoader');
-const echoFileName = (name) => /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
 const echoExeNames = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
-const isPlaytest = (value) => {
-  const normalized = String(value || '').replaceAll('/', '\\');
-  const name = basename(normalized);
-  const parent = basename(dirname(normalized));
-  return /^ECHO Playtest\.exe$/iu.test(name) || /ECHO Playtest/i.test(parent) || /\\ECHO Playtest\\/i.test(normalized);
-};
+const isPlaytest = (value) => isPlaytestPath(value);
 const readJson = (file) => {
   try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/u, '')); } catch { return null; }
 };
@@ -21,27 +24,19 @@ const option = (name) => {
   const index = process.argv.indexOf(name);
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : null;
 };
-const rankEcho = (exePath) => {
-  const normalized = String(exePath || '').replaceAll('/', '\\');
-  const name = basename(normalized);
-  const parent = basename(dirname(normalized));
-  if (isPlaytest(normalized)) return 80;
-  if (/\bNEXT\b/i.test(name) || /^ECHO NEXT$/i.test(parent)) return 70;
-  if (/\\common\\ECHO\\ECHO\.exe$/i.test(normalized)) return 0;
-  if (/^ECHO Steam\.exe$/iu.test(name)) return 10;
-  if (/^ECHO\.exe$/iu.test(name)) return 20;
-  return 40;
-};
 const resolveHint = (hint) => {
   if (!hint) return null;
   const path = resolve(String(hint).trim());
   try {
     if (!existsSync(path)) return null;
-    if (statSync(path).isFile()) return echoFileName(basename(path)) ? path : null;
+    if (statSync(path).isFile()) return isEchoExecutablePath(path) ? path : null;
     if (!statSync(path).isDirectory()) return null;
-    const direct = echoExeNames.map((name) => join(path, name)).filter((file) => existsSync(file) && statSync(file).isFile());
+    const direct = [
+      ...echoExeNames.map((name) => join(path, name)),
+      ...(process.platform === 'darwin' ? DARWIN_APP_NAMES.map((name) => join(path, name, 'Contents', 'MacOS', 'ECHO')) : []),
+    ].filter((file) => existsSync(file) && statSync(file).isFile() && isEchoExecutablePath(file));
     if (!direct.length) return null;
-    return direct.sort((left, right) => rankEcho(left) - rankEcho(right) || left.localeCompare(right))[0];
+    return direct.sort((left, right) => rankEchoInstall(left) - rankEchoInstall(right) || left.localeCompare(right))[0];
   } catch {
     return null;
   }
@@ -88,7 +83,7 @@ const readExeFileVersion = (exePath) => {
     return null;
   }
 };
-const selectionPath = join(process.env.LOCALAPPDATA || process.env.APPDATA || homedir(), 'ShinawaseLoader', 'selection.json');
+const selectionPath = join(loaderStateDirectory(), 'selection.json');
 const loaderVersion = readJson(join(loaderRoot, 'loader-version.json'));
 const selection = readJson(selectionPath) || {};
 const persisted = [selection.echoExe, selection.echoRoot].find((value) => value && !isPlaytest(value));
@@ -97,7 +92,9 @@ const hint = option('--echo')
   || process.env.ECHO_ROOT
   || process.env.ECHO_INSTALL_ROOT
   || persisted
-  || 'D:\\SteamLibrary\\steamapps\\common\\ECHO';
+  || (process.platform === 'win32'
+    ? 'D:\\SteamLibrary\\steamapps\\common\\ECHO'
+    : join(homedir(), 'Library', 'Application Support', 'Steam', 'steamapps', 'common', 'ECHO'));
 const exe = resolveHint(hint);
 if (!exe) {
   console.log(JSON.stringify({
@@ -109,7 +106,7 @@ if (!exe) {
   process.exitCode = 1;
 } else {
   const dir = dirname(exe);
-  const asarPackage = readAsarJson(join(dir, 'resources', 'app.asar'), 'package.json');
+  const asarPackage = readAsarJson(join(resourcesDirForExecutable(exe), 'app.asar'), 'package.json');
   let electronVersion = null;
   try {
     const text = readFileSync(join(dir, 'version'), 'utf8').trim();
@@ -123,7 +120,7 @@ if (!exe) {
     electron: electronVersion,
     fileVersion,
     edition: isPlaytest(exe) ? 'playtest' : (/^ECHO NEXT\.exe$/iu.test(basename(exe)) || /^ECHO NEXT$/i.test(basename(dir))) ? 'next' : 'echo-steam',
-    userData: join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'ECHO Steam'),
+    userData: echoUserDataDirectory({ folderName: 'ECHO Steam' }),
     source: asarPackage ? 'asar-package.json' : (fileVersion ? 'exe-fileversion' : (electronVersion ? 'version-file' : 'path')),
   };
 
