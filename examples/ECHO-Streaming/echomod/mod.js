@@ -1,4 +1,4 @@
-﻿/* Community Streaming page. Mirrors ECHO's StreamingSearchPage through the public bridge. */
+/* Community Streaming page. Mirrors ECHO's StreamingSearchPage through the public bridge. */
 const external = echoExternalMod;
 const manifest = external.manifest || {};
 const config = external.config || {};
@@ -1092,7 +1092,7 @@ const renderPlaylistDetail = () => {
     extras.push({
       label: copy.add,
       icon: 'list',
-      disabled: Object.keys(state.syncingDailyKeys).length > 0,
+      disabled: Boolean(state.syncingDailyKeys[dailyPlaylistKey(playlist)]),
       onSelect: () => syncDailyPlaylists([playlist]),
     });
   } else if (!state.importingPlaylistKey) {
@@ -1131,6 +1131,9 @@ const renderPlaylistPanel = (playlists) => {
   form.append(label);
   form.append(actionButton(copy.add, state.importingPlaylistKey ? 'refresh' : 'list', () => handleImportPlaylist(), {
     iconOnly: true, className: 'tool-button', disabled: !state.playlistUrl.trim() || Boolean(state.importingPlaylistKey), title: copy.add,
+  }));
+  form.append(actionButton(chinese ? '修复删除' : 'Fix delete', 'refresh', () => fixSyncedPlaylistKinds(true), {
+    iconOnly: true, className: 'tool-button', title: chinese ? '把同步歌单修复为可删除的本地歌单' : 'Make synced playlists deletable',
   }));
   form.addEventListener('submit', (event) => { event.preventDefault(); void handleImportPlaylist().catch(reportError); });
   sidebar.append(form);
@@ -1582,6 +1585,16 @@ const invokeMain = async (method, payload) => {
   const result = response && typeof response === 'object' && 'result' in response ? response.result : response;
   if (result && typeof result === 'object' && result.ok === false) throw new Error(String(result.error || copy.mainBridgeUnavailable));
   return result;
+};
+const fixSyncedPlaylistKinds = async (notify = false) => {
+  try {
+    const result = await invokeMain('fixSyncedPlaylistKinds');
+    if (notify) external.toast?.(chinese ? `已修复 ${result?.fixed ?? 0} 个同步歌单的删除权限` : `Fixed ${result?.fixed ?? 0} playlists`);
+    return result;
+  } catch (error) {
+    if (notify) external.toast?.(error instanceof Error ? error.message : String(error));
+    return null;
+  }
 };
 const musicMenuHint = (subfolder = null) => {
   const base = state.musicTargetBase || (chinese ? '音乐/Stream' : 'Music/Stream');
@@ -2565,7 +2578,7 @@ const openImportedPlaylist = async (imported) => {
   }
   return false;
 };
-const handleImportPlaylist = async () => { const url = state.playlistUrl.trim(); if (!url) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); state.importingPlaylistKey = '__url__'; render(); try { const imported = await stream.importPlaylistFromUrl(url); state.playlistUrl = ''; state.actionMessage = copy.imported(imported.playlistName, imported.importedCount); state.actionError = null; await openPlaylist({ title: imported.playlistName, name: imported.playlistName, importedPlaylistId: imported.playlistId, playlistId: imported.playlistId, trackCount: imported.importedCount }); } finally { state.importingPlaylistKey = null; render(); } };
+const handleImportPlaylist = async () => { const url = state.playlistUrl.trim(); if (!url) return; const stream = streamApi(); if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge); state.importingPlaylistKey = '__url__'; render(); try { const imported = await stream.importPlaylistFromUrl(url); state.playlistUrl = ''; state.actionMessage = copy.imported(imported.playlistName, imported.importedCount); state.actionError = null; await fixSyncedPlaylistKinds(); await openPlaylist({ title: imported.playlistName, name: imported.playlistName, importedPlaylistId: imported.playlistId, playlistId: imported.playlistId, trackCount: imported.importedCount }); } finally { state.importingPlaylistKey = null; render(); } };
 const handleImportStreamingPlaylist = async (playlist) => {
   if (isVirtualDailyPlaylist(playlist) || playlist?.dailyKind) {
     await syncDailyPlaylists([playlist]);
@@ -2581,6 +2594,7 @@ const handleImportStreamingPlaylist = async (playlist) => {
     const imported = await stream.importPlaylistFromUrl(url);
     state.actionMessage = copy.imported(imported.playlistName, imported.importedCount);
     state.actionError = null;
+    await fixSyncedPlaylistKinds();
     await openPlaylist({ ...playlist, title: imported.playlistName || playlist.title, importedPlaylistId: imported.playlistId, playlistId: imported.playlistId, trackCount: imported.importedCount ?? playlist.trackCount });
   } finally {
     state.importingPlaylistKey = null;
@@ -2745,8 +2759,13 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
   const item = asStreamingDailyPlaylist(playlist);
   const stream = streamApi();
   if (item.syncMode === 'official-daily' || item.providerPlaylistId === 'daily-recommend') {
-    if (!stream?.refreshNeteaseDailyRecommend) throw new Error(copy.noBridge);
-    const imported = await stream.refreshNeteaseDailyRecommend();
+    // ECHO core's refreshNeteaseDailyRecommend() re-fetches through its own
+    // provider, which falls back to an unsigned GET when the NetEase API
+    // package is absent — NetEase then answers with guest recommendations and
+    // the 歌单 ends up holding a different set of songs than this panel shows.
+    // The main process writes the library from the same authenticated fetch
+    // the panel uses.
+    const imported = await invokeMain('neteaseDailyRecommendSync');
     if (!imported?.playlistId) throw new Error(copy.playlistItemsUnavailable);
     if (!Number(imported.importedCount)) throw new Error(copy.musicNoDownloadableTracks);
     rememberDailySync(item, imported);
@@ -2756,44 +2775,36 @@ const syncDailyPlaylistToLibrary = async (playlist) => {
     if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge);
     const imported = await stream.importPlaylistFromUrl(item.webUrl || streamingPlaylistWebUrl(item));
     rememberDailySync(item, imported);
+    await fixSyncedPlaylistKinds();
     return imported;
   }
   // ECHO rejects streaming tracks on local/manual playlists, so virtual daily
   // lists (history 日推, etc.) cannot be materialized that way.
   throw new Error('streaming_daily_local_blocked');
 };
+// Clicking a 每日推荐 row only opens it. Writing the 歌单 into the library stays
+// behind the 添加 control (see syncDailyPlaylists), so browsing the list can never
+// fill the playlist page on its own.
 const openNativeDailyPlaylist = async (playlist) => {
   const key = dailyPlaylistKey(playlist);
   if (!playlist || state.syncingDailyKeys[key]) return;
-  state.syncingDailyKeys[key] = true;
-  showChromeNotice(copy.readingPlaylist);
-  try {
-    const synced = state.dailySyncedKeys[key];
-    if (synced?.libraryPlaylistId && !isVirtualDailyPlaylist(playlist)) {
-      const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
-      if (opened) return;
-    }
-    try {
-      const imported = await syncDailyPlaylistToLibrary(playlist);
-      const opened = await openImportedPlaylist(imported);
-      if (opened) return;
-    } catch (error) {
-      if (!isVirtualDailyPlaylist(playlist) && (playlist.syncMode === 'url' || playlist.webUrl)) throw error;
-    }
-    await openStreamingDailyPlaylist(playlist);
-    showChromeNotice(state.playlistError || copy.dailyOpenStreaming);
-  } catch (error) {
-    showChromeNotice(error instanceof Error ? error.message : String(error));
-  } finally {
-    delete state.syncingDailyKeys[key];
+  const synced = state.dailySyncedKeys[key];
+  if (synced?.libraryPlaylistId && !isVirtualDailyPlaylist(playlist)) {
+    const opened = await openImportedPlaylist({ playlistId: synced.libraryPlaylistId, playlistName: synced.title || playlist.title });
+    if (opened) return;
   }
+  await openStreamingDailyPlaylist(playlist);
 };
 const syncDailyPlaylists = async (items, options = {}) => {
   const list = (items || []).filter(Boolean);
-  if (!list.length || Object.keys(state.syncingDailyKeys).length) return { ok: 0, failed: 0 };
+  if (!list.length) return { ok: 0, failed: 0, skipped: false, lastError: null };
+  // Another sync already owns the 歌单: report it as skipped so the caller can
+  // retry today instead of burning the daily refresh timestamp.
+  if (Object.keys(state.syncingDailyKeys).length) return { ok: 0, failed: 0, skipped: true, lastError: null };
   let ok = 0;
   let failed = 0;
   let lastImported = null;
+  let lastError = null;
   for (const playlist of list) {
     const key = dailyPlaylistKey(playlist);
     state.syncingDailyKeys[key] = true;
@@ -2802,8 +2813,9 @@ const syncDailyPlaylists = async (items, options = {}) => {
     try {
       lastImported = await syncDailyPlaylistToLibrary(playlist);
       ok += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      lastError = error instanceof Error ? error.message : String(error);
     } finally {
       delete state.syncingDailyKeys[key];
     }
@@ -2817,9 +2829,41 @@ const syncDailyPlaylists = async (items, options = {}) => {
     window.dispatchEvent(new Event('library:playlists-changed'));
     try { await libraryApi()?.getPlaylists?.(); } catch {}
   }
-  return { ok, failed };
+  return { ok, failed, skipped: false, lastError };
+};
+// A 歌单 the user removed from the library has to stay removed: the automatic
+// refresh re-syncs every list this session remembers as added, so a memory that
+// outlives the playlist would silently re-create it. Only a library list we
+// actually managed to read is allowed to prune.
+const pruneDailySyncMemory = async () => {
+  const remembered = Object.entries(state.dailySyncedKeys || {});
+  if (!remembered.length) return;
+  const api = libraryApi();
+  if (!api?.getPlaylists) return;
+  let raw;
+  try {
+    raw = await api.getPlaylists();
+  } catch {
+    return;
+  }
+  const items = Array.isArray(raw) ? raw : (Array.isArray(raw?.playlists) ? raw.playlists : (Array.isArray(raw?.items) ? raw.items : null));
+  if (!items) return;
+  const libraryIds = new Set(items.map((item) => String(item?.id ?? '')));
+  const sourceIds = new Set(items.map((item) => String(item?.sourcePlaylistId ?? '')));
+  const kept = {};
+  remembered.forEach(([key, entry]) => {
+    const alive = entry?.libraryPlaylistId
+      ? libraryIds.has(String(entry.libraryPlaylistId))
+      : Boolean(entry?.providerPlaylistId) && sourceIds.has(String(entry.providerPlaylistId));
+    if (alive) kept[key] = entry;
+  });
+  if (Object.keys(kept).length !== remembered.length) {
+    state.dailySyncedKeys = kept;
+    persistMemory();
+  }
 };
 const refreshDailyPlaylists = async (items) => {
+  await pruneDailySyncMemory();
   const targets = items?.length ? items : state.dailyPlaylists.filter((item) => state.dailySyncedKeys[dailyPlaylistKey(item)]);
   state.refreshingDaily = true;
   state.actionMessage = copy.dailyRefreshing;
@@ -2831,10 +2875,17 @@ const refreshDailyPlaylists = async (items) => {
     const toSync = (targets.length ? targets : state.dailyPlaylists)
       .map((item) => latest.get(dailyPlaylistKey(item)) || item)
       .filter((item) => state.autoSyncDaily || state.dailySyncedKeys[dailyPlaylistKey(item)] || (targets.length && items?.length));
-    if (toSync.length) await syncDailyPlaylists(toSync, { openNative: false });
+    const synced = toSync.length ? await syncDailyPlaylists(toSync, { openNative: false }) : null;
     state.actionMessage = copy.dailyRefreshed(toSync.length || state.dailyPlaylists.length);
-    state.dailyLastRefreshAt = new Date().toISOString();
-    persistDailyState();
+    // The auto refresh is gated on dailyLastRefreshAt, so only stamp it once the
+    // 歌单 write is settled: a skipped or failed write must be retried on the
+    // next tick, while an account that needs (re-)login must not retry all day.
+    const authFailure = /netease_login_required|netease_session_expired|需要登录|重新登录/iu.test(String(synced?.lastError || ''));
+    const retryable = !items?.length && synced && (synced.skipped || (synced.failed > 0 && !authFailure));
+    if (!retryable) {
+      state.dailyLastRefreshAt = new Date().toISOString();
+      persistDailyState();
+    }
   } finally {
     state.refreshingDaily = false;
     paintNativeDailyPanel();
@@ -2895,7 +2946,7 @@ const appendDailyPlaylistRow = (parent, playlist) => {
   row.addEventListener('click', () => void openPlaylist(mapped).catch(reportError));
   row.addEventListener('contextmenu', (event) => openStreamMenu(event, [
     { label: copy.dailyRefreshOne, icon: 'refresh', disabled: state.refreshingDaily, onSelect: () => refreshDailyPlaylists([playlist]) },
-    { label: copy.add, icon: 'list', disabled: Object.keys(state.syncingDailyKeys).length > 0, onSelect: () => syncDailyPlaylists([playlist]) },
+    { label: copy.add, icon: 'list', disabled: Boolean(state.syncingDailyKeys[dailyPlaylistKey(playlist)]), onSelect: () => syncDailyPlaylists([playlist]) },
     { label: copy.downloadPlaylistToMusic, hint: musicMenuHint(playlist.title || ''), icon: 'download', disabled: Boolean(state.musicPlaylistDownload), onSelect: () => openPlaylistDownloadDialog(asStreamingDailyPlaylist(playlist)) },
   ]));
   parent.append(row);
@@ -5619,7 +5670,7 @@ const installListeners = () => { if (downloadApi()?.onJobsUpdated) downloadUnsub
 
 const stopAccountQrPolling = () => { window.clearTimeout(accountQrTimer); accountQrTimer = 0; state.accountQr = null; removeNeteaseQrBackdrop(); };
 const streamingSidebarOrder = Number(manifest.sidebarOrder) || 40;
-const disposeSidebar = external.sidebar.register({ id: 'main', label: copy.streamingTitle || copy.streaming, icon: '♫', order: streamingSidebarOrder, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); resetSearchInput(); cancelPlaybackPrepare(); closeStreamMenu(); closePlaylistDownloadDialog(); accountUnsubscribe?.(); downloadUnsubscribe?.(); accountUnsubscribe = null; downloadUnsubscribe = null; pageRoot = null; }; } });
+const disposeSidebar = external.sidebar.register({ id: 'main', label: copy.streamingTitle || copy.streaming, icon: '♫', order: streamingSidebarOrder, render(root) { pageRoot = root; disposed = false; installListeners(); render(); void fixSyncedPlaylistKinds(); void loadInitial(); return () => { disposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); resetSearchInput(); cancelPlaybackPrepare(); closeStreamMenu(); closePlaylistDownloadDialog(); accountUnsubscribe?.(); downloadUnsubscribe?.(); accountUnsubscribe = null; downloadUnsubscribe = null; pageRoot = null; }; } });
 accountsSidebarUnsubscribe = external.sidebar.register({
   id: 'accounts',
   label: accountText('流媒体账号', 'Streaming accounts'),

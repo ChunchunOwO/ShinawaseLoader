@@ -16,6 +16,7 @@
  */
 
 const { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs');
+const { createHash, randomUUID } = require('node:crypto');
 const { createRequire } = require('node:module');
 const { mkdir, rename, rm } = require('node:fs/promises');
 const { join, resolve, dirname } = require('node:path');
@@ -301,10 +302,11 @@ const probeParseJson = (raw) => {
 };
 
 const probeFetchJson = async (url, init = {}) => {
+  const { timeoutMs = 12_000, ...fetchInit } = init;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...fetchInit, signal: controller.signal });
     if (!response.ok) throw new Error(`probe_http_${response.status}`);
     return probeParseJson(await response.text());
   } finally {
@@ -711,6 +713,37 @@ const fetchNeteaseDailySongs = async (cookie, afresh = false) => {
   return [];
 };
 
+/*
+ * One 日推 fetch serves both surfaces.
+ *
+ * The 每日推荐 set is only stable while the account keeps the same batch: the
+ * panel can request "换一批" (`afresh`), and after that the *server-side*
+ * daily set for the session has moved. If the panel and the library write each
+ * fetched on their own, the two would drift apart again — the exact class of bug
+ * this file now owns. So the last non-empty batch is cached briefly and reused;
+ * an explicit `afresh` request refreshes the cache instead of bypassing it.
+ */
+const neteaseDailySongsTtlMs = 10 * 60 * 1000;
+let neteaseDailySongsCache = { at: 0, slot: '', account: '', songs: [] };
+
+// 网易在 6:00（Asia/Shanghai，无夏令时）换当天的日推：UTC 时间往前挪 22 小时
+// 之后的日期，就是这一时刻所属的"日推日"。
+const neteaseDailySlot = (timestamp) => new Date(timestamp - 22 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+const getNeteaseDailySongs = async (cookie, afresh = false) => {
+  const now = Date.now();
+  const slot = neteaseDailySlot(now);
+  // 只留指纹，不留 cookie。
+  const account = createHash('sha256').update(cookie).digest('hex').slice(0, 16);
+  const cached = neteaseDailySongsCache;
+  const reusable = cached.songs.length > 0 && cached.account === account && cached.slot === slot
+    && now - cached.at < neteaseDailySongsTtlMs;
+  if (!afresh && reusable) return cached.songs;
+  const songs = await fetchNeteaseDailySongs(cookie, afresh);
+  if (songs.length) neteaseDailySongsCache = { at: now, slot, account, songs };
+  return songs;
+};
+
 const fetchNeteaseRecommendResources = async (cookie) => {
   let body = await ncmInvoke('recommend_resource', { cookie });
   if (!body) {
@@ -913,7 +946,7 @@ const listNeteaseDailyPlaylists = async (options = {}) => {
   };
 
   const [dailySongs, radarLists, resources, dates] = await Promise.all([
-    fetchNeteaseDailySongs(cookie, refresh).catch((error) => {
+    getNeteaseDailySongs(cookie, refresh).catch((error) => {
       logMod('WARN', `daily songs: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }),
@@ -976,7 +1009,7 @@ const listNeteaseDailyPlaylistTracks = async (payload) => {
   const id = String(payload?.id || payload?.dailyId || payload?.providerPlaylistId || '').trim();
   const afresh = payload?.refresh === true;
   if (kind === 'songs' || id === 'daily-recommend') {
-    const songs = await fetchNeteaseDailySongs(cookie, afresh);
+    const songs = await getNeteaseDailySongs(cookie, afresh);
     const tracks = songs.map(mapNeteasePlaylistSong).filter(Boolean);
     if (!tracks.length) throw new Error('netease_daily_empty');
     return { id: 'daily-recommend', name: '每日推荐', kind: 'songs', trackCount: tracks.length, tracks };
@@ -997,6 +1030,321 @@ const listNeteaseDailyPlaylistTracks = async (payload) => {
   }
   if (/^\d+$/u.test(id)) return listNeteasePlaylistTracks(id);
   throw new Error('invalid_daily_playlist');
+};
+
+/*
+ * 每日推荐 → ECHO 曲库，由 mod 自己写。
+ *
+ * ECHO 的 `streaming.refreshNeteaseDailyRecommend()` 走的是 core 里的
+ * `NeteaseStreamingProvider.getDailyRecommendPlaylist`：它依赖
+ * `@neteasecloudmusicapienhanced/api` 生成签名请求，那个包不存在时退化为明文 GET
+ * `/api/v3/discovery/recommend/songs`。不带 weapi 载荷的 GET 会被网易当成游客
+ * 请求，返回游客日推 —— 于是"流媒体音乐"入口（本 mod：带 cookie 的 POST）和落到
+ * 歌单里的内容是两套互不相干的歌。这里改成取数复用本文件已经带登录态的路径，写库
+ * 按 core `StreamingCacheStore` 的列与语义自己完成，两个入口从此共用同一个集合。
+ *
+ * 落库形状对齐 core：`streaming_tracks` 按 (provider, provider_track_id) upsert；
+ * `playlists` 按 (source_provider, source_playlist_id) 复用同一行；`playlist_items`
+ * 整单替换但保留已下载条目（media_type='track' 且 added_from 以 'streaming-download'
+ * 打头），kind 直接写 'manual'，省掉 core 写完再靠 fixSyncedPlaylistKinds 改回
+ * 可删除状态的那一步。
+ */
+const neteaseReferer = 'https://music.163.com/';
+const neteaseDailyProviderPlaylistId = 'daily-recommend';
+const neteaseDailyPlaylistTitle = '每日推荐';
+const neteaseDailyPlaylistDescription = '根据网易云音乐账号生成，每天 6:00 更新。';
+const neteaseStreamingQualities = ['standard', 'high', 'lossless', 'hires'];
+const neteaseStreamingDownloadPrefix = 'streaming-download:';
+
+const echoImageProxyUrl = (url, referer) => (url ? `echo-image://remote/${encodeURIComponent(url)}?referer=${encodeURIComponent(referer)}` : null);
+
+// StreamingTrack 形状（core 的 mapSong + upsertTrack 落库列）：日推的原始 song
+// 记录里有 al.id / ar[].id / mvid / fee，这些是 core 写库时会填的列，缺了会把
+// 已有行的 album_id 覆盖成 null，所以从原始记录取，而不是只取面板用的精简字段。
+const neteaseStreamTrack = (song) => {
+  const mapped = mapNeteasePlaylistSong(song);
+  if (!mapped) return null;
+  const record = unwrapNeteaseSong(song);
+  const album = neteaseRecord(record.al && typeof record.al === 'object' ? record.al : record.album);
+  const stableKey = `streaming:netease:${mapped.providerTrackId}`;
+  const probed = neteaseStreamingQualities.filter((name) => (mapped.qualities || []).some((tier) => tier?.quality === name));
+  const track = {
+    id: stableKey,
+    provider: 'netease',
+    providerTrackId: mapped.providerTrackId,
+    stableKey,
+    title: mapped.title,
+    artist: mapped.artist,
+    artists: (Array.isArray(record.ar) ? record.ar : Array.isArray(record.artists) ? record.artists : [])
+      .map((item) => {
+        const providerArtistId = neteaseIdText(item?.id);
+        const name = String(item?.name || '').trim();
+        return providerArtistId && name ? { id: `streaming:netease:artist:${providerArtistId}`, provider: 'netease', providerArtistId, name } : null;
+      })
+      .filter(Boolean),
+    album: mapped.album,
+    albumId: neteaseIdText(album.id),
+    albumArtist: mapped.albumArtist,
+    duration: mapped.duration > 0 ? mapped.duration : null,
+    coverUrl: echoImageProxyUrl(mapped.coverUrl, neteaseReferer),
+    coverThumb: echoImageProxyUrl(mapped.coverThumb || mapped.coverUrl, neteaseReferer),
+    // 探到真实档位就用探到的（含 hires），否则退回 core 按 fee 推断的三档。
+    qualities: probed.length ? probed : (Number(record.fee) === 1 ? ['standard', 'high'] : neteaseStreamingQualities.slice(0, 3)),
+    explicit: false,
+    playable: true,
+    unavailableReason: null,
+    lyricsStatus: 'available',
+    mvStatus: neteaseIdText(record.mvid ?? record.mv) ? 'available' : 'unknown',
+  };
+  return { ...track, raw: JSON.stringify(track) };
+};
+
+// 同一批里网易偶尔会重复给同一首歌；重复行会让歌单出现两遍同样的条目。
+const neteaseStreamTracks = (songs) => {
+  const seen = new Set();
+  const tracks = [];
+  for (const song of songs) {
+    const track = neteaseStreamTrack(song);
+    if (!track || seen.has(track.providerTrackId)) continue;
+    seen.add(track.providerTrackId);
+    tracks.push(track);
+  }
+  return tracks;
+};
+
+const lookupPlaylistText = (value) => (typeof value === 'string' ? value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase() : '');
+
+const playlistMetadataKey = (input) => {
+  const title = lookupPlaylistText(input.title);
+  const artist = lookupPlaylistText(input.artist);
+  if (!title || !artist) return null;
+  const duration = Number(input.duration);
+  const album = lookupPlaylistText(input.album);
+  const rounded = Number.isFinite(duration) && duration > 0 ? String(Math.round(duration)) : '';
+  return [title, artist, album, rounded].join('\u001f');
+};
+
+// ECHO 的曲库就是一个普通 SQLite 文件，主进程侧没有开放的写库 IPC，所以直接开库。
+// 与 fixSyncedPlaylistKinds 共用发现逻辑：appData 下带 playlists 表的
+// echo-library.sqlite，取 mtime 最新的那个。
+const openEchoLibraryDatabase = (host) => {
+  const app = host.app || host.electron?.app;
+  if (!app?.getPath) throw new Error('app_unavailable');
+  const fs = require('node:fs');
+  const Database = require(join(process.resourcesPath, 'app.asar', 'node_modules', 'better-sqlite3'));
+  const appData = app.getPath('appData');
+  const userData = app.getPath('userData');
+  const seen = new Set();
+  const candidates = [];
+  const addCandidate = (directory) => {
+    if (!directory) return;
+    const databasePath = join(directory, 'echo-library.sqlite');
+    if (seen.has(databasePath)) return;
+    seen.add(databasePath);
+    if (existsSync(databasePath)) candidates.push(databasePath);
+  };
+  addCandidate(userData);
+  addCandidate(join(userData, 'library'));
+  let names = [];
+  try { names = fs.readdirSync(appData); } catch {}
+  for (const name of names) {
+    if (!/echo/i.test(name)) continue;
+    addCandidate(join(appData, name));
+    addCandidate(join(appData, name, 'library'));
+  }
+  let databasePath = null;
+  for (const candidate of candidates) {
+    try {
+      const probe = new Database(candidate, { readonly: true });
+      const hasPlaylists = probe.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'playlists'").get();
+      probe.close();
+      if (!hasPlaylists) continue;
+      if (!databasePath || fs.statSync(candidate).mtimeMs > fs.statSync(databasePath).mtimeMs) databasePath = candidate;
+    } catch {}
+  }
+  if (!databasePath) throw new Error('library_database_not_found');
+  return { database: new Database(databasePath), databasePath };
+};
+
+const upsertNeteaseStreamTracks = (database, tracks, timestamp) => {
+  const statement = database.prepare(`
+    INSERT INTO streaming_tracks (
+      id, provider, provider_track_id, stable_key, title, artist, album, album_id,
+      album_artist, duration, cover_url, cover_id, qualities_json, playable,
+      unavailable_reason, lyrics_status, mv_status, raw_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(provider, provider_track_id) DO UPDATE SET
+      id = excluded.id,
+      stable_key = excluded.stable_key,
+      title = excluded.title,
+      artist = excluded.artist,
+      album = excluded.album,
+      album_id = COALESCE(excluded.album_id, streaming_tracks.album_id),
+      album_artist = excluded.album_artist,
+      duration = excluded.duration,
+      cover_url = COALESCE(excluded.cover_url, streaming_tracks.cover_url),
+      qualities_json = excluded.qualities_json,
+      playable = excluded.playable,
+      unavailable_reason = excluded.unavailable_reason,
+      lyrics_status = excluded.lyrics_status,
+      mv_status = excluded.mv_status,
+      raw_json = excluded.raw_json,
+      updated_at = excluded.updated_at`);
+  for (const track of tracks) {
+    statement.run(
+      track.id, track.provider, track.providerTrackId, track.stableKey, track.title, track.artist,
+      track.album, track.albumId, track.albumArtist, track.duration, track.coverUrl ?? track.coverThumb,
+      null, JSON.stringify(track.qualities), track.playable ? 1 : 0, track.unavailableReason,
+      track.lyricsStatus, track.mvStatus, track.raw, timestamp, timestamp,
+    );
+  }
+  return tracks.length;
+};
+
+const upsertNeteaseDailyPlaylist = (database, tracks, timestamp) => {
+  const existing = database
+    .prepare('SELECT id, created_at FROM playlists WHERE source_provider = ? AND source_playlist_id = ? LIMIT 1')
+    .get('netease', neteaseDailyProviderPlaylistId);
+  const playlistId = existing?.id || randomUUID();
+  // 与 core 一致：封面取第一条带封面的曲目，而不是死用第一首。
+  const coverTrack = tracks.find((item) => item.coverUrl || item.coverThumb);
+  database.prepare(`
+    INSERT INTO playlists (
+      id, name, description, kind, source_provider, source_playlist_id,
+      cover_id, cover_url, sort_mode, item_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      description = excluded.description,
+      kind = excluded.kind,
+      source_provider = excluded.source_provider,
+      source_playlist_id = excluded.source_playlist_id,
+      cover_url = excluded.cover_url,
+      sort_mode = excluded.sort_mode,
+      updated_at = excluded.updated_at`)
+    .run(
+      playlistId, neteaseDailyPlaylistTitle, neteaseDailyPlaylistDescription, 'manual', 'netease',
+      neteaseDailyProviderPlaylistId, null, coverTrack?.coverUrl || coverTrack?.coverThumb || null,
+      'manual', 0, existing?.created_at || timestamp, timestamp,
+    );
+  return playlistId;
+};
+
+/*
+ * 整单替换前先把"已经下载到本地"的条目挑出来。
+ *
+ * 日推里的一首歌被下载到 音乐/Stream 之后，core 会把那条 playlist_items 改写成
+ * media_type='track' + added_from='streaming-download:netease:<id>'，指向本地
+ * 文件；重建歌单时若按 stream_track 重新插入，本地文件就从歌单里消失了。
+ * 键与 core 一致：优先 provider:providerTrackId，再按标题/歌手/专辑/时长兜底。
+ */
+const collectDownloadedPlaylistItems = (database, playlistId, timestamp) => {
+  const rows = database.prepare(`
+    SELECT media_id, source_provider, source_item_id, title_snapshot, artist_snapshot,
+           album_snapshot, duration_snapshot, cover_id, added_at, added_from
+    FROM playlist_items
+    WHERE playlist_id = ?
+      AND media_type = 'track'
+      AND (added_from = 'streaming-download' OR added_from LIKE 'streaming-download:%')`).all(playlistId);
+  const bySource = new Map();
+  const byMetadata = new Map();
+  const add = (map, key, item) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+  };
+  for (const row of rows) {
+    if (!row.media_id) continue;
+    const item = {
+      mediaId: String(row.media_id),
+      sourceProvider: row.source_provider || 'local',
+      sourceItemId: row.source_item_id || null,
+      titleSnapshot: row.title_snapshot || null,
+      artistSnapshot: row.artist_snapshot || null,
+      albumSnapshot: row.album_snapshot || null,
+      durationSnapshot: Number.isFinite(Number(row.duration_snapshot)) ? Number(row.duration_snapshot) : null,
+      coverId: row.cover_id || null,
+      addedAt: row.added_at || timestamp,
+    };
+    const addedFrom = String(row.added_from || '');
+    if (addedFrom.startsWith(neteaseStreamingDownloadPrefix)) add(bySource, addedFrom.slice(neteaseStreamingDownloadPrefix.length), item);
+    add(byMetadata, playlistMetadataKey(item), item);
+  }
+  return { bySource, byMetadata };
+};
+
+const dropPreservedPlaylistItem = (preservation, item) => {
+  for (const map of [preservation.bySource, preservation.byMetadata]) {
+    for (const [key, list] of map.entries()) {
+      const index = list.indexOf(item);
+      if (index >= 0) list.splice(index, 1);
+      if (!list.length) map.delete(key);
+    }
+  }
+};
+
+const takePreservedPlaylistItem = (preservation, track) => {
+  const metadataKey = playlistMetadataKey(track);
+  const item = preservation.bySource.get(`netease:${track.providerTrackId}`)?.shift()
+    || (metadataKey ? preservation.byMetadata.get(metadataKey)?.shift() : null)
+    || null;
+  if (item) dropPreservedPlaylistItem(preservation, item);
+  return item;
+};
+
+const replaceNeteaseDailyPlaylistItems = (database, playlistId, tracks, timestamp) => {
+  const preservation = collectDownloadedPlaylistItems(database, playlistId, timestamp);
+  database.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlistId);
+  const insert = database.prepare(`
+    INSERT INTO playlist_items (
+      id, playlist_id, media_type, media_id, source_provider, source_item_id,
+      title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+      cover_id, position, added_at, added_from, unavailable
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  tracks.forEach((track, position) => {
+    const preserved = takePreservedPlaylistItem(preservation, track);
+    insert.run(
+      randomUUID(), playlistId, preserved ? 'track' : 'stream_track',
+      preserved?.mediaId ?? track.stableKey,
+      preserved?.sourceProvider ?? track.provider,
+      preserved?.sourceItemId ?? track.providerTrackId,
+      track.title, track.artist, track.album, track.duration,
+      preserved?.coverId ?? null, position, preserved?.addedAt ?? timestamp,
+      preserved ? `${neteaseStreamingDownloadPrefix}${track.provider}:${track.providerTrackId}` : 'netease-daily-recommend',
+      0,
+    );
+  });
+  database.prepare(`
+    UPDATE playlists SET
+      item_count = (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = ?),
+      updated_at = ?
+     WHERE id = ?`).run(playlistId, timestamp, playlistId);
+  return tracks.length;
+};
+
+const writeNeteaseDailyRecommend = async (host) => {
+  const session = streamingAccountSession('netease');
+  if (!session.cookie) throw new Error('netease_login_required');
+  const tracks = neteaseStreamTracks(await getNeteaseDailySongs(session.cookie, false));
+  if (!tracks.length) throw new Error('netease_daily_empty');
+  const { database } = openEchoLibraryDatabase(host);
+  try {
+    const timestamp = new Date().toISOString();
+    const written = database.transaction(() => {
+      upsertNeteaseStreamTracks(database, tracks, timestamp);
+      const playlistId = upsertNeteaseDailyPlaylist(database, tracks, timestamp);
+      return { playlistId, importedCount: replaceNeteaseDailyPlaylistItems(database, playlistId, tracks, timestamp) };
+    })();
+    logMod('INFO', `netease daily library: ${written.importedCount} tracks (session=${session.source || 'none'})`);
+    return {
+      ...written,
+      playlistName: neteaseDailyPlaylistTitle,
+      provider: 'netease',
+      providerPlaylistId: neteaseDailyProviderPlaylistId,
+    };
+  } finally {
+    database.close();
+  }
 };
 
 const qqSongWrapperKeys = ['songinfo', 'songInfo', 'track_info', 'trackinfo', 'trackInfo', 'data'];
@@ -3080,46 +3428,201 @@ const listNeteaseSimilar = async (id, limit = 10) => {
   return { id, tracks };
 };
 
+// The loader resolves NetEase playback with Electron's net.fetch, and Chromium
+// owns the Cookie header there: a manually set one is dropped in favour of the
+// session jar, which holds no music.163.com login. Verified against the live
+// endpoint — same URL, same headers: net.fetch answers code -110 / url null for
+// a VIP-only track while Node's fetch answers 200 with a playable URL, and the
+// bridge therefore reports 这首歌暂时不可播放 for an entitled account. Free tracks
+// are unaffected, which is why only 会员歌曲 break. Ask the very endpoint the
+// bridge uses, over a transport that carries the session, before delegating.
+const neteasePlaybackLadder = [
+  { level: 'jymaster', bitrate: 2_000_000, encode: 'flac' },
+  { level: 'sky', bitrate: 1_500_000, encode: 'flac' },
+  { level: 'jyeffect', bitrate: 1_500_000, encode: 'flac' },
+  { level: 'hires', bitrate: 999_000, encode: 'flac' },
+  { level: 'lossless', bitrate: 999_000, encode: 'flac' },
+  { level: 'exhigh', bitrate: 320_000, encode: 'mp3' },
+  { level: 'higher', bitrate: 192_000, encode: 'mp3' },
+  { level: 'standard', bitrate: 128_000, encode: 'mp3' },
+];
+const neteaseQualityFloors = { standard: 'standard', high: 'exhigh', lossless: 'lossless', hires: 'jymaster' };
+const neteasePlaybackTimeoutMs = 4_000;
+const neteasePlaybackBudgetMs = 8_000;
+
+const neteaseSessionPlayback = async (request) => {
+  const id = String(request?.providerTrackId || '').trim();
+  if (!/^\d+$/u.test(id)) return null;
+  const cookie = streamingAccountCookie('netease');
+  if (!cookie) return null;
+  const floor = neteaseQualityFloors[String(request?.quality || '')];
+  const start = Math.max(0, neteasePlaybackLadder.findIndex((row) => row.level === (floor ?? 'lossless')));
+  const csrfToken = /__csrf=([^;]+)/u.exec(cookie)?.[1] ?? '';
+  const deadline = Date.now() + neteasePlaybackBudgetMs;
+  for (const candidate of neteasePlaybackLadder.slice(start)) {
+    if (Date.now() > deadline) break;
+    const params = new URLSearchParams({
+      ids: JSON.stringify([id]),
+      level: candidate.level,
+      br: String(candidate.bitrate),
+      encodeType: candidate.encode,
+      csrf_token: csrfToken,
+      os: 'pc',
+    });
+    let row;
+    try {
+      const data = await probeFetchJson(
+        `https://music.163.com/api/song/enhance/player/url/v1?${params.toString()}`,
+        { headers: neteaseApiHeaders(cookie), timeoutMs: neteasePlaybackTimeoutMs },
+      );
+      row = Array.isArray(data?.data) ? data.data[0] : null;
+    } catch (error) {
+      logMod('WARN', `netease session playback: ${candidate.level} request failed, ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+    const url = typeof row?.url === 'string' ? row.url : '';
+    if (!/^https?:/iu.test(url)) continue;
+    const type = String(row.type || candidate.encode).toLowerCase();
+    return {
+      provider: 'netease',
+      providerTrackId: id,
+      url,
+      expiresAt: new Date(Date.now() + 4 * 60_000).toISOString(),
+      mimeType: type === 'flac' ? 'audio/flac' : 'audio/mpeg',
+      bitrate: Number(row.br) > 0 ? Number(row.br) : candidate.bitrate,
+      sampleRate: null,
+      bitDepth: null,
+      codec: type,
+      headers: neteaseApiHeaders(cookie),
+      requiresProxy: false,
+      supportsRange: true,
+    };
+  }
+  return null;
+};
+
+// Wrapping is per module instance: a hot reload disposes this instance (which
+// puts the loader's own resolver back) before the next instance wraps it again,
+// so the chain stays one layer deep instead of stacking a stale resolver that
+// would keep serving playback through whatever code was loaded first.
+const ownResolveWrappers = new WeakSet();
+
 const wrapNeteaseUnblockResolve = (enabled, forceIds) => {
+  let uninstall = null;
+  let timer = 0;
+  let tries = 0;
   const install = () => {
     const original = globalThis.__shinawaseResolveStreamingPlayback;
-    if (typeof original !== 'function' || original.__echoUnblockWrapped) return typeof original === 'function';
+    if (typeof original !== 'function') return false;
+    if (ownResolveWrappers.has(original)) return true;
     const wrapped = async (request) => {
       const provider = String(request?.provider || '');
       const id = String(request?.providerTrackId || '').trim();
-      const force = provider === 'netease' && /^\d+$/u.test(id) && (forceIds.has(id) || request?.unblock === true);
+      const neteaseTrack = provider === 'netease' && /^\d+$/u.test(id);
+      const force = neteaseTrack && (forceIds.has(id) || request?.unblock === true);
       if (force) forceIds.delete(id);
       if (force) {
         const unblocked = await unblockNeteaseSong(id);
         if (unblocked?.url) return unblocked;
       }
+      if (neteaseTrack) {
+        const sessionSource = await neteaseSessionPlayback(request);
+        if (sessionSource?.url) return sessionSource;
+      }
       try {
         const source = await original(request);
         if (source?.url) return source;
       } catch (error) {
-        if (provider === 'netease' && /^\d+$/u.test(id) && enabled) {
+        if (neteaseTrack && enabled) {
           const unblocked = await unblockNeteaseSong(id);
           if (unblocked?.url) return unblocked;
         }
         throw error;
       }
-      if (provider === 'netease' && /^\d+$/u.test(id) && enabled) {
+      if (neteaseTrack && enabled) {
         const unblocked = await unblockNeteaseSong(id);
         if (unblocked?.url) return unblocked;
       }
       throw new Error('streaming_source_unavailable');
     };
     wrapped.__echoUnblockWrapped = true;
+    ownResolveWrappers.add(wrapped);
     globalThis.__shinawaseResolveStreamingPlayback = wrapped;
+    uninstall = () => {
+      if (globalThis.__shinawaseResolveStreamingPlayback === wrapped) {
+        globalThis.__shinawaseResolveStreamingPlayback = original;
+      }
+    };
     return true;
   };
   if (!install()) {
-    let tries = 0;
-    const timer = setInterval(() => {
+    timer = setInterval(() => {
       tries += 1;
       if (install() || tries > 20) clearInterval(timer);
     }, 500);
   }
+  return () => {
+    clearInterval(timer);
+    uninstall?.();
+    uninstall = null;
+  };
+};
+
+// 26.9.26 moved the playlist page's delete button onto library:manage-playlists
+// {action:'delete'}, and Echo Core's manage() only accepts local playlists, so every
+// imported streaming playlist fails with "Select an editable local playlist." The legacy
+// library:delete-playlist channel reaches the same core through mutate(), which has no
+// such limit, so fall back to it for that one action and error — everything else is
+// passed through untouched.
+const PLAYLIST_MANAGE_CHANNEL = 'library:manage-playlists';
+const PLAYLIST_DELETE_CHANNEL = 'library:delete-playlist';
+const protectedSystemPlaylistIds = new Set(['liked-tracks', 'liked-albums', 'daily-recommend']);
+
+const isProtectedSystemPlaylist = (host, playlistId) => {
+  let database;
+  try {
+    ({ database } = openEchoLibraryDatabase(host));
+    const row = database.prepare('SELECT kind, source_playlist_id FROM playlists WHERE id = ?').get(playlistId);
+    if (!row) return false;
+    return row.kind === 'system' && protectedSystemPlaylistIds.has(String(row.source_playlist_id ?? ''));
+  } catch (error) {
+    logMod('WARN', `playlist delete fallback: protected check failed, ${error instanceof Error ? error.message : String(error)}`);
+    return true;
+  } finally {
+    try { database?.close(); } catch {}
+  }
+};
+
+const installPlaylistDeleteFallback = (host) => {
+  const ipcMain = host.ipcMain;
+  const handlers = ipcMain?._invokeHandlers;
+  if (typeof ipcMain?.handle !== 'function' || !(handlers instanceof Map)) return () => {};
+  let original = handlers.get(PLAYLIST_MANAGE_CHANNEL);
+  while (typeof original?.__echoPlaylistDeleteFallback === 'function') original = original.__echoPlaylistDeleteFallback;
+  const legacyDelete = handlers.get(PLAYLIST_DELETE_CHANNEL);
+  if (typeof original !== 'function' || typeof legacyDelete !== 'function') return () => {};
+  const wrapped = async (event, request, ...rest) => {
+    try {
+      return await original(event, request, ...rest);
+    } catch (error) {
+      const playlistId = String(request?.playlistId || '');
+      const guarded = /editable local playlist/iu.test(String(error?.message || error));
+      if (request?.action !== 'delete' || !playlistId || !guarded || isProtectedSystemPlaylist(host, playlistId)) throw error;
+      await legacyDelete(event, playlistId);
+      logMod('INFO', `playlist delete fallback: ${playlistId}`);
+      // No core historyId: this path writes no recovery journal, so the page must not
+      // offer an undo it cannot perform.
+      return { playlistId, itemIds: [], state: 'committed' };
+    }
+  };
+  wrapped.__echoPlaylistDeleteFallback = original;
+  ipcMain.removeHandler(PLAYLIST_MANAGE_CHANNEL);
+  ipcMain.handle(PLAYLIST_MANAGE_CHANNEL, wrapped);
+  return () => {
+    if (handlers.get(PLAYLIST_MANAGE_CHANNEL) !== wrapped) return;
+    try { ipcMain.removeHandler(PLAYLIST_MANAGE_CHANNEL); } catch {}
+    try { ipcMain.handle(PLAYLIST_MANAGE_CHANNEL, original); } catch {}
+  };
 };
 
 const activate = (host) => {
@@ -3130,7 +3633,7 @@ const activate = (host) => {
   globalThis.__echoStreamingResolveBilibili = resolveBilibiliAudio;
   const autoUnblock = host.config?.autoUnblock !== false;
   const forceUnblockIds = new Set();
-  wrapNeteaseUnblockResolve(autoUnblock, forceUnblockIds);
+  const uninstallNeteaseResolveWrapper = wrapNeteaseUnblockResolve(autoUnblock, forceUnblockIds);
   const together = createTogetherService({
     log: (level, message) => { try { host.log(level, message); } catch {} },
     broadcast: (name, payload) => { try { host.broadcast(name, payload); } catch {} },
@@ -3479,7 +3982,30 @@ const activate = (host) => {
     };
   });
 
-  return () => { together.dispose(); };
+  host.handle('neteaseDailyRecommendSync', async () => {
+    try { return { ok: true, ...(await writeNeteaseDailyRecommend(host)) }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+
+  host.handle('fixSyncedPlaylistKinds', async () => {
+    try {
+      const { database, databasePath } = openEchoLibraryDatabase(host);
+      try {
+        const result = database.prepare(
+          "UPDATE playlists SET kind = 'manual', updated_at = ? WHERE kind IN ('synced', 'system') AND source_provider IN ('netease', 'qqmusic', 'spotify')"
+        ).run(new Date().toISOString());
+        return { ok: true, fixed: result.changes, databasePath };
+      } finally {
+        database.close();
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  const uninstallPlaylistDeleteFallback = installPlaylistDeleteFallback(host);
+
+  return () => { uninstallNeteaseResolveWrapper(); uninstallPlaylistDeleteFallback(); together.dispose(); };
 };
 
 module.exports = activate;
