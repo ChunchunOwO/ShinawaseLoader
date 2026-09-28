@@ -1,4 +1,4 @@
-/* Community Streaming page. Mirrors ECHO's StreamingSearchPage through the public bridge. */
+﻿/* Community Streaming page. Mirrors ECHO's StreamingSearchPage through the public bridge. */
 const external = echoExternalMod;
 const manifest = external.manifest || {};
 const config = external.config || {};
@@ -322,7 +322,7 @@ const renderAccountPage = () => {
   else removeNeteaseQrBackdrop();
   return page;
 };
-let pageRoot = null; let disposed = false; let searchTimer = 0; let statusTimer = 0; let accountUnsubscribe = null; let downloadUnsubscribe = null; let playlistPageUnsubscribe = null; let artistStreamingAlbumsUnsubscribe = null; let dailyRefreshTimer = 0; let dailyRefreshInFlight = false; let paintNativeDailyPanel = () => {};
+let pageRoot = null; let disposed = false; let searchTimer = 0; let statusTimer = 0; let accountUnsubscribe = null; let downloadUnsubscribe = null; let playlistPageUnsubscribe = null; let artistStreamingAlbumsUnsubscribe = null; let dailyRefreshTimer = 0; let dailyRefreshWarmupTimer = 0; let dailyRefreshInFlight = false; let paintNativeDailyPanel = () => {};
 let searchComposing = false;
 let searchRenderPending = false;
 let searchCompositionEndedAt = 0;
@@ -2862,13 +2862,14 @@ const runAutoDailyRefresh = async () => {
 };
 const startDailyRefreshScheduler = () => {
   window.clearInterval(dailyRefreshTimer);
+  window.clearTimeout(dailyRefreshWarmupTimer);
   dailyRefreshTimer = window.setInterval(async () => {
     if (!state.accountStatuses.length) {
       try { await loadAccountStatuses(); } catch {}
     }
     void runAutoDailyRefresh();
   }, 60_000);
-  window.setTimeout(async () => {
+  dailyRefreshWarmupTimer = window.setTimeout(async () => {
     try { await loadAccountStatuses(); } catch {}
     if (shouldAutoRefreshDaily()) void runAutoDailyRefresh();
     else if (neteaseConnected() && !state.dailyPlaylists.length) void loadDailyPlaylists().catch(() => undefined);
@@ -5641,4 +5642,4 @@ accountsSidebarUnsubscribe = external.sidebar.register({
     };
   },
 });
-return () => { disposed = true; packageDisposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); window.clearInterval(dailyRefreshTimer); window.clearInterval(ncmPlayerPoll); document.removeEventListener('click', onUnavailableStreamingPlaylistClick, true); resetSearchInput(); cancelPlaybackPrepare(); stopAccountQrPolling(); closeAccountDialog(); closeStreamMenu(); closePlaylistDownloadDialog(); disposeTogetherChrome(); document.querySelectorAll('.echo-streaming-comment-panel, .echo-streaming-similar-panel').forEach((node) => node.remove()); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); artistStreamingAlbumsUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); document.getElementById('echo-community-streaming-spatial')?.remove(); document.getElementById('echo-artist-streaming-albums-style')?.remove(); document.querySelectorAll('[data-echo-artist-streaming-albums], [data-echo-artist-streaming-album-detail-panel]').forEach((node) => node.remove()); disposeSidebar?.(); accountsSidebarUnsubscribe?.(); qobuzSidebarUnsubscribe?.(); };
+return () => { disposed = true; packageDisposed = true; window.clearTimeout(searchTimer); window.clearInterval(statusTimer); window.clearInterval(dailyRefreshTimer); window.clearTimeout(dailyRefreshWarmupTimer); window.clearInterval(ncmPlayerPoll); document.removeEventListener('click', onUnavailableStreamingPlaylistClick, true); resetSearchInput(); cancelPlaybackPrepare(); stopAccountQrPolling(); closeAccountDialog(); closeStreamMenu(); closePlaylistDownloadDialog(); disposeTogetherChrome(); document.querySelectorAll('.echo-streaming-comment-panel, .echo-streaming-similar-panel').forEach((node) => node.remove()); accountUnsubscribe?.(); downloadUnsubscribe?.(); playlistPageUnsubscribe?.(); likedSourceUnsubscribe?.(); artistStreamingAlbumsUnsubscribe?.(); document.querySelectorAll('.settings-qr-login-backdrop[data-echo-streaming-qr]').forEach((node) => node.remove()); document.getElementById('echo-community-streaming-spatial')?.remove(); document.getElementById('echo-artist-streaming-albums-style')?.remove(); document.querySelectorAll('[data-echo-artist-streaming-albums], [data-echo-artist-streaming-album-detail-panel]').forEach((node) => node.remove()); disposeSidebar?.(); accountsSidebarUnsubscribe?.(); qobuzSidebarUnsubscribe?.(); };
