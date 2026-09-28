@@ -1,6 +1,6 @@
 // Keep this guard in sync with window.__echoExternalLoaderUi.version
-// and ShinawaseLoader.mjs (uiVersion < 60).
-if (window.__echoExternalLoaderUi?.version >= 60) return 'already';
+// and ShinawaseLoader.mjs (uiVersion < 61).
+if (window.__echoExternalLoaderUi?.version >= 61) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -787,6 +787,11 @@ css.textContent = `
     margin-top: auto; /* pin Loader + utility to the bottom when space allows */
     overflow: hidden;
   }
+  /* No overscroll-behavior: contain on this list. ECHO scrolls the library in
+     .sidebar-groups, or in the sibling .sidebar-main-groups once playlists are
+     open. contain traps the wheel while the pointer is over Shinawase Loader
+     (the list often does not overflow) and the sidebar above stops moving.
+     onLoaderGroupWheel forwards whatever this list does not consume. */
   .sidebar-groups > [data-echo-external-loader-group] .nav-list {
     display: flex;
     flex-direction: column;
@@ -795,7 +800,6 @@ css.textContent = `
     max-height: min(42vh, 360px);
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior: contain;
   }
   /* Flat sidebar (echo-steam dropped .sidebar-groups): style our injected group ourselves. */
   .sidebar > [data-echo-external-loader-group] {
@@ -819,7 +823,6 @@ css.textContent = `
     max-height: min(42vh, 360px);
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior: contain;
   }
   /* Loader sits above utility; collapse the spacer. */
   .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer {
@@ -1913,6 +1916,49 @@ const makeNavButton = (nav, key, label, icon, onClick) => {
   return button;
 };
 
+// The loader nav-list scrolls on its own. ECHO scrolls the library on an ancestor
+// (.sidebar-groups / .sidebar) or, with playlists open, the sibling
+// .sidebar-main-groups. Once this list cannot consume the wheel, forward it there.
+const loaderGroupWheelTarget = (group, delta, eventTarget) => {
+  if (!group || !Number.isFinite(delta) || delta === 0) return null;
+  const canScrollBy = (element) => {
+    if (!element || element.nodeType !== 1) return false;
+    let overflow = '';
+    try { overflow = getComputedStyle(element).overflowY; } catch { return false; }
+    if (overflow !== 'auto' && overflow !== 'scroll' && overflow !== 'overlay') return false;
+    if (element.scrollHeight <= element.clientHeight + 1) return false;
+    if (delta < 0) return element.scrollTop > 0;
+    return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+  };
+  let node = eventTarget?.nodeType === 1 ? eventTarget : eventTarget?.parentElement || null;
+  while (node && node !== group) {
+    if (canScrollBy(node)) return null;
+    node = node.parentElement;
+  }
+  const sidebar = group.closest?.('aside.sidebar, .sidebar') || null;
+  const mainGroups = sidebar?.querySelector?.('.sidebar-main-groups') || null;
+  const candidates = [group.parentElement, mainGroups, sidebar];
+  for (const candidate of candidates) {
+    if (!candidate || candidate === group || group.contains(candidate)) continue;
+    if (canScrollBy(candidate)) return candidate;
+  }
+  return null;
+};
+const onLoaderGroupWheel = (event) => {
+  if (event.defaultPrevented || event.ctrlKey) return;
+  const raw = Number(event.deltaY) || 0;
+  const pixels = event.deltaMode === 1 ? raw * 16 : event.deltaMode === 2 ? raw * (event.currentTarget?.clientHeight || 0) : raw;
+  const target = loaderGroupWheelTarget(event.currentTarget, pixels, event.target);
+  if (!target) return;
+  target.scrollTop += pixels;
+  event.preventDefault();
+};
+const bindLoaderGroupWheel = (group) => {
+  if (!group || group.dataset.echoExternalWheel === 'true') return;
+  group.dataset.echoExternalWheel = 'true';
+  group.addEventListener('wheel', onLoaderGroupWheel, { capture: true, passive: false });
+};
+
 const ensureLoaderGroup = () => {
   // Older ECHO renders a grouped sidebar (.sidebar-groups). echo-steam flattened
   // the sidebar to <aside class="sidebar"> with plain .nav-list children, so fall
@@ -1956,6 +2002,7 @@ const ensureLoaderGroup = () => {
   }
   loaderGroup = group;
   loaderNav = group.querySelector('.nav-list');
+  bindLoaderGroupWheel(group);
   return loaderNav;
 };
 
@@ -4235,7 +4282,7 @@ const onNavControlClick = (event) => {
 window.addEventListener('click', onNavControlClick, true);
 
 window.__echoExternalLoaderUi = {
-  version: 60,
+  version: 61,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
