@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 internal static class EchoModdedHost
 {
@@ -63,7 +64,11 @@ internal static class EchoModdedHost
         return "node";
     }
 
-    private static void RunNodeScript(string root, string loaderRoot, string scriptName, string extraArgs)
+    // Runs a helper script before ECHO starts. It must never be able to block the
+    // launch: output is drained asynchronously (ReadToEnd() would wait for the
+    // child to exit, making the timeout below unreachable) and a script that
+    // outlives timeoutMs is killed.
+    private static void RunNodeScript(string root, string loaderRoot, string scriptName, string extraArgs, int timeoutMs)
     {
         var script = Path.Combine(loaderRoot, scriptName);
         if (!File.Exists(script)) return;
@@ -87,18 +92,24 @@ internal static class EchoModdedHost
             using (var proc = Process.Start(info))
             {
                 if (proc == null) return;
-                var stdout = proc.StandardOutput.ReadToEnd();
-                var stderr = proc.StandardError.ReadToEnd();
-                if (!proc.WaitForExit(180000))
+                var stdout = new StringBuilder();
+                var stderr = new StringBuilder();
+                proc.OutputDataReceived += (s, e) => { if (e.Data != null) lock (stdout) stdout.AppendLine(e.Data); };
+                proc.ErrorDataReceived += (s, e) => { if (e.Data != null) lock (stderr) stderr.AppendLine(e.Data); };
+                proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
+                if (!proc.WaitForExit(timeoutMs))
                 {
                     try { proc.Kill(); } catch { }
+                    try { File.AppendAllText(Path.Combine(logDir, Path.GetFileNameWithoutExtension(scriptName) + ".log"), "[" + DateTime.UtcNow.ToString("o") + "] killed after " + timeoutMs + " ms" + Environment.NewLine); } catch { }
                     return;
                 }
+                proc.WaitForExit(); // flush the async readers
                 try
                 {
                     File.AppendAllText(Path.Combine(logDir, Path.GetFileNameWithoutExtension(scriptName) + ".log"),
                         "[" + DateTime.UtcNow.ToString("o") + "] exit=" + proc.ExitCode + Environment.NewLine
-                        + stdout + stderr + Environment.NewLine);
+                        + stdout.ToString() + stderr.ToString() + Environment.NewLine);
                 }
                 catch { }
             }
@@ -110,8 +121,8 @@ internal static class EchoModdedHost
     {
         var root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var loaderRoot = Path.Combine(root, "ShinawaseLoader");
-        RunNodeScript(root, loaderRoot, "ShinawaseLoader.mjs", "self-update --auto --quiet");
-        RunNodeScript(root, loaderRoot, "runtime-sync.mjs", "--echo " + Quote(root) + " --skip-update");
+        RunNodeScript(root, loaderRoot, "ShinawaseLoader.mjs", "self-update --auto --quiet", 60000);
+        RunNodeScript(root, loaderRoot, "runtime-sync.mjs", "--echo " + Quote(root) + " --skip-update", 120000);
         var moddedExe = Path.Combine(loaderRoot, "modded-runtime", "ECHO.exe");
         if (!File.Exists(moddedExe))
         {

@@ -1,0 +1,46 @@
+# Example nginx site for the ShinawaseLoader download mirror (Ubuntu: put this in
+# /etc/nginx/conf.d/shinawase.conf, then `nginx -t && systemctl reload nginx`).
+#
+# Serves, under /shinawase/:
+#   static files from /var/www/shinawase   (output of scripts/build-update-mirror.mjs)
+#   /shinawase/npm/                        caching reverse proxy for the npm registry
+#
+# Nothing here needs to be trusted by clients: loader updates are Ed25519-signed,
+# the Node runtime is pinned by SHA-256, and npm packages by package-lock integrity.
+
+proxy_cache_path /var/cache/nginx/shinawase-npm levels=1:2 keys_zone=shinawase_npm:50m max_size=5g inactive=30d use_temp_path=off;
+
+server {
+    listen 80;
+    server_name _;
+
+    # --- static mirror files ------------------------------------------------
+    location /shinawase/ {
+        alias /var/www/shinawase/;
+        # Range requests are on by default; the loader relies on them to resume downloads.
+        gzip off;                    # zips and .echomod files are already compressed
+        add_header Cache-Control "public, max-age=60";
+        # the signed manifest must always be fresh
+        location = /shinawase/mirror-manifest.json { alias /var/www/shinawase/mirror-manifest.json; add_header Cache-Control "no-cache"; }
+        location = /shinawase/mirror-manifest.sig  { alias /var/www/shinawase/mirror-manifest.sig;  add_header Cache-Control "no-cache"; }
+    }
+
+    # --- npm registry cache (read-only) --------------------------------------
+    location /shinawase/npm/ {
+        limit_except GET HEAD { deny all; }          # nobody can publish through this
+        proxy_pass https://registry.npmmirror.com/;  # or https://registry.npmjs.org/
+        proxy_ssl_server_name on;
+        proxy_set_header Host registry.npmmirror.com;
+        proxy_set_header Accept-Encoding "";
+        proxy_cache shinawase_npm;
+        proxy_cache_valid 200 30d;                   # tarballs never change
+        proxy_cache_valid 404 1m;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 60s;
+        # Metadata documents change; keep them short-lived. Tarballs (…/-/…tgz) cache long.
+        proxy_ignore_headers Cache-Control Expires;
+        add_header X-Cache-Status $upstream_cache_status;
+    }
+}

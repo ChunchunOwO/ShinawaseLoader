@@ -33,3 +33,5 @@ Packages/template-self-test.echomod
 /scripts/mod-market-web/echo-pearl.mp3
 .grok/
 ShinawaseLoader/.api-token
+.update-signing-key.pem
+/mirror-*/
