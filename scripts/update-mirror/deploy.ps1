@@ -33,8 +33,9 @@ if [ "$SETUP" = "1" ]; then
   rm -f /etc/nginx/sites-enabled/default
 fi
 mkdir -p /var/www/shinawase
-if command -v rsync >/dev/null; then rsync -a --delete $D/www/ /var/www/shinawase/
-else rm -rf /var/www/shinawase/* && cp -a $D/www/. /var/www/shinawase/; fi
+# node/ is protected: builds without --with-node must not delete the installer's Node runtime
+if command -v rsync >/dev/null; then rsync -a --delete --filter='P /node/' $D/www/ /var/www/shinawase/
+else find /var/www/shinawase -mindepth 1 -maxdepth 1 ! -name node -exec rm -rf {} + && cp -a $D/www/. /var/www/shinawase/; fi
 chmod -R a+rX /var/www/shinawase
 if [ "$SETUP" = "1" ]; then nginx -t && systemctl reload nginx; fi   # static files need no reload
 rm -rf $D
