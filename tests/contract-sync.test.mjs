@@ -122,3 +122,12 @@ test('default UI settings keys and defaults are mirrored', () => {
     assert.ok(block[1].includes(`${key}: ${literal}`), `defaultUiSettings.${key} default diverged`);
   }
 });
+
+test('loader API guards browser callers and the injected UI sends the token', () => {
+  assert.ok(loaderSource.includes("'x-shinawase-token'"), 'loader no longer reads the API token header');
+  assert.ok(loaderSource.includes('host_not_allowed'), 'loader no longer rejects non-loopback Host headers');
+  assert.ok(loaderSource.includes('api_token_required'), 'loader no longer requires the token for Origin requests');
+  assert.ok(loaderSource.includes('const LOADER_TOKEN'), 'injected UI is no longer given the token');
+  assert.ok(loaderUiSource.includes("'x-shinawase-token': LOADER_TOKEN"), 'loader-ui no longer sends the token');
+  assert.ok(loaderSource.includes('${apiAuthShim}'), 'the per-cycle probe no longer installs the fetch/XHR token shim for existing mods');
+});

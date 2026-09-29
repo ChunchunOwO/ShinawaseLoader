@@ -164,6 +164,7 @@ export const DEFAULT_UI_SETTINGS = Object.freeze({
   modSort: 'name',
   modFilter: 'all',
   steamLaunchReminder: false,
+  showTitlebarBrand: true,
 });
 
 // SDK.md "echo-steam 26.9.1 alignment": window.echo namespaces observed on the
