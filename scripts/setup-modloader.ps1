@@ -508,6 +508,73 @@ function Get-NpmRegistry {
   return 'https://registry.npmmirror.com'
 }
 
+# Self-hosted download mirror, tried before the public sources. Layout (see
+# scripts/update-mirror/README.md): <base>/node/v<ver>/node-v<ver>-win-x64.zip and
+# <base>/npm/ (a caching npm registry proxy). Everything fetched from it is
+# verified: Node by the SHA-256 in loader-version.json, npm packages by the
+# integrity hashes in package-lock.json, so a mirror cannot alter what is installed.
+# Override with $env:SHINAWASE_MIRRORS (comma separated; the word "none" disables) or "mirrors"
+# in selection.json. Choosing "Node.js official / direct" in setup opts out.
+$script:DefaultMirrors = @('http://43.248.10.82/shinawase')
+$script:MirrorProbeCache = @{}
+function Get-PreferredMirrors {
+  if ($null -ne $env:SHINAWASE_MIRRORS) { $list = @($env:SHINAWASE_MIRRORS -split ',') }
+  elseif ((Get-NodeMirror).Id -eq 'official') { return @() }
+  else {
+    $saved = Read-Json $SelectionFile $null
+    $list = if ($saved -and $null -ne $saved.mirrors) { @($saved.mirrors) } else { $script:DefaultMirrors }
+  }
+  $out = @()
+  foreach ($item in $list) {
+    $text = ([string]$item).Trim().TrimEnd('/')
+    if ($text -match '^https?://[^/@\s]+(/[^\s]*)?$' -and $out -notcontains $text) { $out += $text }
+  }
+  return @($out | Select-Object -First 4)
+}
+
+# Any HTTP answer (even 404) means the host is up; a dead or blackholed host is
+# dropped after 4 seconds, once per run, so it cannot slow down every download.
+function Test-MirrorReachable([string]$Base) {
+  if ($script:MirrorProbeCache.ContainsKey($Base)) { return $script:MirrorProbeCache[$Base] }
+  $alive = $false
+  try {
+    $request = [Net.HttpWebRequest]::Create("$Base/")
+    $request.Method = 'HEAD'
+    $request.Timeout = 4000
+    $request.UserAgent = 'ShinawaseLoader-setup'
+    $response = $request.GetResponse()
+    $response.Dispose()
+    $alive = $true
+  } catch [Net.WebException] {
+    if ($_.Exception.Response) { $alive = $true; $_.Exception.Response.Dispose() }
+  } catch { }
+  $script:MirrorProbeCache[$Base] = $alive
+  return $alive
+}
+
+function Get-LiveMirrors {
+  return @(Get-PreferredMirrors | Where-Object { Test-MirrorReachable $_ })
+}
+
+function Get-NodeDownloadCandidates($versionInfo) {
+  $nodeVersion = [string]$versionInfo.nodeVersion
+  $candidates = @()
+  if ($versionInfo.nodeSha256) {
+    foreach ($base in (Get-LiveMirrors)) {
+      $candidates += @{ Id = "mirror $base"; Url = "$base/node/v${nodeVersion}/node-v${nodeVersion}-win-x64.zip"; ConnectMs = 8000 }
+    }
+  }
+  $candidates += @{ Id = "Node mirror: $(Get-NodeMirrorLabel (Get-NodeMirror))"; Url = (Get-NodeDownloadUrl $versionInfo); ConnectMs = 30000 }
+  return $candidates
+}
+
+function Get-NpmRegistries {
+  $list = @()
+  foreach ($base in (Get-LiveMirrors)) { $list += @{ Id = "mirror $base"; Url = "$base/npm/"; TimeoutSec = 240 } }
+  $list += @{ Id = 'registry'; Url = (Get-NpmRegistry); TimeoutSec = 900 }
+  return $list
+}
+
 function Read-Version($path) {
   $value = Read-Json $path $null
   if ($value) { return $value.version }
@@ -691,12 +758,14 @@ function Write-SetupProgress([int]$Percent, [string]$Label) {
   Write-SetupLine (('  [{0}]  {1,3}%  {2}' -f $bar, $Percent, $Label)) 'Cyan'
 }
 
-function Download-File([string]$Uri, [string]$Destination) {
+function Download-File([string]$Uri, [string]$Destination, [int]$ConnectTimeoutMs = 30000, [int]$MaxSeconds = 900) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
   $request = [Net.HttpWebRequest]::Create($Uri)
   $request.Method = 'GET'
   $request.UserAgent = 'ShinawaseLoader/1.3'
-  $request.Timeout = 30000
+  $request.Timeout = $ConnectTimeoutMs        # connect + response headers
+  $request.ReadWriteTimeout = 20000           # a read that gets no bytes for 20s = stalled
+  $clock = [Diagnostics.Stopwatch]::StartNew()
   $response = $request.GetResponse()
   $input = $response.GetResponseStream()
   $output = [IO.File]::Open($Destination, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -705,13 +774,19 @@ function Download-File([string]$Uri, [string]$Destination) {
     $loaded = [int64]0
     $buffer = New-Object byte[] (1024 * 128)
     while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      if ($clock.Elapsed.TotalSeconds -gt $MaxSeconds) { throw "Download exceeded $MaxSeconds seconds: $Uri" }
       $output.Write($buffer, 0, $read)
       $loaded += $read
       if ($total -gt 0) { Write-Progress -Activity "Downloading $([IO.Path]::GetFileName($Destination))" -Status ("{0:N1} MB / {1:N1} MB" -f ($loaded / 1MB), ($total / 1MB)) -PercentComplete ([math]::Min(100, ($loaded / $total) * 100)) }
       else { Write-Progress -Activity "Downloading $([IO.Path]::GetFileName($Destination))" -Status ("{0:N1} MB" -f ($loaded / 1MB)) }
     }
+  } catch {
+    $output.Dispose(); $output = $null
+    Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+    throw
   } finally {
-    $output.Dispose(); $input.Dispose(); $response.Dispose(); Write-Progress -Activity 'Download' -Completed
+    if ($output) { $output.Dispose() }
+    $input.Dispose(); $response.Dispose(); Write-Progress -Activity 'Download' -Completed
   }
 }
 
@@ -749,13 +824,25 @@ function Get-NodeRuntime($versionInfo, $loaderRoot) {
     $zip = Join-Path $RuntimeCache ("node-" + $versionInfo.nodeVersion + '.zip')
     $extract = Join-Path $RuntimeCache (".node-" + [guid]::NewGuid().ToString('N'))
     try {
-      $mirror = Get-NodeMirror
-      Write-Host "Node mirror: $(Get-NodeMirrorLabel $mirror)" -ForegroundColor DarkGray
-      Download-File (Get-NodeDownloadUrl $versionInfo) $zip
-      if ($versionInfo.nodeSha256) {
-        $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
-        if ($actualHash -ine [string]$versionInfo.nodeSha256) { throw 'Downloaded Node archive SHA-256 mismatch.' }
+      $fetched = $false
+      $lastFailure = $null
+      foreach ($candidate in @(Get-NodeDownloadCandidates $versionInfo)) {
+        try {
+          Write-Host "Node source: $($candidate.Id)" -ForegroundColor DarkGray
+          Download-File $candidate.Url $zip -ConnectTimeoutMs $candidate.ConnectMs
+          if ($versionInfo.nodeSha256) {
+            $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+            if ($actualHash -ine [string]$versionInfo.nodeSha256) { throw 'Downloaded Node archive SHA-256 mismatch.' }
+          }
+          $fetched = $true
+          break
+        } catch {
+          $lastFailure = $_
+          Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+          Write-Host "  failed ($($_.Exception.Message)); trying the next source..." -ForegroundColor DarkGray
+        }
       }
+      if (-not $fetched) { throw $lastFailure }
       Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
       $downloaded = Get-ChildItem -LiteralPath $extract -Filter 'node.exe' -File -Recurse | Select-Object -First 1
       if (-not $downloaded) { throw 'node.exe was not found in the downloaded archive.' }
@@ -779,6 +866,44 @@ function Get-NodeRuntime($versionInfo, $loaderRoot) {
   } catch { return $cacheNode }
 }
 
+# One npm install attempt against one registry. Never blocks forever: the process
+# tree is killed when TimeoutSec elapses (exit code 124).
+function Invoke-NpmInstallOnce([string]$Node, [string]$NpmCli, [string]$LoaderRoot, [string]$Registry, [int]$TimeoutSec, [string]$OutLog, [string]$ErrLog) {
+  $prevPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $prevRegistry = $env:npm_config_registry
+  $prevStrict = $env:npm_config_engine_strict
+  try {
+    $env:npm_config_engine_strict = 'false'
+    $env:npm_config_registry = $Registry
+    $npmArgs = @('install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', '--fetch-timeout=30000', '--fetch-retries=1', "--registry=$Registry")
+    if (Test-Path -LiteralPath $NpmCli) {
+      $file = $Node
+      $argList = @($NpmCli) + $npmArgs
+    } else {
+      $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+      if (-not $npmCmd) { $npmCmd = Get-Command npm -ErrorAction SilentlyContinue }
+      if (-not $npmCmd) { throw 'npm not found' }
+      $file = $npmCmd.Source
+      $argList = $npmArgs
+    }
+    $p = Start-Process -FilePath $file -ArgumentList $argList -WorkingDirectory $LoaderRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $OutLog -RedirectStandardError $ErrLog
+    $null = $p.Handle # keeps ExitCode readable after WaitForExit
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+      & taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Null
+      return 124
+    }
+    return $p.ExitCode
+  } catch {
+    $_ | Out-String | Set-Content -LiteralPath $ErrLog -ErrorAction SilentlyContinue
+    return 1
+  } finally {
+    $env:npm_config_registry = $prevRegistry
+    $env:npm_config_engine_strict = $prevStrict
+    $ErrorActionPreference = $prevPreference
+  }
+}
+
 function Install-StreamingBridgeDeps([string]$loaderRoot, [string]$node) {
   if (-not (Test-Path -LiteralPath (Join-Path $loaderRoot 'package.json'))) { return }
   Write-SetupProgress 58 'streaming bridge deps (npm install)'
@@ -796,34 +921,12 @@ function Install-StreamingBridgeDeps([string]$loaderRoot, [string]$node) {
   $stamp = [guid]::NewGuid().ToString('N')
   $outLog = Join-Path $env:TEMP ("shinawase-npm-install-" + $stamp + ".out.log")
   $errLog = Join-Path $env:TEMP ("shinawase-npm-install-" + $stamp + ".err.log")
-  $prev = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
   $code = 1
-  $previousRegistry = $env:npm_config_registry
-  $previousEngineStrict = $env:npm_config_engine_strict
-  try {
-    Push-Location $loaderRoot
-    $env:npm_config_engine_strict = 'false'
-    $env:npm_config_registry = Get-NpmRegistry
-    if (Test-Path -LiteralPath $npmCli) {
-      $arg = @($npmCli, 'install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', "--registry=$($env:npm_config_registry)")
-      $p = Start-Process -FilePath $node -ArgumentList $arg -WorkingDirectory $loaderRoot -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
-      $code = $p.ExitCode
-    } else {
-      $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
-      if (-not $npmCmd) { $npmCmd = Get-Command npm -ErrorAction SilentlyContinue }
-      if (-not $npmCmd) { throw 'npm not found' }
-      $p = Start-Process -FilePath $npmCmd.Source -ArgumentList @('install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', "--registry=$($env:npm_config_registry)") -WorkingDirectory $loaderRoot -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
-      $code = $p.ExitCode
-    }
-  } catch {
-    $code = 1
-    $_ | Out-String | Set-Content -LiteralPath $errLog -ErrorAction SilentlyContinue
-  } finally {
-    $env:npm_config_registry = $previousRegistry
-    $env:npm_config_engine_strict = $previousEngineStrict
-    $ErrorActionPreference = $prev
-    Pop-Location
+  foreach ($registry in @(Get-NpmRegistries)) {
+    Write-Host "npm source: $($registry.Id)" -ForegroundColor DarkGray
+    $code = Invoke-NpmInstallOnce -Node $node -NpmCli $npmCli -LoaderRoot $loaderRoot -Registry $registry.Url -TimeoutSec $registry.TimeoutSec -OutLog $outLog -ErrLog $errLog
+    if ($code -eq 0 -and (Test-Path -LiteralPath $marker)) { break }
+    Write-Host "  npm install via $($registry.Id) failed (exit $code); trying the next source..." -ForegroundColor DarkGray
   }
   if ($code -eq 0 -and (Test-Path -LiteralPath $marker)) {
     if ($lockHash) { [IO.File]::WriteAllText($lockStamp, $lockHash) }
