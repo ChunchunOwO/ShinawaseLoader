@@ -166,7 +166,7 @@ Loader self-update and the Windows installer try a self-hosted mirror before Git
    ```
 
    `--with-node` is only needed when `nodeVersion` in `loader-version.json` changed. The builder refuses to sign if the key does not match `UPDATE_PUBLIC_KEY`.
-3. Upload the **contents** of `mirror-out` to the server's web root for `/shinawase/` (`/var/www/shinawase/` in `scripts/update-mirror/nginx.conf.example`). Use the access the user provides for the session (for example `scp -r .mirror-out* <user>@<host>:/var/www/shinawase/` with their key or approval). Do not ask for, store, echo or write server passwords into the repo, logs, memory files or commit messages. If you have no server access, stop after step 2 and hand the user the exact upload command.
+3. Upload with `powershell -ExecutionPolicy Bypass -File ./scripts/update-mirror/deploy.ps1` (add `-Setup` the first time). It streams everything over one ssh session, reloads nginx and verifies the public URLs. Agents must not type the server password: the user runs this (one password prompt) or has installed a key. Manual equivalent: upload the **contents** of `mirror-out` to the server's web root for `/shinawase/` (`/var/www/shinawase/` in `scripts/update-mirror/nginx.conf.example`). Use the access the user provides for the session (for example `scp -r .mirror-out* <user>@<host>:/var/www/shinawase/` with their key or approval). Do not ask for, store, echo or write server passwords into the repo, logs, memory files or commit messages. If you have no server access, stop after step 2 and hand the user the exact upload command.
 4. Verify from the outside, read-only. All of these must return 200, and `mirror-manifest.json` must show the version you just released:
 
    ```bash
