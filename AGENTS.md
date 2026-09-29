@@ -154,6 +154,32 @@ When rebuilding an example package, check the packaged manifest version, entry, 
 
 The release script reads `ShinawaseLoader/loader-version.json` and produces `release/ShinawaseLoader-<version>` plus a ZIP. `scripts/build-release.ps1` accepts `-OutputRoot` and `-NoZip` and replaces the same-version output directory. It copies the Loader tree with a limited exclusion list, so build from a clean source tree and inspect the output for dependencies, runtime copies, native build directories, and other unintended files. Fix sources and rebuild rather than editing a release copy.
 
+### Publish the download mirror (after every release-affecting change)
+
+Loader self-update and the Windows installer try a self-hosted mirror before GitHub (default `http://43.248.10.82/shinawase`, see `DEFAULT_UPDATE_MIRRORS` in `ShinawaseLoader/update-net.mjs`). **The mirror only helps once its files are current**, and while it is reachable it decides what counts as the latest version. So whenever a change touches `ShinawaseLoader/` (including `loader-version.json`), a bundled package under `examples/packages/`, or the pinned Node version, finish the task by publishing the mirror, or tell the user plainly that it is stale and still needs publishing. Never claim the mirror is "used" or "up to date" without checking it (below).
+
+1. Commit first. The mirror is built from git `HEAD`, not the working tree; the builder warns about uncommitted changes.
+2. Build and sign (the private key is `.update-signing-key.pem` at the repo root; it is git-ignored, never commit, print, copy or upload it):
+
+   ```powershell
+   node ./scripts/build-update-mirror.mjs "./mirror-out" --with-node
+   ```
+
+   `--with-node` is only needed when `nodeVersion` in `loader-version.json` changed. The builder refuses to sign if the key does not match `UPDATE_PUBLIC_KEY`.
+3. Upload with `powershell -ExecutionPolicy Bypass -File ./scripts/update-mirror/deploy.ps1 -Server deploy@43.248.10.82 -Key "$env:USERPROFILE/.ssh/shinawase_deploy"` (non-interactive; the deploy user, key and server site are already set up, so never pass `-Setup` for routine releases; the SSH port comes from the user's `~/.ssh/config`). It streams everything over one ssh session, reloads nginx and verifies the public URLs. Agents must not type the server password: the user runs this (one password prompt) or has installed a key. Manual equivalent: upload the **contents** of `mirror-out` to the server's web root for `/shinawase/` (`/var/www/shinawase/` in `scripts/update-mirror/nginx.conf.example`). Use the access the user provides for the session (for example `scp -r ./mirror-out/* <user>@<host>:/var/www/shinawase/` with their key or approval). Do not ask for, store, echo or write server passwords into the repo, logs, memory files or commit messages. If you have no server access, stop after step 2 and hand the user the exact upload command.
+4. Verify from the outside, read-only. All of these must return 200, and `mirror-manifest.json` must show the version you just released:
+
+   ```bash
+   curl -s http://43.248.10.82/shinawase/mirror-manifest.json
+   curl -sI http://43.248.10.82/shinawase/mirror-manifest.sig
+   curl -sI http://43.248.10.82/shinawase/ShinawaseLoader-main.zip
+   ```
+
+   Optionally run a real update against a throwaway copy with `SHINAWASE_UPDATE_MIRRORS` pointing at the mirror and check `Logs/loader.log` for `via mirror:`.
+5. Remove `mirror-out` afterwards (it is git-ignored, `/mirror-*/`).
+
+Do not weaken the trust model to make publishing easier: loader updates must stay Ed25519-signed, Node stays pinned by `nodeSha256`, npm stays pinned by `package-lock.json`. Rotating the signing key means shipping the new public key in a loader release **before** signing anything with the new private key.
+
 ### Build the Mod Market catalog
 
 ```powershell

@@ -9,6 +9,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './runtime-sync.mjs';
+import { DEFAULT_UPDATE_MIRRORS, UPDATE_PACKAGES, UPDATE_REPO, acquireLock, createDeadline, createSourceHealth, dropStaleCache, fetchBuffer, fetchFirstValid, fetchSmallFromSources, isNetworkFailure, normalizeMirrorBases, parseMirrorManifest } from './update-net.mjs';
 import {
   DARWIN_APP_NAMES,
   echoUserDataDirectory,
@@ -88,7 +89,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.3';
+const loaderVersion = '1.7.4';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
@@ -2813,21 +2814,36 @@ const printList = () => {
   }
 };
 
-const UPDATE_SKIP = new Set(['node.exe', 'node_modules', 'logs', 'backups', 'modded-runtime', 'loader-state.json', 'loader.config.json', 'loader-debug.log', '.git', '.processed']);
-const UPDATE_REPO = 'ChunchunOwO/ShinawaseLoader';
+const UPDATE_SKIP = new Set(['node.exe', 'node_modules', 'logs', 'backups', 'modded-runtime', 'loader-state.json', 'loader.config.json', 'loader-debug.log', '.git', '.processed', '.update-staging', '.update-backup', '.api-token']);
 const updateUsesOfficialSource = () => readJson(selectionPath, {}).nodeMirror === 'official';
-const updateJsonBases = () => updateUsesOfficialSource()
-  ? [`https://raw.githubusercontent.com/${UPDATE_REPO}/main`]
-  : [`https://ghproxy.net/https://raw.githubusercontent.com/${UPDATE_REPO}/main`];
-const updateArchiveUrls = () => updateUsesOfficialSource()
-  ? [`https://codeload.github.com/${UPDATE_REPO}/zip/refs/heads/main`]
-  : [`https://ghproxy.net/https://github.com/${UPDATE_REPO}/archive/refs/heads/main.zip`];
-const UPDATE_PACKAGES = [
-  { id: 'echo.community-streaming', manifest: 'examples/ECHO-Streaming/echomod/echo.mod.json', file: 'examples/packages/ECHO-Streaming.echomod' },
-  { id: 'echo.mv', manifest: 'examples/ECHO-MV/echomod/echo.mod.json', file: 'examples/packages/ECHO-MV.echomod' },
-  { id: 'echo.lyrics-match-whitebox', manifest: 'examples/ECHO-LyricsMatchWhitebox/echomod/echo.mod.json', file: 'examples/packages/ECHO-LyricsMatchWhitebox.echomod' },
-];
+// Source order: the maintainer's signed mirror first (see update-net.mjs), then
+// the GitHub mirror, then GitHub itself. Users who picked "official" skip the proxy.
+const githubUpdateSources = () => updateUsesOfficialSource()
+  ? [{ id: 'github', raw: `https://raw.githubusercontent.com/${UPDATE_REPO}/main`, archive: `https://codeload.github.com/${UPDATE_REPO}/zip/refs/heads/main` }]
+  : [
+    { id: 'ghproxy', raw: `https://ghproxy.net/https://raw.githubusercontent.com/${UPDATE_REPO}/main`, archive: `https://ghproxy.net/https://github.com/${UPDATE_REPO}/archive/refs/heads/main.zip` },
+    { id: 'github', raw: `https://raw.githubusercontent.com/${UPDATE_REPO}/main`, archive: `https://codeload.github.com/${UPDATE_REPO}/zip/refs/heads/main` },
+  ];
+const updateMirrorBases = () => {
+  const fromEnv = process.env.SHINAWASE_UPDATE_MIRRORS;
+  if (fromEnv !== undefined) return normalizeMirrorBases(fromEnv.split(','));
+  if (updateUsesOfficialSource()) return []; // "Official sources (direct)" was chosen in setup
+  const configured = readJson(loaderConfigPath, loaderConfig).updateMirrors;
+  return normalizeMirrorBases(Array.isArray(configured) ? configured : DEFAULT_UPDATE_MIRRORS);
+};
 const updateStampPath = join(logsRoot, 'last-self-update.json');
+const updateLockPath = join(logsRoot, 'update.lock');
+const updateCacheDir = join(logsRoot, 'update-cache');
+// Launch-time (auto) runs have a hard 45s budget so a bad network can never hold
+// ECHO's startup hostage; downloads keep their .part files and resume next time.
+// Manual runs (the Update button) are patient but still stall-detected.
+const makeUpdateContext = (auto) => {
+  const limits = auto
+    ? { headersMs: 6000, stallMs: 12000, minBps: 200 * 1024, totalMs: 45000 }
+    : { headersMs: 15000, stallMs: 20000, minBps: 40 * 1024, totalMs: 20 * 60 * 1000 };
+  return { ...limits, deadline: createDeadline(limits.totalMs), health: createSourceHealth() };
+};
+const netOptions = (ctx, extra = {}) => ({ headersMs: ctx.headersMs, stallMs: ctx.stallMs, minBps: ctx.minBps, deadline: ctx.deadline, health: ctx.health, onAttempt: (candidate, code) => log('INFO', code ? `update source ${candidate.id} failed: ${code}` : `update source ${candidate.id} ok`), ...extra });
 const compareVersions = (left, right) => {
   const parts = (value) => String(value || '0').split(/[^\d]+/u).map((part) => Number(part) || 0);
   const a = parts(left);
@@ -2839,65 +2855,120 @@ const compareVersions = (left, right) => {
   }
   return 0;
 };
-const fetchUpdateOnce = async (url, timeoutMs, asJson) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal, headers: { 'user-agent': `ShinawaseLoader/${loaderVersion}` } });
-    if (!response.ok) throw new Error(`http_${response.status}`);
-    return asJson ? await response.json() : Buffer.from(await response.arrayBuffer());
-  } finally { clearTimeout(timer); }
-};
-const fetchUpdateJson = async (path, timeoutMs = 15000) => {
-  let lastError;
-  for (const base of updateJsonBases()) {
-    try { return await fetchUpdateOnce(`${base}/${path}`, timeoutMs, true); }
-    catch (error) { lastError = error; }
-  }
-  throw lastError || new Error('update_unreachable');
-};
-const fetchUpdateBuffer = async (pathOrUrl, timeoutMs = 120000) => {
-  const urls = /^https?:/i.test(pathOrUrl)
-    ? [pathOrUrl]
-    : updateJsonBases().map((base) => `${base}/${pathOrUrl}`);
-  let lastError;
-  for (const url of urls) {
-    try { return await fetchUpdateOnce(url, timeoutMs, false); }
-    catch (error) { lastError = error; }
-  }
-  throw lastError || new Error('update_unreachable');
-};
-const checkSelfUpdate = async () => {
-  const remoteLoader = await fetchUpdateJson('ShinawaseLoader/loader-version.json');
-  const remote = String(remoteLoader?.version || '');
-  const packages = [];
-  for (const item of UPDATE_PACKAGES) {
+const localPackageVersion = (id) => readJson(join(modsRoot, 'installed', id, 'echo.mod.json'), {}).version || null;
+const checkUpdateMirror = async (ctx) => {
+  for (const base of updateMirrorBases()) {
+    const id = `mirror:${base}`;
+    if (ctx.health.isDown(id)) continue;
     try {
-      const remoteManifest = await fetchUpdateJson(item.manifest);
-      const localManifest = readJson(join(modsRoot, 'installed', item.id, 'echo.mod.json'), {});
-      const remoteVersion = String(remoteManifest?.version || '');
-      packages.push({
-        id: item.id,
-        file: item.file,
-        local: localManifest.version || null,
-        remote: remoteVersion,
-        updateAvailable: compareVersions(remoteVersion, localManifest.version || '0') > 0,
-      });
+      const manifestBytes = await fetchBuffer(`${base}/mirror-manifest.json`, { headersMs: ctx.headersMs, stallMs: ctx.stallMs, deadline: ctx.deadline, maxBytes: 256 * 1024 });
+      const signature = (await fetchBuffer(`${base}/mirror-manifest.sig`, { headersMs: ctx.headersMs, stallMs: ctx.stallMs, deadline: ctx.deadline, maxBytes: 4096 })).toString('utf8');
+      return { base, id, manifest: parseMirrorManifest(manifestBytes, signature) };
     } catch (error) {
-      packages.push({ id: item.id, error: error instanceof Error ? error.message : String(error) });
+      const code = error?.code || (error instanceof Error ? error.message : String(error));
+      log('INFO', `update mirror ${base} unavailable: ${code}`);
+      if (code === 'update_deadline') throw error;
+      if (isNetworkFailure(error)) ctx.health.down(id);
     }
   }
+  return null;
+};
+const githubUpdateJson = async (ctx, rel) => {
+  const { data } = await fetchSmallFromSources(githubUpdateSources().map((source) => ({ id: source.id, url: `${source.raw}/${rel}` })), netOptions(ctx));
+  return JSON.parse(data.toString('utf8'));
+};
+const inspectUpdates = async (ctx) => {
+  const mirror = await checkUpdateMirror(ctx);
+  let remote;
+  let packages;
+  if (mirror) {
+    remote = mirror.manifest.loader.version;
+    packages = UPDATE_PACKAGES.map((item) => {
+      const entry = mirror.manifest.packages.find((candidate) => candidate.id === item.id);
+      const local = localPackageVersion(item.id);
+      if (!entry) return { id: item.id, file: item.file, local, remote: null, updateAvailable: false };
+      return { id: item.id, file: entry.file, sha256: entry.sha256, size: entry.size, local, remote: entry.version, updateAvailable: compareVersions(entry.version, local || '0') > 0 };
+    });
+  } else {
+    const remoteLoader = await githubUpdateJson(ctx, 'ShinawaseLoader/loader-version.json');
+    remote = String(remoteLoader?.version || '');
+    packages = [];
+    for (const item of UPDATE_PACKAGES) {
+      try {
+        const remoteManifest = await githubUpdateJson(ctx, item.manifest);
+        const local = localPackageVersion(item.id);
+        const remoteVersion = String(remoteManifest?.version || '');
+        packages.push({ id: item.id, file: item.file, local, remote: remoteVersion, updateAvailable: compareVersions(remoteVersion, local || '0') > 0 });
+      } catch (error) {
+        if (error?.code === 'update_deadline') throw error;
+        packages.push({ id: item.id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+  const loaderUpdate = compareVersions(remote, loaderVersion) > 0;
   return {
-    ok: true,
-    local: loaderVersion,
-    remote,
-    updateAvailable: compareVersions(remote, loaderVersion) > 0 || packages.some((item) => item.updateAvailable),
-    loaderUpdate: compareVersions(remote, loaderVersion) > 0,
-    packages,
+    status: { ok: true, local: loaderVersion, remote, updateAvailable: loaderUpdate || packages.some((item) => item.updateAvailable), loaderUpdate, packages, via: mirror ? 'mirror' : 'github' },
+    mirror,
   };
 };
+const checkSelfUpdate = async () => (await inspectUpdates(makeUpdateContext(false))).status;
+
+// Files are staged first, then swapped in one by one with a backup, so a failure
+// (or a kill) part-way rolls back to the previous files instead of leaving a mix.
+const applyLoaderFiles = (files) => {
+  const staging = join(root, '.update-staging');
+  const backup = join(root, '.update-backup');
+  rmSync(staging, { recursive: true, force: true });
+  rmSync(backup, { recursive: true, force: true });
+  const plan = [];
+  try {
+    for (const file of files) {
+      const normalized = String(file.path || '').replaceAll('\\', '/');
+      const marker = '/ShinawaseLoader/';
+      const at = normalized.indexOf(marker);
+      if (at < 0) continue;
+      const relativePath = normalized.slice(at + marker.length);
+      if (!relativePath || relativePath.endsWith('/')) continue;
+      const top = relativePath.split('/')[0];
+      if (UPDATE_SKIP.has(top.toLowerCase()) || UPDATE_SKIP.has(relativePath.toLowerCase())) continue;
+      if (relativePath.split('/').includes('..')) continue;
+      const target = join(root, relativePath);
+      if (relative(root, target).startsWith('..')) continue;
+      const staged = join(staging, relativePath);
+      mkdirSync(dirname(staged), { recursive: true });
+      writeFileSync(staged, file.data);
+      plan.push({ relativePath, staged, target });
+    }
+    const swapped = [];
+    try {
+      for (const item of plan) {
+        mkdirSync(dirname(item.target), { recursive: true });
+        const hadOld = existsSync(item.target);
+        if (hadOld) {
+          const saved = join(backup, item.relativePath);
+          mkdirSync(dirname(saved), { recursive: true });
+          copyFileSync(item.target, saved);
+        }
+        try { renameSync(item.staged, item.target); } catch { copyFileSync(item.staged, item.target); }
+        swapped.push({ ...item, hadOld });
+      }
+    } catch (error) {
+      for (const item of swapped.reverse()) {
+        try {
+          if (item.hadOld) copyFileSync(join(backup, item.relativePath), item.target);
+          else rmSync(item.target, { force: true });
+        } catch { /* best effort */ }
+      }
+      throw error;
+    }
+    return plan.length;
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+    rmSync(backup, { recursive: true, force: true });
+  }
+};
+
 const applySelfUpdate = async (options = {}) => {
-  const quiet = options.quiet === true;
   const force = options.force === true;
   const auto = options.auto === true;
   const config = readJson(loaderConfigPath, loaderConfig);
@@ -2906,83 +2977,93 @@ const applySelfUpdate = async (options = {}) => {
     return { ok: true, skipped: 'disabled', local: loaderVersion };
   }
   const stamp = readJson(updateStampPath, {});
-  if (auto && !force && Number(stamp.checkedAt) && Date.now() - Number(stamp.checkedAt) < 10 * 60 * 1000) {
+  if (auto && !force && Number(stamp.checkedAt) && Date.now() - Number(stamp.checkedAt) < 10 * 60 * 1000 && !stamp.failedAt) {
     log('INFO', 'self-update skipped: checked recently');
     return { ok: true, skipped: 'recent', local: loaderVersion, remote: stamp.remote || null };
   }
-  let status;
-  try {
-    status = await checkSelfUpdate();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    log('WARN', `self-update check failed: ${message}`);
-    return { ok: false, local: loaderVersion, error: message };
+  if (auto && !force && Number(stamp.failedAt) && Date.now() - Number(stamp.failedAt) < 5 * 60 * 1000) {
+    log('INFO', 'self-update skipped: failed recently');
+    return { ok: true, skipped: 'recent-failure', local: loaderVersion, remote: stamp.remote || null };
   }
-  if (!status.updateAvailable) {
-    writeJson(updateStampPath, { checkedAt: Date.now(), local: loaderVersion, remote: status.remote });
-    log('INFO', `self-update idle local=${loaderVersion} remote=${status.remote}`);
-    return { ok: true, updated: false, ...status };
+  const release = acquireLock(updateLockPath);
+  if (!release) {
+    log('INFO', 'self-update skipped: another update is running');
+    return auto ? { ok: true, skipped: 'busy', local: loaderVersion } : { ok: false, local: loaderVersion, error: 'update_in_progress' };
   }
-  const applied = [];
-  try {
-    if (status.loaderUpdate) {
-      let archive;
-      let lastError;
-      for (const url of updateArchiveUrls()) {
-        try { archive = await fetchUpdateBuffer(url); break; }
-        catch (error) { lastError = error; }
-      }
-      if (!archive) throw lastError || new Error('update_archive_unreachable');
-      const files = readZip(archive, { maxEntries: 20000, maxBytes: 256 * 1024 * 1024 });
-      const versionFile = files.find((file) => String(file.path || '').replaceAll('\\', '/').endsWith('/ShinawaseLoader/loader-version.json'));
-      if (!versionFile || String(JSON.parse(versionFile.data.toString('utf8')).version || '') !== status.remote) {
-        throw new Error('update_archive_version_mismatch');
-      }
-      for (const file of files) {
-        const normalized = String(file.path || '').replaceAll('\\', '/');
-        const marker = '/ShinawaseLoader/';
-        const at = normalized.indexOf(marker);
-        if (at < 0) continue;
-        const relativePath = normalized.slice(at + marker.length);
-        if (!relativePath || relativePath.endsWith('/')) continue;
-        const top = relativePath.split('/')[0];
-        if (UPDATE_SKIP.has(top.toLowerCase()) || UPDATE_SKIP.has(relativePath.toLowerCase())) continue;
-        if (relativePath.split('/').includes('..')) continue;
-        const target = join(root, relativePath);
-        if (relative(root, target).startsWith('..')) continue;
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, file.data);
-      }
-      applied.push({ kind: 'loader', version: status.remote });
-      log('INFO', `self-update loader ${loaderVersion} -> ${status.remote}`);
-    }
-    for (const item of status.packages.filter((entry) => entry.updateAvailable && entry.file)) {
-      const bytes = await fetchUpdateBuffer(item.file);
-      const temp = join(logsRoot, `update-${item.id}.echomod`);
-      mkdirSync(logsRoot, { recursive: true });
-      writeFileSync(temp, bytes);
-      try {
-        const manifest = importPackage(temp);
-        applied.push({ kind: 'package', id: manifest.id, version: manifest.version || item.remote });
-        log('INFO', `self-update package ${manifest.id} v${manifest.version || item.remote}`);
-      } finally {
-        rmSync(temp, { force: true });
-      }
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    log('WARN', `self-update apply failed: ${message}`);
-    return { ok: false, local: loaderVersion, remote: status.remote, applied, error: message };
-  }
-  writeJson(updateStampPath, { checkedAt: Date.now(), local: loaderVersion, remote: status.remote, applied });
-  return {
-    ok: true,
-    updated: applied.length > 0,
-    local: loaderVersion,
-    remote: status.remote,
-    applied,
-    restart: status.loaderUpdate,
+  const ctx = makeUpdateContext(auto);
+  const fail = (message, extra = {}) => {
+    log('WARN', `self-update failed: ${message}`);
+    writeJson(updateStampPath, { ...stamp, failedAt: Date.now(), error: message });
+    return { ok: false, local: loaderVersion, error: message, ...extra };
   };
+  try {
+    dropStaleCache(updateCacheDir);
+    let inspected;
+    try {
+      inspected = await inspectUpdates(ctx);
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    const { status, mirror } = inspected;
+    if (!status.updateAvailable) {
+      writeJson(updateStampPath, { checkedAt: Date.now(), local: loaderVersion, remote: status.remote });
+      log('INFO', `self-update idle local=${loaderVersion} remote=${status.remote} via=${status.via}`);
+      return { ok: true, updated: false, ...status };
+    }
+    const applied = [];
+    try {
+      if (status.loaderUpdate) {
+        const candidates = [];
+        if (mirror) candidates.push({ id: mirror.id, url: `${mirror.base}/${mirror.manifest.loader.archive}`, sha256: mirror.manifest.loader.sha256, size: mirror.manifest.loader.size });
+        for (const source of githubUpdateSources()) candidates.push({ id: source.id, url: source.archive });
+        let files = null;
+        const { source } = await fetchFirstValid(candidates, {
+          ...netOptions(ctx),
+          cacheDir: updateCacheDir,
+          cacheName: 'loader',
+          maxBytes: 256 * 1024 * 1024,
+          validate: (data) => {
+            const entries = readZip(data, { maxEntries: 20000, maxBytes: 256 * 1024 * 1024 });
+            const versionFile = entries.find((file) => String(file.path || '').replaceAll('\\', '/').endsWith('/ShinawaseLoader/loader-version.json'));
+            if (!versionFile || String(JSON.parse(versionFile.data.toString('utf8')).version || '') !== status.remote) throw new Error('update_archive_version_mismatch');
+            files = entries;
+          },
+        });
+        applyLoaderFiles(files);
+        applied.push({ kind: 'loader', version: status.remote, source: source.id });
+        log('INFO', `self-update loader ${loaderVersion} -> ${status.remote} via ${source.id}`);
+      }
+      for (const item of status.packages.filter((entry) => entry.updateAvailable && entry.file)) {
+        const candidates = [];
+        if (mirror && item.sha256) candidates.push({ id: mirror.id, url: `${mirror.base}/${item.file}`, sha256: item.sha256, size: item.size });
+        for (const source of githubUpdateSources()) candidates.push({ id: source.id, url: `${source.raw}/${item.file}` });
+        const { data: bytes, source } = await fetchFirstValid(candidates, { ...netOptions(ctx), cacheDir: updateCacheDir, cacheName: `pkg-${item.id}` });
+        const temp = join(logsRoot, `update-${item.id}.echomod`);
+        mkdirSync(logsRoot, { recursive: true });
+        writeFileSync(temp, bytes);
+        try {
+          const manifest = importPackage(temp);
+          applied.push({ kind: 'package', id: manifest.id, version: manifest.version || item.remote, source: source.id });
+          log('INFO', `self-update package ${manifest.id} v${manifest.version || item.remote} via ${source.id}`);
+        } finally {
+          rmSync(temp, { force: true });
+        }
+      }
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error), { remote: status.remote, applied });
+    }
+    writeJson(updateStampPath, { checkedAt: Date.now(), local: loaderVersion, remote: status.remote, applied });
+    return {
+      ok: true,
+      updated: applied.length > 0,
+      local: loaderVersion,
+      remote: status.remote,
+      applied,
+      restart: status.loaderUpdate,
+    };
+  } finally {
+    release();
+  }
 };
 
 const run = async () => {
@@ -2993,7 +3074,8 @@ const run = async () => {
       auto: hasFlag('--auto') || hasFlag('--quiet'),
     });
     if (!hasFlag('--quiet')) printLogo(result.remote || loaderVersion);
-    console.log(JSON.stringify(result, null, hasFlag('--quiet') ? 0 : 2));
+    // Exit explicitly once stdout is flushed: idle keep-alive sockets must not delay the launcher.
+    process.stdout.write(`${JSON.stringify(result, null, hasFlag('--quiet') ? 0 : 2)}\n`, () => process.exit(0));
     return;
   }
   if (!locale) locale = await promptLocale();

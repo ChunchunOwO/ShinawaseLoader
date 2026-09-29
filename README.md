@@ -57,7 +57,7 @@ cd ShinawaseLoader
 .\setup-modloader.bat -Action menu
 ```
 
-首次安装前可在主菜单选择「下载源」。默认使用镜像：Node 可选华为云、阿里云或 npmmirror，npm 包和原生构建头文件使用 npmmirror，Loader 自更新使用 ghproxy。也可选择「官方源（直连）」让这些下载全部走官方地址。选择保存在当前用户的 `selection.json`，安装器和已安装 Loader 的后续更新共用；已有缓存不会重复下载。Mod Market 的包仍由目录中各作者提供的地址下载。
+首次安装前可在主菜单选择「下载源」。默认使用镜像：Node 可选华为云、阿里云或 npmmirror，npm 包和原生构建头文件使用 npmmirror，Loader 自更新使用 ghproxy。安装器与自更新会先尝试自建下载镜像（默认 `http://43.248.10.82/shinawase`，提供 Node、npm 代理和经 Ed25519 签名的 Loader 更新包；搭建方法见 [`scripts/update-mirror/README.md`](scripts/update-mirror/README.md)），失败或内容校验不通过时自动改用上面的公共来源；可用 `loader.config.json` 的 `updateMirrors`、环境变量 `SHINAWASE_UPDATE_MIRRORS`（更新）/`SHINAWASE_MIRRORS`（安装器）覆盖，写 `none` 关闭。也可选择「官方源（直连）」让这些下载全部走官方地址。选择保存在当前用户的 `selection.json`，安装器和已安装 Loader 的后续更新共用；已有缓存不会重复下载。Mod Market 的包仍由目录中各作者提供的地址下载。
 
 安装结束后会进入 **可选包**：默认勾选 **ECHO Streaming** 和 **ECHO MV**。空格开关，Enter 导入到游戏 `Mods`。其他示例已归档为 [`examples/reference/`](examples/reference/) 参考 Mod，不出现在安装列表里。
 
@@ -116,7 +116,7 @@ macOS 安装器只认包含 `ECHO.app` 的目录（Steam 一般是 `~/Library/Ap
 
 `node ShinawaseLoader.mjs sync-runtime [--force]` 对照 Steam 的 `app.asar` / `ECHO.exe` 指纹，刷新隔离运行时。Steam 更新后启动 `start-echo-with-mods.cmd` 或 `ECHO.modded.exe` 也会自动做这一步。
 
-`node ShinawaseLoader.mjs self-update [--force]` 从主菜单选定的下载源更新 Loader 与预装包。双击 `ECHO.modded.exe` 时默认自动执行；可在 `loader.config.json` 设 `"autoUpdate": false` 关闭。
+`node ShinawaseLoader.mjs self-update [--force]` 从主菜单选定的下载源更新 Loader 与预装包。双击 `ECHO.modded.exe` 时默认自动执行；可在 `loader.config.json` 设 `"autoUpdate": false` 关闭。双击 `ECHO.modded.exe` 时的自动更新最多占用启动 45 秒，之后放弃并在下次继续（未完成的下载会断点续传）。
 
 `--load-mode` 取值：`external-cdp`（默认）、`attach-only`、`disabled`。
 
