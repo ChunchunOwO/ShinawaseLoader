@@ -24,7 +24,7 @@ $loaderSource = Join-Path $ProjectRoot 'ShinawaseLoader'
 $loaderTarget = Join-Path $releaseRoot 'ShinawaseLoader'
 New-Item -ItemType Directory -Force -Path $loaderTarget | Out-Null
 Get-ChildItem -LiteralPath $loaderSource -Force |
-  Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'Logs', 'backups', 'native-host.json') } |
+  Where-Object { $_.Name -notin @('node.exe', 'loader-state.json', 'loader-debug.log', 'Logs', 'backups', 'native-host.json', '.api-token') } |
   ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $loaderTarget $_.Name) -Recurse -Force }
 
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'setup-modloader.bat') -Destination $releaseRoot

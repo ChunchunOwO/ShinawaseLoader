@@ -5,7 +5,7 @@ import { basename, dirname, extname, join, normalize, relative, resolve } from '
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './runtime-sync.mjs';
@@ -264,6 +264,27 @@ const setDebugMode = (enabled) => {
   return debugMode;
 };
 const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.port || defaultPort));
+
+// Browser pages can reach 127.0.0.1, so the API refuses (a) Host headers that are
+// not loopback (DNS rebinding) and (b) any request carrying an Origin header
+// without the per-install token, which only the renderer receives (loader UI, plus
+// the apiAuthShim page patch that lets existing mods call /api/* unchanged).
+// Non-browser clients (testing SDK, PowerShell, curl) send no Origin and pass.
+const apiTokenPath = join(root, '.api-token');
+const apiToken = (() => {
+  try {
+    const saved = readFileSync(apiTokenPath, 'utf8').trim();
+    if (/^[0-9a-f]{48}$/u.test(saved)) return saved;
+  } catch {}
+  const fresh = randomBytes(24).toString('hex');
+  try { writeFileSync(apiTokenPath, fresh, { mode: 0o600 }); } catch {}
+  return fresh;
+})();
+const hasApiToken = (request) => {
+  const given = Buffer.from(String(request.headers['x-shinawase-token'] || ''));
+  const expected = Buffer.from(apiToken);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+};
 const debugPort = Number(option('--debug-port', process.env.ECHO_MOD_DEBUG_PORT || loaderConfig.debugPort || defaultDebugPort));
 const nativeHostEnabled = !safeMode && loaderConfig.nativeHost !== false && !hasFlag('--no-native-host');
 const nativeMemoryApi = nativeHostEnabled && loaderConfig.nativeMemoryApi !== false;
@@ -835,6 +856,7 @@ const injectLoaderUi = async (session) => {
       expression: [
         '(() => {',
         `const LOADER_PORT = ${Number(port)};`,
+        `const LOADER_TOKEN = ${JSON.stringify(apiToken)};`,
         `const LOADER_VERSION = ${JSON.stringify(loaderVersion)};`,
         `let LOADER_LOCALE = ${JSON.stringify(locale || 'zh')};`,
         `const LOCALES = ${JSON.stringify({ zh: i18nCopy.zh, en: i18nCopy.en })};`,
@@ -1558,7 +1580,46 @@ const injectionPlan = (id, stateEntry) => {
 // Single readiness + injection-state probe. It also applies the streaming echo
 // proxy patch in place, replacing what used to be three round trips per target
 // per cycle (ready check, echo patch, state snapshot) with one.
+// Existing mods call ${baseUrl}/api/* directly with fetch/XMLHttpRequest. The
+// loader API requires a token for browser requests, so this idempotent page
+// patch (same style as the echo proxy patch below) attaches it to requests that
+// target this loader's own port, letting those mods run unmodified.
+const apiAuthShim = `(() => {
+  const st = window.__echoShinawaseApiAuth || (window.__echoShinawaseApiAuth = {});
+  st.port = ${Number(port)};
+  st.token = ${JSON.stringify(apiToken)};
+  if (st.patched) return;
+  st.patched = true;
+  const isLoaderApi = (value) => {
+    try {
+      const u = new URL(String(value), location.href);
+      return u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) && Number(u.port) === st.port && u.pathname.startsWith('/api/');
+    } catch { return false; }
+  };
+  const nativeFetch = window.fetch;
+  window.fetch = function (input, init) {
+    const url = input instanceof Request ? input.url : input;
+    if (!isLoaderApi(url)) return nativeFetch.apply(this, arguments);
+    const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+    headers.set('x-shinawase-token', st.token);
+    return input instanceof Request
+      ? nativeFetch.call(this, new Request(input, { ...init, headers }))
+      : nativeFetch.call(this, input, { ...init, headers });
+  };
+  const nativeOpen = XMLHttpRequest.prototype.open;
+  const nativeSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this.__shinawaseLoaderApi = isLoaderApi(url);
+    return nativeOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function () {
+    if (this.__shinawaseLoaderApi) { try { this.setRequestHeader('x-shinawase-token', st.token); } catch {} }
+    return nativeSend.apply(this, arguments);
+  };
+})();`;
+
 const targetProbeExpression = `(() => {
+  ${apiAuthShim}
   const href = String(location.href || '');
   const title = String(document.title || '');
   const windowType = (() => {
@@ -1620,7 +1681,7 @@ const injectEnabled = async () => {
       const targetState = probe?.result?.value;
       if (targetState?.ready !== true) continue;
       lastCycleReadyCount += 1;
-      const uiReloaded = targetState.uiVersion < 61;
+      const uiReloaded = targetState.uiVersion < 63;
       if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
       if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
       if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
@@ -2111,7 +2172,12 @@ const launchEcho = () => {
 
 const jsonResponse = (response, status, value) => {
   const text = JSON.stringify(value);
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' });
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': 'content-type, x-shinawase-token',
+    'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  });
   response.end(text);
 };
 const readRequest = async (request) => {
@@ -2405,7 +2471,14 @@ const uploadMarketMod = async (bytes, name) => {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://127.0.0.1:${port}`);
+    const hostHeader = String(request.headers.host || '').toLowerCase();
+    if (![`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(hostHeader)) {
+      return jsonResponse(response, 403, { error: 'host_not_allowed' });
+    }
     if (request.method === 'OPTIONS') return jsonResponse(response, 204, {});
+    if (request.headers.origin !== undefined && !hasApiToken(request)) {
+      return jsonResponse(response, 403, { error: 'api_token_required' });
+    }
     if (request.method === 'GET' && url.pathname === '/') {
       return jsonResponse(response, 200, { ok: true, service: 'ShinawaseLoader', version: loaderVersion });
     }

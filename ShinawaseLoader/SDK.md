@@ -20,6 +20,8 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `fetchJson(url, options)`, `uploadFile(input)`: Loader-mediated HTTP helpers.
 - `toast(message)`, `console.debug/info/warn/error`, `log(...)`: user feedback and Logs output.
 
+The Loader API only answers `127.0.0.1`, `localhost`, and `[::1]` Host headers. Requests that carry an `Origin` header (any browser context, including the ECHO renderer) must send `x-shinawase-token`; the injected Loader UI receives it as `LOADER_TOKEN`, and it is stored in `ShinawaseLoader/.api-token`. In the ECHO main window the Loader patches `fetch` and `XMLHttpRequest` to add the header automatically for calls to its own `/api/*`, so mods that call `${baseUrl}/api/...` directly keep working unchanged (`sendBeacon`, `EventSource`, and `WebSocket` cannot carry the header). Non-browser clients (the Testing SDK, PowerShell, `curl`) send no `Origin` and need no token.
+
 `GET /api/sdk` reports the `window.echo` namespaces available in the current ECHO build. `GET /api/status` reports active launch mode, performance settings, folder locations, and the aligned Echo target (`echoTarget`, including `runtime` fingerprint vs the live Steam asar). `GET /api/runtime` / `POST /api/runtime/sync` inspect or force-refresh the isolated Mod runtime after a Steam update.
 
 Use `echo-external-mod.d.ts` for editor hints in JavaScript or TypeScript projects. The external SDK tracks the public bridge present in the installed build; it intentionally does not depend on ECHO's built-in plugin runtime.
@@ -184,13 +186,13 @@ File and config routes work for installed packages even when the package is disa
 
 | Member | Signature | Notes |
 | --- | --- | --- |
-| `root` | `HTMLElement` | Modal body. The custom page may replace its contents. |
+| `root` | `HTMLElement` | Body of the config sheet (a side panel). The custom page may replace its contents. |
 | `modId` | `string` | Installed package id. |
 | `manifest` | `object` | Package manifest. |
 | `schema` | `object \| null` | Parsed `configSchema`, if any. |
 | `config` | `object` | Deep clone of the current config (`structuredClone`, JSON fallback). |
 | `save(next)` | `(next) => Promise<object>` | `PUT /api/mod/:id/config`. Toasts on success and returns the saved config. Does **not** close the modal. |
-| `close()` | `() => void` | Close the modal. |
+| `close()` | `() => void` | Close the config sheet. |
 | `toast(message, type?)` | `(message, type?) => void` | Loader toast. `type` is `info`, `success`, `error`, or `warn`. |
 | `onSave(handler)` | `(handler) => void` | Shows the default Save button. Clicking it `await`s `handler()`. A returned plain object is PUT then the modal closes; a void/null return only closes. |
 | `assetUrl(path)` | `(path) => string` | URL for a packaged file. |
