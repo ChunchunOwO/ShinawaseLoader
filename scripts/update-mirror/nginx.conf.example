@@ -1,5 +1,6 @@
 # Example nginx site for the ShinawaseLoader download mirror (Ubuntu: put this in
-# /etc/nginx/conf.d/shinawase.conf, then `nginx -t && systemctl reload nginx`).
+# /etc/nginx/conf.d/shinawase.conf, remove the stock site with
+# `rm -f /etc/nginx/sites-enabled/default`, then `nginx -t && systemctl reload nginx`).
 #
 # Serves, under /shinawase/:
 #   static files from /var/www/shinawase   (output of scripts/build-update-mirror.mjs)
@@ -11,7 +12,7 @@
 proxy_cache_path /var/cache/nginx/shinawase-npm levels=1:2 keys_zone=shinawase_npm:50m max_size=5g inactive=30d use_temp_path=off;
 
 server {
-    listen 80;
+    listen 80 default_server;   # requests by bare IP must land here, not on the stock site
     server_name _;
 
     # --- static mirror files ------------------------------------------------
