@@ -51,3 +51,29 @@ required for safety but stops on-path parties from seeing what is downloaded.
 - Launch-time updates have a 45 s budget; a partial download is kept and resumed.
 - A mirror lagging behind GitHub is authoritative while reachable: publish after each
   release.
+
+## Unattended uploads (dedicated deploy key)
+
+Routine releases only replace static files, so they need no root access. One-time setup,
+typed by the server owner (the only time a password is used):
+
+```powershell
+# 1. a key used for nothing else (no passphrase => usable by automation)
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\shinawase_deploy" -N '""' -C shinawase-deploy
+# 2. a limited account that owns only the mirror folder
+ssh root@43.248.10.82 "id deploy >/dev/null 2>&1 || useradd -m -s /bin/bash deploy; mkdir -p /var/www/shinawase ~deploy/.ssh; chown -R deploy:deploy /var/www/shinawase ~deploy/.ssh; chmod 700 ~deploy/.ssh"
+# 3. authorise the key with restrictions (no forwarding, no pty)
+$pub = Get-Content "$env:USERPROFILE\.ssh\shinawase_deploy.pub"
+ssh root@43.248.10.82 "echo 'restrict $pub' >> ~deploy/.ssh/authorized_keys; chown deploy:deploy ~deploy/.ssh/authorized_keys; chmod 600 ~deploy/.ssh/authorized_keys"
+# 4. first deploy with -Setup as root (installs nginx); after that the deploy user is enough
+```
+
+After that, every release is non-interactive and can be run by an agent:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-mirror\deploy.ps1 -Server deploy@43.248.10.82 -Key "$env:USERPROFILE\.ssh\shinawase_deploy"
+```
+
+The deploy user can only change mirror files, and everything clients accept from the mirror is
+signature/hash-checked, so a stolen deploy key cannot ship code to users (the signing key
+stays on the build machine only).

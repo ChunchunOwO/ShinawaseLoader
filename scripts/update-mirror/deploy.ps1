@@ -8,6 +8,7 @@
 # nginx and the mirror site (replaces the stock default site). Then it checks the public URLs.
 param(
   [string]$Server = 'root@43.248.10.82',
+  [string]$Key = '',   # dedicated deploy key => fully non-interactive (BatchMode), no password ever
   [string]$MirrorDir = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'mirror-out'),
   [switch]$Setup
 )
@@ -35,8 +36,7 @@ mkdir -p /var/www/shinawase
 if command -v rsync >/dev/null; then rsync -a --delete $D/www/ /var/www/shinawase/
 else rm -rf /var/www/shinawase/* && cp -a $D/www/. /var/www/shinawase/; fi
 chmod -R a+rX /var/www/shinawase
-nginx -t
-systemctl reload nginx
+if [ "$SETUP" = "1" ]; then nginx -t && systemctl reload nginx; fi   # static files need no reload
 rm -rf $D
 echo deployed
 '@
@@ -46,7 +46,8 @@ echo deployed
   # one ssh session = one password prompt: stream the archive in, unpack, run
   # cmd's `type | ssh` keeps the bytes raw (a PowerShell 5.1 pipeline would mangle the binary tar)
   $remoteCmd = "rm -rf /tmp/shinawase-deploy && mkdir -p /tmp/shinawase-deploy && tar -xf - -C /tmp/shinawase-deploy && SETUP=$flag bash /tmp/shinawase-deploy/run.sh"
-  cmd.exe /c "type `"$tar`" | ssh $Server `"$remoteCmd`""
+  $sshOpts = if ($Key) { "-i `"$Key`" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15" } else { "" }
+  cmd.exe /c "type `"$tar`" | ssh $sshOpts $Server `"$remoteCmd`""
   if ($LASTEXITCODE -ne 0) { throw "Deploy failed (exit $LASTEXITCODE)." }
 } finally {
   Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
