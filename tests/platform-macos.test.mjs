@@ -79,7 +79,7 @@ test('windows path formulas stay on the historical AppData locations', () => {
   );
 });
 
-test('darwin uses Application Support and the ECHO.app bundle', () => {
+test('darwin uses Application Support and the ECHO.app bundle', { skip: process.platform !== 'darwin' }, () => {
   const home = '/Users/player';
   assert.equal(
     loaderStateDirectory({ platform: 'darwin', env: { APPDATA: 'ignored' }, home }),
@@ -128,7 +128,7 @@ const touchEchoApp = (contentRoot, appName) => {
   return executable;
 };
 
-test('darwin discovery prefers the Steam install and skips Playtest and modded copies', () => {
+test('darwin discovery prefers the Steam install and skips Playtest and modded copies', { skip: process.platform !== 'darwin' }, () => {
   const root = mkdtempSync(join(tmpdir(), 'shinawase-find-'));
   try {
     const home = join(root, 'home');
