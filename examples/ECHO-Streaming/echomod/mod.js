@@ -43,6 +43,17 @@ const ncmCopy = chinese ? {
 };
 copy.dailyOpenStreaming = chinese ? '这个每日歌单不能写入本地歌单，已在流媒体页打开。' : 'This daily list cannot be written to a local playlist, so it opened on the Streaming page.';
 copy.playlistPlaceholderShort = chinese ? '粘贴歌单链接' : 'Paste a playlist URL';
+copy.nativePlayPlaylist = chinese ? '播放歌单' : 'Play playlist';
+copy.nativeAddQueue = chinese ? '添加到队列' : 'Add to queue';
+copy.nativeRenamePlaylist = chinese ? '重命名歌单' : 'Rename playlist';
+copy.nativeDeletePlaylist = chinese ? '删除歌单' : 'Delete playlist';
+copy.nativeDeleteConfirm = (name) => (chinese ? `删除歌单“${name}”？` : `Delete playlist "${name}"?`);
+copy.nativeRenameDone = chinese ? '歌单已重命名' : 'Playlist renamed';
+copy.nativeRenameFailed = chinese ? '重命名歌单失败' : 'Rename failed';
+copy.nativeDeleteFailed = chinese ? '删除歌单失败' : 'Failed to delete playlist';
+copy.nativePlayFailed = chinese ? '这个歌单暂时没有可播放的歌曲。' : 'This playlist has no playable tracks yet.';
+copy.nativeQueueFailed = chinese ? '没能加入队列，请在歌单详情页再试一次。' : 'Could not queue it. Try again from the playlist page.';
+copy.nativeListMissing = chinese ? '读取不到歌单列表，请稍后重试。' : 'Could not read the playlist list. Try again in a moment.';
 const stored = (() => { try { return external.settings?.get?.() || {}; } catch { return {}; } })();
 const togetherUi = {
   snapshot: { loggedIn: false, inRoom: false, users: [], invites: [], friends: [], playlistIds: [] },
@@ -3462,6 +3473,363 @@ const installNativePlaylistImport = () => {
     form.append(input, submit, status);
     header.insertAdjacentElement('afterend', form);
   };
+  const nativeMenuStyleId = 'echo-streaming-native-playlist-menu-style';
+  const nativeMenuMarker = 'data-echo-streaming-native-playlist-menu';
+  const nativeRenameMarker = 'data-echo-streaming-native-rename-input';
+  const nativeRenameHidden = 'data-echo-streaming-native-rename-hidden';
+  const nativeMenuIconPaths = {
+    play: '<path d="m6 4 14 8-14 8z" fill="currentColor"/>',
+    list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>',
+  };
+  const nativeMenuIcon = (name, size) => lucideSvg(size, nativeMenuIconPaths[name] || '');
+  const ensureNativeMenuStyle = () => {
+    if (document.getElementById(nativeMenuStyleId)) return;
+    const style = document.createElement('style');
+    style.id = nativeMenuStyleId;
+    style.textContent = `
+      .echo-native-playlist-menu[role="menu"] {
+        position: fixed; z-index: 320; display: grid; width: 236px;
+        max-height: calc(100vh - 16px); gap: 1px; padding: 8px;
+        overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+        border: 1px solid var(--theme-panel-border, rgba(128, 128, 128, .28));
+        border-radius: 14px;
+        background: var(--echo-polish-surface-strong, var(--theme-panel-bg-strong, #23262f));
+        box-shadow: 0 14px 38px #141e2b29, inset 0 1px 0 var(--theme-panel-bg-strong, rgba(255, 255, 255, .05));
+        transform-origin: top left;
+        animation: echo-streaming-native-menu-in .12s cubic-bezier(.16, 1, .3, 1) both;
+      }
+      .echo-native-playlist-menu[role="menu"]::-webkit-scrollbar { display: none; width: 0; height: 0; }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item {
+        display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center;
+        gap: 9px; min-height: 34px; padding: 0 9px;
+        color: var(--theme-page-text, inherit);
+        border: 0; border-radius: 8px; background: transparent;
+        cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 800; text-align: left;
+      }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item svg { color: currentColor; }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item:hover:not(:disabled) { background: var(--theme-accent-bg, rgba(120, 120, 128, .16)); }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item:disabled { cursor: default; opacity: .36; }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item:disabled:hover { background: transparent; }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item[data-section-break="true"] { margin-top: 7px; box-shadow: 0 -7px 0 -6px var(--theme-panel-border, rgba(128, 128, 128, .28)); }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item[data-danger="true"],
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item[data-danger="true"] svg { color: var(--theme-danger-text, #ff9ead); }
+      .echo-native-playlist-menu[role="menu"] .echo-native-playlist-menu-item[data-danger="true"]:hover:not(:disabled) { background: var(--theme-danger-bg, rgba(237, 92, 112, .15)); }
+      .collection-playlist-list .collection-playlist-nav-item .echo-native-playlist-rename {
+        display: inline-block; box-sizing: border-box;
+        width: 100%; min-width: 0;
+        margin: 0; padding: 1px 2px 2px;
+        border: 0;
+        border-bottom: 2px solid color-mix(in srgb, var(--playlist-accent-strong, var(--theme-accent, currentColor)) 52%, transparent);
+        border-radius: 0;
+        outline: none; appearance: none;
+        color: var(--playlist-heading, var(--theme-heading-text, inherit));
+        background: transparent;
+        font-family: inherit; font-size: 12.5px; font-weight: 700; line-height: 1.3; letter-spacing: inherit;
+        box-shadow: none;
+      }
+      .collection-playlist-list .collection-playlist-nav-item .echo-native-playlist-rename:focus {
+        border-bottom-color: var(--playlist-accent-strong, var(--theme-accent, currentColor));
+        background: color-mix(in srgb, var(--theme-field-bg, transparent) 34%, transparent);
+      }
+      .collection-playlist-list .collection-playlist-nav-item .collection-playlist-nav-name[data-echo-streaming-native-rename-hidden] { display: none; }
+      @keyframes echo-streaming-native-menu-in { 0% { opacity: 0 } to { opacity: 1 } }
+    `;
+    document.head.append(style);
+  };
+  let openNativeMenuNode = null;
+  let openNativeMenuRow = null;
+  let dismissNativeMenu = null;
+  const closeNativeMenu = () => {
+    const dismiss = dismissNativeMenu;
+    dismissNativeMenu = null;
+    openNativeMenuRow = null;
+    try { dismiss?.(); } catch {}
+    openNativeMenuNode?.remove();
+    openNativeMenuNode = null;
+  };
+  const openNativeMenu = (event, entries, anchor) => {
+    const items = (entries || []).filter(Boolean);
+    if (!items.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeNativeMenu();
+    ensureNativeMenuStyle();
+    const menu = document.createElement('div');
+    menu.className = 'echo-native-playlist-menu';
+    menu.setAttribute(nativeMenuMarker, 'true');
+    menu.setAttribute('role', 'menu');
+    items.forEach((entry) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'echo-native-playlist-menu-item';
+      item.setAttribute('role', 'menuitem');
+      if (entry.sectionBreak) item.setAttribute('data-section-break', 'true');
+      if (entry.danger) item.setAttribute('data-danger', 'true');
+      item.innerHTML = nativeMenuIcon(entry.icon, 15);
+      item.append(make('span', '', entry.label));
+      if (entry.disabled) item.disabled = true;
+      item.addEventListener('click', (clickEvent) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+        closeNativeMenu();
+        void Promise.resolve(entry.onSelect?.())
+          .catch((error) => showChromeNotice(error instanceof Error ? error.message : String(error)));
+      });
+      menu.append(item);
+    });
+    document.body.append(menu);
+    const place = () => {
+      const rect = menu.getBoundingClientRect();
+      menu.style.left = `${Math.round(Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8)))}px`;
+      menu.style.top = `${Math.round(Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8)))}px`;
+    };
+    place();
+    const onPointerDown = (pointerEvent) => { if (!menu.contains(pointerEvent.target)) closeNativeMenu(); };
+    const onKeyDown = (keyEvent) => { if (keyEvent.key === 'Escape') closeNativeMenu(); };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', closeNativeMenu);
+    dismissNativeMenu = () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', closeNativeMenu);
+    };
+    openNativeMenuNode = menu;
+    openNativeMenuRow = anchor || null;
+  };
+  const sidebarRowName = (row) => String(row?.querySelector('.collection-playlist-nav-name')?.textContent || row?.getAttribute('title') || '').trim();
+  const sidebarRowCount = (row) => {
+    const text = String(row?.querySelector('.collection-playlist-nav-count')?.textContent || '');
+    const digits = text.replace(/[^\d]/g, '');
+    return digits ? Number(digits) : null;
+  };
+  const reactKeyOf = (node) => {
+    try {
+      const key = Object.keys(node || {}).find((name) => name.startsWith('__reactFiber$') || name.startsWith('__reactInternalInstance$'));
+      const value = key ? node[key]?.key : null;
+      return typeof value === 'string' && value ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  const rowPlaylistInfo = (row) => {
+    const id = reactKeyOf(row);
+    if (!id) return null;
+    return {
+      id,
+      name: sidebarRowName(row),
+      itemCount: sidebarRowCount(row),
+      kind: String(row?.dataset?.kind || 'manual'),
+    };
+  };
+  let playlistCache = { at: 0, items: [] };
+  const fetchPlaylists = async (force = false) => {
+    const api = libraryApi();
+    if (typeof api?.getPlaylists !== 'function') return null;
+    if (!force && playlistCache.items.length && Date.now() - playlistCache.at < 4000) return playlistCache.items;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const raw = await api.getPlaylists();
+        const all = Array.isArray(raw) ? raw : (Array.isArray(raw?.playlists) ? raw.playlists : (Array.isArray(raw?.items) ? raw.items : []));
+        if (all.length) {
+          playlistCache = { at: Date.now(), items: all };
+          return all;
+        }
+      } catch (error) {
+        log('getPlaylists failed', error instanceof Error ? error.message : String(error));
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 180 * (attempt + 1)));
+    }
+    return playlistCache.items.length ? playlistCache.items : null;
+  };
+  const resolveSidebarPlaylist = async (row) => {
+    const direct = rowPlaylistInfo(row);
+    if (direct) return direct;
+    const all = await fetchPlaylists();
+    if (!all) return null;
+    const name = sidebarRowName(row);
+    if (!name) return null;
+    const sameName = all.filter((item) => String(item?.name ?? '') === name);
+    if (sameName.length === 1) return sameName[0];
+    if (sameName.length > 1) {
+      const count = sidebarRowCount(row);
+      const byCount = count === null ? sameName : sameName.filter((item) => Number(item?.itemCount) === count);
+      const pool = byCount.length ? byCount : sameName;
+      const rows = [...(row.closest('.collection-playlist-list')?.querySelectorAll('.collection-playlist-nav-item--playlist') || [])]
+        .filter((node) => sidebarRowName(node) === name);
+      const index = rows.indexOf(row);
+      if (index >= 0 && pool[index]) return pool[index];
+      return pool[0];
+    }
+    return null;
+  };
+  const waitForNative = async (probe, timeout = 4000) => {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      let value = null;
+      try { value = probe(); } catch { value = null; }
+      if (value) return value;
+      if (Date.now() > deadline) return null;
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    }
+  };
+  const detailActionButton = (surface, kind, allowDisabled = false) => {
+    const actions = surface?.querySelector('.playlist-detail-primary-actions');
+    if (!actions) return null;
+    const button = kind === 'queue'
+      ? actions.querySelector(':scope > button.secondary-action')
+      : actions.querySelector(':scope > button.primary-action');
+    if (!button) return null;
+    return allowDisabled || !button.disabled ? button : null;
+  };
+  const detailTitleText = (surface) => String(surface?.querySelector('.playlist-detail-title')?.textContent || '').trim();
+  const runDetailAction = async (row, kind) => {
+    const name = sidebarRowName(row);
+    if (!name) return false;
+    if (row.getAttribute('data-active') !== 'true') row.click();
+    const button = await waitForNative(() => {
+      const surface = livePlaylistsSurface();
+      if (!surface || !isNativeChrome(surface) || detailTitleText(surface) !== name) return null;
+      return detailActionButton(surface, kind);
+    }, 6000);
+    if (!button) {
+      showChromeNotice(kind === 'queue' ? copy.nativeQueueFailed : copy.nativePlayFailed);
+      return false;
+    }
+    button.click();
+    return true;
+  };
+  const commitSidebarRename = async (playlist, nextName) => {
+    const api = libraryApi();
+    if (typeof api?.updatePlaylist !== 'function') {
+      showChromeNotice(copy.noBridge);
+      return;
+    }
+    try {
+      await api.updatePlaylist({ playlistId: playlist.id, name: nextName });
+      playlistCache.at = 0;
+      window.dispatchEvent(new Event('library:playlists-changed'));
+      showChromeNotice(copy.nativeRenameDone);
+    } catch (error) {
+      showChromeNotice(`${copy.nativeRenameFailed}：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  const beginSidebarRename = async (row) => {
+    if (!row?.isConnected || row.querySelector(`[${nativeRenameMarker}]`)) return;
+    const nameEl = row.querySelector('.collection-playlist-nav-name');
+    if (!nameEl) return;
+    const playlist = await resolveSidebarPlaylist(row);
+    if (!playlist?.id) {
+      showChromeNotice(copy.nativeListMissing);
+      return;
+    }
+    const current = String(playlist.name ?? nameEl.textContent ?? '');
+    ensureNativeMenuStyle();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'echo-native-playlist-rename';
+    input.setAttribute(nativeRenameMarker, 'true');
+    input.setAttribute('aria-label', copy.nativeRenamePlaylist);
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.value = current;
+    const previousDraggable = row.getAttribute('draggable');
+    row.setAttribute('draggable', 'false');
+    const swallow = (event) => event.stopPropagation();
+    let settled = false;
+    const restore = () => {
+      input.remove();
+      nameEl.removeAttribute(nativeRenameHidden);
+      if (previousDraggable === null) row.removeAttribute('draggable');
+      else row.setAttribute('draggable', previousDraggable);
+    };
+    const finish = (commit) => {
+      if (settled) return;
+      settled = true;
+      input.removeEventListener('blur', onBlur);
+      const nextName = input.value.trim();
+      restore();
+      if (commit && nextName && nextName !== current) void commitSidebarRename(playlist, nextName);
+    };
+    const onBlur = () => finish(true);
+    ['pointerdown', 'mousedown', 'click', 'dblclick', 'input'].forEach((type) => input.addEventListener(type, swallow));
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+      else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', onBlur);
+    nameEl.setAttribute(nativeRenameHidden, 'true');
+    nameEl.after(input);
+    window.requestAnimationFrame(() => {
+      if (!input.isConnected) return;
+      input.focus();
+      try { input.select(); } catch {}
+    });
+  };
+  const repairSidebarRename = () => {
+    for (const nameEl of document.querySelectorAll(`.collection-playlist-nav-name[${nativeRenameHidden}]`)) {
+      if (nameEl.nextElementSibling?.matches?.(`[${nativeRenameMarker}]`)) continue;
+      nameEl.removeAttribute(nativeRenameHidden);
+    }
+  };
+  const deleteSidebarPlaylist = async (row) => {
+    const api = libraryApi();
+    if (typeof api?.deletePlaylist !== 'function') {
+      showChromeNotice(copy.noBridge);
+      return;
+    }
+    const playlist = await resolveSidebarPlaylist(row);
+    if (!playlist?.id) {
+      showChromeNotice(copy.nativeListMissing);
+      return;
+    }
+    const name = String(playlist.name ?? sidebarRowName(row));
+    if (!window.confirm(copy.nativeDeleteConfirm(name))) return;
+    try {
+      await api.deletePlaylist(playlist.id);
+      playlistCache.at = 0;
+      window.dispatchEvent(new Event('library:playlists-changed'));
+      leaveCollectionHome();
+    } catch (error) {
+      showChromeNotice(`${copy.nativeDeleteFailed}：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  const leaveCollectionHome = (attempt = 0) => {
+    window.setTimeout(() => {
+      let stillHome = false;
+      try {
+        const home = document.querySelector('.playlist-collection-home');
+        stillHome = Boolean(home);
+        home?.querySelector('.playlist-home-grid > button')?.click();
+      } catch {}
+      if (stillHome && attempt < 7) leaveCollectionHome(attempt + 1);
+    }, attempt === 0 ? 320 : 260);
+  };
+  const onNativePlaylistContextMenu = (event) => {
+    const row = event.target?.closest?.('.collection-playlist-nav-item--playlist');
+    if (!row || !isNativeChrome(row)) return;
+    const kind = String(row.dataset.kind || 'manual');
+    const editable = kind !== 'system';
+    const entries = [
+      { label: copy.nativePlayPlaylist, icon: 'play', onSelect: () => runDetailAction(row, 'play') },
+      { label: copy.nativeAddQueue, icon: 'list', onSelect: () => runDetailAction(row, 'queue') },
+    ];
+    if (editable) {
+      entries.push({ label: copy.nativeRenamePlaylist, icon: 'pencil', onSelect: () => beginSidebarRename(row) });
+      entries.push({
+        label: copy.nativeDeletePlaylist,
+        icon: 'trash',
+        danger: true,
+        sectionBreak: true,
+        onSelect: () => deleteSidebarPlaylist(row),
+      });
+    }
+    openNativeMenu(event, entries, row);
+  };
   const dailyMarker = 'data-echo-streaming-daily';
   const dailyDetailMarker = 'data-echo-streaming-daily-detail';
   const dailyStyleId = 'echo-streaming-daily-native-style';
@@ -3714,6 +4082,8 @@ const installNativePlaylistImport = () => {
     mountDaily();
     mountDailyDetail();
     ensureLinkRow(findSidebar());
+    if (openNativeMenuRow && !openNativeMenuRow.isConnected) closeNativeMenu();
+    repairSidebarRename();
     return true;
   };
   let mountTimer = 0;
@@ -3748,7 +4118,15 @@ const installNativePlaylistImport = () => {
     window.clearTimeout(mountTimer);
     window.clearInterval(poll);
     paintNativeDailyPanel = () => {};
+    document.removeEventListener('contextmenu', onNativePlaylistContextMenu, true);
+    closeNativeMenu();
+    for (const node of document.querySelectorAll(`[${nativeMenuMarker}]`)) node.remove();
+    for (const node of document.querySelectorAll(`[${nativeRenameMarker}]`)) {
+      node.previousElementSibling?.removeAttribute?.(nativeRenameHidden);
+      node.remove();
+    }
     for (const node of document.querySelectorAll(`[${buttonMarker}], form[${marker}], [${dailyMarker}], [${dailyDetailMarker}]`)) node.remove();
+    document.getElementById(nativeMenuStyleId)?.remove();
     document.getElementById(dailyStyleId)?.remove();
     document.getElementById(importStyleId)?.remove();
   };
