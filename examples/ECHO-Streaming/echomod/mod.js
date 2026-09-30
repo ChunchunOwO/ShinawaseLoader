@@ -3809,6 +3809,92 @@ const installNativePlaylistImport = () => {
       if (stillHome && attempt < 7) leaveCollectionHome(attempt + 1);
     }, attempt === 0 ? 320 : 260);
   };
+  const detailInlineRenameInput = () => document.querySelector('.playlist-detail-title-input');
+  const startDetailInlineRename = () => {
+    if (detailInlineRenameInput()) return false;
+    const title = document.querySelector('.playlist-detail-title');
+    if (!title || !title.hasAttribute('data-editable')) return false;
+    title.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, detail: 2 }));
+    void waitForNative(() => detailInlineRenameInput(), 1500).then((input) => {
+      if (!input) return;
+      try { input.focus(); input.select(); } catch {}
+    });
+    return true;
+  };
+  const renamePromptPattern = /重命名|重新命名|rename|umbenennen|renommer|переимен|renombrar|名を変更|名前を変更|바꾸기/iu;
+  const playlistRenamePrompts = new Set([
+    '重命名歌单', '重新命名歌單', 'Rename playlist', 'プレイリスト名を変更',
+    '재생목록 이름 바꾸기', 'Wiedergabeliste umbenennen', 'Renommer la liste de lecture',
+    'Переименовать плейлист', 'Renombrar lista',
+  ].map((text) => text.toLowerCase()));
+  const isPlaylistRenamePrompt = (message, defaultValue) => {
+    const text = String(message ?? '').trim();
+    if (!text) return false;
+    if (playlistRenamePrompts.has(text.toLowerCase())) {
+      const title = document.querySelector('.playlist-detail-title[data-editable]');
+      return !!title && String(defaultValue ?? '') === String(title.textContent || '').trim();
+    }
+    if (!renamePromptPattern.test(text)) return false;
+    if (/theme|主题|主題|外观|外觀|preset|预设|預設|自定义|自訂/iu.test(text)) return false;
+    const title = document.querySelector('.playlist-detail-title[data-editable]');
+    return !!title && String(defaultValue ?? '') === String(title.textContent || '').trim();
+  };
+  const originalPromptDescriptor = (() => {
+    try {
+      return {
+        own: Object.getOwnPropertyDescriptor(window, 'prompt'),
+        proto: Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'prompt'),
+      };
+    } catch {
+      return null;
+    }
+  })();
+  let renamePromptPatched = false;
+  const patchRenamePrompt = () => {
+    const original = typeof window.prompt === 'function' ? window.prompt : null;
+    const patched = function prompt(message, defaultValue) {
+      try {
+        if (isPlaylistRenamePrompt(message, defaultValue)) {
+          window.setTimeout(startDetailInlineRename, 0);
+          return null;
+        }
+      } catch {}
+      try { return original ? original.call(window, message, defaultValue) : null; } catch { return null; }
+    };
+    patched.echoStreamingRenamePatch = true;
+    try {
+      Object.defineProperty(window, 'prompt', { value: patched, writable: true, configurable: true, enumerable: false });
+      return window.prompt === patched;
+    } catch {
+      return false;
+    }
+  };
+  const restoreRenamePrompt = () => {
+    if (!renamePromptPatched) return;
+    try {
+      if (originalPromptDescriptor?.own) Object.defineProperty(window, 'prompt', originalPromptDescriptor.own);
+      else if (originalPromptDescriptor?.proto) delete window.prompt;
+      else delete window.prompt;
+    } catch {}
+    renamePromptPatched = false;
+  };
+  const closeNativeActionMenu = () => {
+    try { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); } catch {}
+  };
+  const onNativeRenameClick = (event) => {
+    const item = event.target?.closest?.('.playlist-action-menu-item');
+    if (!item) return;
+    const menu = item.closest('.playlist-action-menu');
+    if (!menu || !isNativeChrome(menu)) return;
+    if (!renamePromptPattern.test(String(item.textContent || ''))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeNativeMenu();
+    window.setTimeout(() => {
+      startDetailInlineRename();
+      closeNativeActionMenu();
+    }, 0);
+  };
   const onNativePlaylistContextMenu = (event) => {
     const row = event.target?.closest?.('.collection-playlist-nav-item--playlist');
     if (!row || !isNativeChrome(row)) return;
@@ -4135,8 +4221,10 @@ const installNativePlaylistImport = () => {
     window.clearInterval(poll);
     paintNativeDailyPanel = () => {};
     document.removeEventListener('contextmenu', onNativePlaylistContextMenu, true);
+    document.removeEventListener('click', onNativeRenameClick, true);
     document.getElementById(surfaceEnterGuardStyleId)?.remove();
     closeNativeMenu();
+    restoreRenamePrompt();
     for (const node of document.querySelectorAll(`[${nativeMenuMarker}]`)) node.remove();
     for (const node of document.querySelectorAll(`[${nativeRenameMarker}]`)) {
       node.previousElementSibling?.removeAttribute?.(nativeRenameHidden);
