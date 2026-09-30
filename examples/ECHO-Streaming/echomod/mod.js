@@ -2576,8 +2576,12 @@ const selectNativePlaylist = (imported) => {
   match.click();
   return true;
 };
-const openImportedPlaylist = async (imported) => {
+const announceLibraryChange = () => {
   window.dispatchEvent(new Event('library:playlists-changed'));
+  window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+};
+const openImportedPlaylist = async (imported) => {
+  announceLibraryChange();
   try { await libraryApi()?.getPlaylists?.(); } catch {}
   if (!imported?.playlistId && !imported?.playlistName) return false;
   const live = document.querySelector('.page-surface[data-route-id="playlists"]:not([hidden])');
@@ -2593,7 +2597,7 @@ const openImportedPlaylist = async (imported) => {
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await sleep(150);
     if (selectNativePlaylist(imported)) return true;
-    if (attempt === 3 || attempt === 10) window.dispatchEvent(new Event('library:playlists-changed'));
+    if (attempt === 3 || attempt === 10) announceLibraryChange();
   }
   return false;
 };
@@ -3103,13 +3107,14 @@ const syncAccountPlaylists = async (items) => {
   if (!stream?.importPlaylistFromUrl) throw new Error(copy.noBridge);
   let ok = 0;
   let failed = 0;
+  let lastImported = null;
   for (const playlist of items) {
     const id = String(playlist.providerPlaylistId || '').trim();
     if (!id) continue;
     state.syncingAccountPlaylistIds[id] = true;
     render();
     try {
-      await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist));
+      lastImported = await stream.importPlaylistFromUrl(playlist.webUrl || streamingPlaylistWebUrl(playlist));
       ok += 1;
     } catch {
       failed += 1;
@@ -3118,7 +3123,11 @@ const syncAccountPlaylists = async (items) => {
     }
   }
   state.selectedAccountPlaylistIds = {};
-  await openImportedPlaylist({ playlistId: true });
+  if (lastImported) await openImportedPlaylist(lastImported);
+  else {
+    window.dispatchEvent(new Event('library:playlists-changed'));
+    try { await libraryApi()?.getPlaylists?.(); } catch {}
+  }
   state.actionMessage = copy.synced(ok, failed);
   render();
 };
