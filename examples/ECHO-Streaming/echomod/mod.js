@@ -3830,6 +3830,22 @@ const installNativePlaylistImport = () => {
     }
     openNativeMenu(event, entries, row);
   };
+  const surfaceEnterGuardStyleId = 'echo-streaming-surface-enter-guard';
+  const ensureSurfaceEnterGuardStyle = () => {
+    if (document.getElementById(surfaceEnterGuardStyleId)) return;
+    const style = document.createElement('style');
+    style.id = surfaceEnterGuardStyleId;
+    style.textContent = '.app-shell .page-surface[data-motion-route="true"][data-route-enter="true"] { animation-play-state: running !important; }';
+    document.head.append(style);
+  };
+  ensureSurfaceEnterGuardStyle();
+  document.addEventListener('contextmenu', onNativePlaylistContextMenu, true);
+  renamePromptPatched = patchRenamePrompt();
+  if (!renamePromptPatched) {
+    document.addEventListener('click', onNativeRenameClick, true);
+    log('window.prompt could not be patched; falling back to intercepting the native rename menu item');
+  }
+
   const dailyMarker = 'data-echo-streaming-daily';
   const dailyDetailMarker = 'data-echo-streaming-daily-detail';
   const dailyStyleId = 'echo-streaming-daily-native-style';
@@ -4119,6 +4135,7 @@ const installNativePlaylistImport = () => {
     window.clearInterval(poll);
     paintNativeDailyPanel = () => {};
     document.removeEventListener('contextmenu', onNativePlaylistContextMenu, true);
+    document.getElementById(surfaceEnterGuardStyleId)?.remove();
     closeNativeMenu();
     for (const node of document.querySelectorAll(`[${nativeMenuMarker}]`)) node.remove();
     for (const node of document.querySelectorAll(`[${nativeRenameMarker}]`)) {

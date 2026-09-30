@@ -2268,6 +2268,7 @@ const pageHost = () => document.querySelector('.app-shell') || document.body;
 const attachPanel = (panel) => {
   const host = pageHost();
   if (panel && host && panel.parentElement !== host) host.append(panel);
+  watchPanelEntrance(panel);
 };
 const restoreNativeSurfaces = () => document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => {
   delete surface.dataset.echoExternalHidden;
@@ -2286,11 +2287,83 @@ const hideAllPanels = () => {
   });
   sidebarButtons.forEach((button) => { button.setAttribute('aria-current', 'false'); button.dataset.active = 'false'; });
 };
+let lastFrameAt = 0;
+const markFrame = () => {
+  lastFrameAt = Date.now();
+  window.requestAnimationFrame(markFrame);
+};
+window.requestAnimationFrame(markFrame);
+const framesStalled = (windowMs = 200) => Boolean(lastFrameAt) && Date.now() - lastFrameAt > windowMs;
+const stuckPanelAnimations = (panel) => {
+  const stuck = [];
+  let animations = [];
+  try { animations = panel.getAnimations({ subtree: true }); } catch { return stuck; }
+  for (const animation of animations) {
+    const effect = animation.effect;
+    const timing = effect && effect.getComputedTiming ? effect.getComputedTiming() : null;
+    if (!timing || timing.iterations === Infinity) continue;
+    if (effect && effect.pseudoElement) continue;
+    const state = animation.playState;
+    if (state === 'finished' || state === 'idle') continue;
+    if (state === 'running' && (Number(animation.currentTime) || 0) > 0) continue;
+    const target = effect && effect.target;
+    if (target) {
+      const opacity = Number(getComputedStyle(target).opacity);
+      if (Number.isFinite(opacity) && opacity > 0.05) continue;
+    }
+    stuck.push(animation);
+  }
+  return stuck;
+};
+const canFinish = (animation) => {
+  const effect = animation.effect;
+  if (!effect || typeof effect.getComputedTiming !== 'function') return false;
+  if (animation.playbackRate === 0) return false;
+  return effect.getComputedTiming().endTime !== Infinity;
+};
+const releasePanelEntrance = (panel) => {
+  if (!panel || typeof panel.getAnimations !== 'function') return;
+  const stuck = stuckPanelAnimations(panel);
+  if (!stuck.length) return;
+  if (framesStalled()) {
+    for (const animation of stuck) {
+      if (!canFinish(animation)) continue;
+      try { animation.finish(); } catch {}
+    }
+    return;
+  }
+  for (const animation of stuck) {
+    try { animation.play(); } catch {}
+  }
+  window.setTimeout(() => {
+    if (!framesStalled(80)) return;
+    for (const animation of stuck) {
+      const state = animation.playState;
+      if (state === 'finished' || state === 'idle') continue;
+      if (animation.startTime !== null && (Number(animation.currentTime) || 0) > 0) continue;
+      if (!canFinish(animation)) continue;
+      try { animation.finish(); } catch {}
+    }
+  }, 120);
+};
+const watchPanelEntrance = (panel) => {
+  if (!panel || typeof MutationObserver !== 'function') return;
+  if (panel.dataset.shlEntranceWatch === 'true') return;
+  panel.dataset.shlEntranceWatch = 'true';
+  const observer = new MutationObserver(() => {
+    if (panel.hidden) return;
+    void panel.offsetHeight;
+    releasePanelEntrance(panel);
+  });
+  observer.observe(panel, { childList: true, subtree: true });
+};
 const showPanel = (panel, button) => {
   attachPanel(panel);
   hideAllPanels();
   hideNativeSurfaces();
   panel.hidden = false;
+  void panel.offsetHeight;
+  releasePanelEntrance(panel);
   window.requestAnimationFrame(() => syncAllSegs(panel));
   activeNav = button;
   if (button) {
@@ -4856,6 +4929,8 @@ const mountSidebarPage = (entry) => {
   hideNativeSurfaces();
   attachPanel(page);
   page.hidden = false;
+  void page.offsetHeight;
+  releasePanelEntrance(page);
   activeSidebar = entry.id;
   sidebarButtons.forEach((button, id) => {
     const active = id === entry.id;
