@@ -3728,6 +3728,54 @@ const installNativePlaylistImport = () => {
     button.click();
     return true;
   };
+  const readPlaylistItems = async (api, id) => {
+    const all = [];
+    let page = 1;
+    for (;;) {
+      const result = await api.getPlaylistItems(id, { page, pageSize: 500 });
+      const items = result?.items || [];
+      all.push(...items);
+      if (!items.length || !result?.hasMore || all.length >= Number(result.total || 0)) break;
+      page += 1;
+      if (page > 40) break;
+    }
+    return all;
+  };
+  const queuePlaylistTracks = async (row) => {
+    const playlist = await resolveSidebarPlaylist(row);
+    if (!playlist?.id) return 0;
+    const api = libraryApi();
+    const store = findPlaybackQueue();
+    if (!api?.getPlaylistItems || !store?.appendTracksToQueue) return 0;
+    let raw = [];
+    try { raw = await readPlaylistItems(api, playlist.id); } catch { return 0; }
+    const items = raw
+      .filter((item) => item?.unavailable !== true)
+      .map((item) => (item?.mediaType === 'stream_track'
+        ? toLibraryTrack({
+          provider: item.sourceProvider,
+          providerTrackId: item.sourceItemId || String(item.mediaId || '').split(':').pop(),
+          title: item.titleSnapshot || '',
+          artist: item.artistSnapshot || '',
+          album: item.albumSnapshot || '',
+          albumArtist: item.albumArtistSnapshot || item.artistSnapshot || '',
+          duration: item.durationSnapshot,
+          coverThumb: item.coverThumb || item.coverUrl || null,
+          playable: item.unavailable !== true,
+        })
+        : item));
+    if (!items.length) return 0;
+    try {
+      store.appendTracksToQueue(items, sourceFor(playlist.sourceProvider || 'library', playlist.name));
+      return items.length;
+    } catch { return 0; }
+  };
+  const queueSidebarPlaylist = async (row) => {
+    const added = await queuePlaylistTracks(row);
+    if (added <= 0) return runDetailAction(row, 'queue');
+    showChromeNotice(`${copy.queued}（${added}）`);
+    return true;
+  };
   const commitSidebarRename = async (playlist, nextName) => {
     const api = libraryApi();
     if (typeof api?.updatePlaylist !== 'function') {
@@ -3930,7 +3978,7 @@ const installNativePlaylistImport = () => {
     const editable = kind !== 'system';
     const entries = [
       { label: copy.nativePlayPlaylist, icon: 'play', onSelect: () => runDetailAction(row, 'play') },
-      { label: copy.nativeAddQueue, icon: 'list', onSelect: () => runDetailAction(row, 'queue') },
+      { label: copy.nativeAddQueue, icon: 'list', onSelect: () => queueSidebarPlaylist(row) },
     ];
     if (editable) {
       entries.push({ label: copy.nativeRenamePlaylist, icon: 'pencil', onSelect: () => beginSidebarRename(row) });
