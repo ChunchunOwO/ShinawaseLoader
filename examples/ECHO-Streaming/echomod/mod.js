@@ -3610,6 +3610,23 @@ const installNativePlaylistImport = () => {
     openNativeMenuRow = anchor || null;
   };
   const sidebarRowName = (row) => String(row?.querySelector('.collection-playlist-nav-name')?.textContent || row?.getAttribute('title') || '').trim();
+  const isActiveSidebarRow = (row) => String(row?.getAttribute?.('data-active') ?? '') === 'true';
+  const sidebarPlaylistRows = () => [...document.querySelectorAll('button.collection-playlist-nav-item--playlist')]
+    .filter((el) => !el.closest('[data-echo-streaming-daily], .echo-streaming-daily-native'));
+  const focusSidebarSibling = async (row) => {
+    const rows = sidebarPlaylistRows();
+    const index = rows.indexOf(row);
+    if (index < 0) return false;
+    const next = rows[index + 1] || rows[index - 1];
+    const name = next ? sidebarRowName(next) : '';
+    if (!next || next === row || !name) return false;
+    try { next.click(); } catch { return false; }
+    const switched = await waitForNative(() => {
+      const current = sidebarPlaylistRows().find(isActiveSidebarRow);
+      return current && sidebarRowName(current) === name ? true : null;
+    }, 900);
+    return Boolean(switched);
+  };
   const sidebarRowCount = (row) => {
     const text = String(row?.querySelector('.collection-playlist-nav-count')?.textContent || '');
     const digits = text.replace(/[^\d]/g, '');
@@ -3798,11 +3815,13 @@ const installNativePlaylistImport = () => {
     }
     const name = String(playlist.name ?? sidebarRowName(row));
     if (!window.confirm(copy.nativeDeleteConfirm(name))) return;
+    const wasActive = isActiveSidebarRow(row);
+    const switched = wasActive ? await focusSidebarSibling(row) : false;
     try {
       await api.deletePlaylist(playlist.id);
       playlistCache.at = 0;
-      window.dispatchEvent(new Event('library:playlists-changed'));
-      leaveCollectionHome();
+      announceLibraryChange();
+      if (!switched) leaveCollectionHome();
     } catch (error) {
       showChromeNotice(`${copy.nativeDeleteFailed}：${error instanceof Error ? error.message : String(error)}`);
     }
