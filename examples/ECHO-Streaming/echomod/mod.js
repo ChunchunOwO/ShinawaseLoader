@@ -2552,7 +2552,15 @@ const selectNativePlaylist = (imported) => {
     || matches[0]
     || nodes.find((el) => nativePlaylistLabel(el).includes(name) && nativePlaylistHasTracks(el))
     || nodes.find((el) => nativePlaylistLabel(el).includes(name));
-  if (!match) return false;
+  if (!match) {
+    const home = surface.querySelector('.playlist-collection-home');
+    const cards = home ? [...home.querySelectorAll('.playlist-home-grid > button')] : [];
+    const card = cards.find((el) => nativePlaylistLabel(el) === name)
+      || cards.find((el) => nativePlaylistLabel(el).includes(name));
+    if (!card) return false;
+    card.click();
+    return true;
+  }
   if (match.getAttribute('data-active') === 'true') return true;
   match.click();
   return true;
@@ -3255,6 +3263,7 @@ const installNativePlaylistImport = () => {
     log(reason);
   };
   const buttonMarker = 'data-echo-streaming-import-button';
+  const linkMarker = 'data-echo-streaming-link-import';
   const livePlaylistsSurface = () => document.querySelector('.app-shell > .page-surface[data-route-id="playlists"]:not([hidden]), .page-surface[data-route-id="playlists"]:not([hidden])');
   const isNativeChrome = (node) => {
     if (!node?.isConnected) return false;
@@ -3291,17 +3300,36 @@ const installNativePlaylistImport = () => {
         .playlist-home-header:has([${buttonMarker}]),
         .playlist-home-header[data-onboarding="true"]:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) 40px 40px; }
       }
-      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) repeat(3, 34px); }
-      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import { grid-column: auto; }
-      .echo-streaming-link-import { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 8px 10px 2px; }
-      .echo-streaming-link-import input { min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--theme-panel-border, rgba(0,0,0,.12)); border-radius: 8px; background: var(--theme-input-bg, var(--theme-panel-bg, #fff)); color: inherit; font: inherit; }
-      .echo-streaming-link-import button[type="submit"] { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--theme-accent, #5b5ce6); color: #fff; font: 650 12px inherit; cursor: pointer; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) { grid-template-columns: minmax(0, 1fr) repeat(3, 34px); column-gap: 5px; row-gap: 4px; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) h1 { grid-column: 1 / -1; grid-row: 1; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}])::after { content: ''; grid-row: 2; grid-column: 1; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import,
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import:last-child { grid-column: auto; }
+      .collection-playlist-sidebar:has(> form[${linkMarker}]) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import,
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) [${buttonMarker}] {
+        width: 34px; height: 34px; padding: 0; place-items: center;
+        border: 1px solid var(--collection-card-border, var(--theme-panel-border, rgba(128, 128, 128, .28)));
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--theme-field-bg, transparent) 78%, transparent);
+        color: var(--theme-muted-text, #6c7179);
+      }
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) .collection-playlist-import:hover:not(:disabled),
+      .collection-playlist-sidebar-header:has([${buttonMarker}]) [${buttonMarker}]:hover {
+        color: var(--theme-accent-text-strong, #5b5ce6);
+        border-color: var(--theme-accent-border, currentColor);
+        background: var(--theme-accent-bg, rgba(120, 120, 128, 0.18));
+      }
+      .echo-streaming-link-import { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 0 2px; }
+      .echo-streaming-link-import input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--collection-card-border, var(--theme-panel-border, rgba(0,0,0,.12))); border-radius: 10px; background: color-mix(in srgb, var(--theme-field-bg, var(--theme-input-bg, transparent)) 78%, transparent); color: var(--theme-page-text, inherit); font: inherit; font-size: 12px; }
+      .echo-streaming-link-import button[type="submit"] { height: 34px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--theme-accent, #5b5ce6); color: #fff; font-family: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
       .echo-streaming-link-import button[type="submit"]:disabled { opacity: .45; cursor: default; }
       .echo-streaming-link-import-status { grid-column: 1 / -1; margin: 0; font-size: 11px; line-height: 1.4; color: var(--theme-muted-text, #6c7179); }
       .echo-streaming-link-import-status[data-error="true"] { color: var(--theme-danger, #c2414a); }
       [${buttonMarker}] { display: grid; width: 34px; height: 34px; place-items: center; flex: none; }
       .playlist-home-header [${buttonMarker}] { width: 40px; height: 40px; }
       .playlist-collection-home > .echo-streaming-import-form { display: flex; justify-self: end; width: auto; max-width: min(100%, 560px); }
+      .playlist-collection-home > .echo-streaming-link-import { margin: 0; }
       .collection-playlist-sidebar .echo-streaming-import-form,
       .playlist-sidebar .echo-streaming-import-form { margin: 4px 6px 8px; min-width: 0; }
     `;
@@ -3369,7 +3397,6 @@ const installNativePlaylistImport = () => {
     header.insertAdjacentElement('afterend', form);
     input.focus();
   };
-  const linkMarker = 'data-echo-streaming-link-import';
   const playlistUrlFromText = (value) => {
     const text = String(value || '').trim();
     const match = text.match(/https?:\/\/[^\s<>"']+/iu);
