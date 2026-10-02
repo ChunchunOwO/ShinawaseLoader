@@ -18,6 +18,21 @@ internal static class EchoModdedHost
         return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
     }
 
+    // The launcher is compiled as /target:winexe, so stderr is usually attached
+    // to no console at all. The log file is what makes a refused launch visible.
+    private static void LogHost(string loaderRoot, string message)
+    {
+        try
+        {
+            var logDir = Path.Combine(loaderRoot, "Logs");
+            Directory.CreateDirectory(logDir);
+            File.AppendAllText(Path.Combine(logDir, "modded-host.log"),
+                "[" + DateTime.UtcNow.ToString("o") + "] " + message + Environment.NewLine);
+        }
+        catch { }
+        try { Console.Error.WriteLine(message); } catch { }
+    }
+
     // Steam launch options `"…\ECHO.modded.exe" %command%` pass the stock
     // ECHO.exe path (and sometimes extra Steam tokens) as argv. Never forward
     // those into the isolated runtime — always launch modded-runtime\ECHO.exe.
@@ -126,14 +141,20 @@ internal static class EchoModdedHost
         var moddedExe = Path.Combine(loaderRoot, "modded-runtime", "ECHO.exe");
         if (!File.Exists(moddedExe))
         {
-            Console.Error.WriteLine("ECHO.modded.exe is not installed. Run setup-modloader.bat first.");
+            LogHost(loaderRoot, "ECHO.modded.exe is not installed. Run setup-modloader.bat first.");
             return 2;
         }
 
         bool acquired;
         using (var mutex = new System.Threading.Mutex(true, "Local\\ECHO-Modded-5105150", out acquired))
         {
-            if (!acquired) return 0;
+            if (!acquired)
+            {
+                // Exit silently here and the caller cannot tell "already running"
+                // from "started fine": CDP never opens, no Mod is injected.
+                LogHost(loaderRoot, "A modded ECHO from this folder is already running; this launch did nothing. Quit the running ECHO first (check for a leftover ECHO.modded.exe host process).");
+                return 4;
+            }
 
         var launchArgs = args.Where(value => !IsSteamCommandArg(value)).ToList();
         if (!launchArgs.Any(value => value.StartsWith("--remote-debugging-port=", StringComparison.OrdinalIgnoreCase)))
