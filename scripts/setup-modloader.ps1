@@ -82,6 +82,10 @@ $script:Strings = @{
     progressLaunch = '启动 ECHO'
     progressDone = '完成'
     openingEcho = '正在打开 ECHO...'
+    launchQuitExisting = '正在退出该目录中已在运行的 ECHO...'
+    launchCdpWaiting = '正在确认调试端口 (CDP)...'
+    launchCdpOk = '调试端口已就绪，注入通道可用喵'
+    launchCdpFail = 'ECHO 已启动，但调试端口 {0} 在 {1} 秒内没有响应，Mod 不会注入。请完全退出 ECHO（确认没有残留 ECHO.exe），再用 ECHO.modded.exe 重新启动；不要从 Steam 直接启动原版 ECHO.exe。'
     steamGuideTitle = '喵！不要直接取代 Steam 原版——请用独立启动器，并设置 Steam 启动项：'
     steamGuideStep1 = '1. Steam → 库 → ECHO → 属性 → 启动选项'
     steamGuideStep2 = '2. 粘贴下面这一行（已尽量复制到剪贴板）喵：'
@@ -145,6 +149,10 @@ $script:Strings = @{
     progressLaunch = 'start ECHO'
     progressDone = 'done'
     openingEcho = 'Opening ECHO...'
+    launchQuitExisting = 'Quitting ECHO already running from this folder...'
+    launchCdpWaiting = 'Checking the debug endpoint (CDP)...'
+    launchCdpOk = 'Debug endpoint is up, injection channel ready'
+    launchCdpFail = 'ECHO started but debug port {0} did not answer within {1} seconds, so no Mod is injected. Quit ECHO completely (no leftover ECHO.exe), then start it again with ECHO.modded.exe - not the Steam ECHO.exe.'
     steamGuideTitle = 'Meow! Do not replace the Steam build — use the independent launcher and set Steam launch options:'
     steamGuideStep1 = '1. Steam → Library → ECHO → Properties → Launch Options'
     steamGuideStep2 = '2. Paste this line (copied to clipboard when possible):'
@@ -1180,7 +1188,7 @@ function Install-OptionalPackages($selectedExe, $packages) {
       Write-SetupProgress $percent ((T 'progressPackages') + '  ' + $package.Name)
       $path = if ($package.Path) { $package.Path } else { Get-ExamplePackagePath $package.Folder }
       if (-not $path) { throw ("Package not found: {0}" -f $package.Folder) }
-      & $node $loader import $path | Out-Null
+      & $node $loader import $path --enable | Out-Null
       if ($LASTEXITCODE -ne 0) { throw ("Failed to import {0}" -f $package.Name) }
     }
   } finally {
@@ -1190,14 +1198,83 @@ function Install-OptionalPackages($selectedExe, $packages) {
   Write-SetupProgress 100 (T 'progressDone')
 }
 
+function Stop-EchoInRoot([string]$root) {
+  # Confined to this installation: ECHO.modded.exe is single-instance, so a
+  # leftover ECHO from another folder must never be killed here, and a leftover
+  # one from this folder would make the new launcher exit without any effect.
+  $patterns = @(
+    (Join-Path $root 'ECHO.exe'),
+    (Join-Path $root 'ECHO.modded.exe'),
+    (Join-Path $root 'ShinawaseLoader\modded-runtime\ECHO.exe')
+  )
+  $stopped = 0
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
+    $exePath = [string]$_.ExecutablePath
+    if (-not $exePath) { return }
+    foreach ($pattern in $patterns) {
+      # -ieq, not -like: a '[ ]' in a real path must not become a wildcard class.
+      if ($exePath -ieq $pattern) {
+        try {
+          Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
+          $stopped += 1
+        } catch {}
+        return
+      }
+    }
+  }
+  return $stopped
+}
+
+function Get-LoaderDebugPort([string]$loaderRoot) {
+  $config = Read-Json (Join-Path $loaderRoot 'loader.config.json') @{}
+  $port = 0
+  if ($config.debugPort) { $port = [int]$config.debugPort }
+  if ($port -le 0 -or $port -gt 65535) { $port = 9229 }
+  return $port
+}
+
+function Test-EchoCdpTarget([int]$Port) {
+  try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/json" -UseBasicParsing -TimeoutSec 2
+    $targets = $response.Content | ConvertFrom-Json
+    return (@(@($targets) | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl }).Count -gt 0)
+  } catch {
+    return $false
+  }
+}
+
+function Wait-EchoCdpTarget([int]$Port, [int]$Seconds) {
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-EchoCdpTarget $Port) { return $true }
+    Start-Sleep -Milliseconds 800
+  }
+  return $false
+}
+
 function Start-EchoWithProgress($selectedExe) {
   $root = Split-Path -Parent $selectedExe
   $modded = Join-Path $root 'ECHO.modded.exe'
+  $CdpWaitSeconds = 60
   Write-SetupProgress 35 (T 'progressLaunch')
   if (-not (Test-Path -LiteralPath $modded)) { throw 'ECHO.modded.exe is missing. Install the loader first.' }
+  $stoppedInRoot = Stop-EchoInRoot $root
+  if ($stoppedInRoot -gt 0) {
+    Write-SetupLine (("{0}  ({1})" -f (T 'launchQuitExisting'), $stoppedInRoot)) 'Yellow'
+    Start-Sleep -Seconds 2
+  }
   Write-SetupProgress 72 (T 'openingEcho')
   Start-Process -FilePath $modded -WorkingDirectory $root
-  Write-SetupProgress 100 (T 'progressDone')
+  $port = Get-LoaderDebugPort (Join-Path $root 'ShinawaseLoader')
+  Write-SetupProgress 88 ((T 'launchCdpWaiting') + "  127.0.0.1:$port")
+  if (Wait-EchoCdpTarget $port $CdpWaitSeconds) {
+    Write-SetupProgress 100 (T 'progressDone')
+    Write-SetupLine ((T 'launchCdpOk') + "  127.0.0.1:$port") 'Green'
+    return $true
+  }
+  $failure = (T 'launchCdpFail') -f $port, $CdpWaitSeconds
+  Write-SetupLine $failure 'Red'
+  return $false
 }
 
 function Get-SteamLaunchOptions([string]$echoRoot) {
@@ -1252,10 +1329,11 @@ function Complete-InstallAndLaunch($selectedExe, [bool]$Update, [bool]$EnableDir
   if ($chosen.Count) { Install-OptionalPackages $selectedExe $chosen }
   $echoRoot = Split-Path -Parent $selectedExe
   [void](Show-SteamLaunchGuide $echoRoot)
+  $launched = $true
   if (Read-YesNo (T 'steamGuideLaunchAsk') $true) {
-    Start-EchoWithProgress $selectedExe
+    $launched = [bool](Start-EchoWithProgress $selectedExe)
   }
-  Exit-Setup 0
+  Exit-Setup $(if ($launched) { 0 } else { 2 })
 }
 
 function Show-Status($selectedExe) {
@@ -1377,8 +1455,8 @@ function Invoke-Menu {
           if (-not (Test-Path -LiteralPath $modded)) {
             Complete-InstallAndLaunch $selected $false ([bool]$PatchApp)
           } else {
-            Start-EchoWithProgress $selected
-            Exit-Setup 0
+            if ([bool](Start-EchoWithProgress $selected)) { Exit-Setup 0 }
+            Pause-Menu
           }
           return
         } catch { Write-Host $_.Exception.Message -ForegroundColor Red; Pause-Menu }
@@ -1412,7 +1490,10 @@ try {
     'launch' {
       $modded = Join-Path (Split-Path -Parent $selected) 'ECHO.modded.exe'
       if (-not (Test-Path -LiteralPath $modded)) { Complete-InstallAndLaunch $selected $false ([bool]$PatchApp) }
-      else { Start-EchoWithProgress $selected; Exit-Setup 0 }
+      else {
+        $ok = [bool](Start-EchoWithProgress $selected)
+        Exit-Setup $(if ($ok) { 0 } else { 2 })
+      }
     }
     'uninstall' { Invoke-Uninstall $selected }
   }
