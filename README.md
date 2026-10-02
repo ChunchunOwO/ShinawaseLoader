@@ -131,6 +131,8 @@ Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目�
 
 调试、安全模式和附加启动器在 `ShinawaseLoader/` 下，扩展名是 `.sh`。Flatpak 或 Snap 版 Steam 看不到宿主机的 Node，所以安装器会把 Node 复制到 `ShinawaseLoader/node`（发行版自带、依赖共享库的 Node 复制后不能用，安装器会提示改用官方二进制）。userData 在 `~/.config/ECHO Steam`（遵循 `XDG_CONFIG_HOME`），Loader 自己的选择记录在 `~/.config/ShinawaseLoader/selection.json`。原生 host（`echo-native-host.node` / host-dll）仍只在 Windows 上构建，Linux 会跳过它，CDP 注入照常进行。
 
+与 Windows 安装器一样，Linux 安装器会在 `ShinawaseLoader/` 里跑一次 `npm install`，装上 streaming 桥要热加载的 `@neteasecloudmusicapienhanced/api`（缺它时网易云音源会退回已经 404 的裸接口）。来源依次是下载镜像的 `<base>/npm/` 和 `https://registry.npmmirror.com`，可用 `SHINAWASE_MIRRORS`（写 `none` 关闭镜像）与 `SHINAWASE_NPM_REGISTRY` 覆盖，或用 `--no-deps` 整个跳过；包内容仍由 `package-lock.json` 的 integrity 校验，镜像无法替换。装好且 lock 未变时不会重复下载，失败只提示不中断安装。macOS 安装器目前没有这一步，需要时手动 `npm --prefix "<游戏目录>/ShinawaseLoader" install`。
+
 如果 ECHO 因 `chrome-sandbox` 不是 root 的 setuid 文件而启动失败（常见于 Ubuntu 24.04 一类限制了非特权用户命名空间的发行版），原版同样会遇到；可以在启动项里追加 `--no-sandbox`，Loader 会原样传给 ECHO。
 
 ### 命令行旗标

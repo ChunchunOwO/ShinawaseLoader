@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DARWIN_APP_NAMES, installRootFromTarget, isPlaytestPath, rankEchoInstall } from '../ShinawaseLoader/platform.mjs';
+import { DEFAULT_UPDATE_MIRRORS, normalizeMirrorBases, sha256Hex } from '../ShinawaseLoader/update-net.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const copySkip = new Set([
@@ -118,6 +119,102 @@ export const writeCommand = (file, lines) => {
   writeFileSync(file, `${lines.join('\n')}\n`, 'utf8');
   chmodSync(file, 0o755);
 };
+
+// The streaming bridge hot-loads @neteasecloudmusicapienhanced/api from beside
+// streaming-bridge.cjs (ShinawaseLoader/package.json). Without it the netease
+// provider falls back to raw HTTP endpoints that now return 404, so the Windows
+// installer runs Install-StreamingBridgeDeps; this is the POSIX equivalent.
+// Contents stay pinned by package-lock.json integrity hashes, so a mirror cannot
+// alter what gets installed.
+const NPM_INSTALL_ARGS = [
+  'install',
+  '--omit=dev',
+  '--no-audit',
+  '--no-fund',
+  '--engine-strict=false',
+  '--replace-registry-host=always',
+  '--fetch-timeout=30000',
+  '--fetch-retries=1',
+];
+
+const DEPS_MARKER = ['node_modules', '@neteasecloudmusicapienhanced', 'api', 'package.json'];
+const LOCK_STAMP = ['node_modules', '.shinawase-deps-lock.sha256'];
+
+// SHINAWASE_MIRRORS overrides the built-in download mirrors ("none" disables them);
+// SHINAWASE_NPM_REGISTRY switches the public registry (e.g. https://registry.npmjs.org).
+export const npmRegistrySources = ({ env = process.env } = {}) => {
+  const bases = env.SHINAWASE_MIRRORS === undefined
+    ? normalizeMirrorBases(DEFAULT_UPDATE_MIRRORS)
+    : normalizeMirrorBases(String(env.SHINAWASE_MIRRORS).split(','));
+  const publicUrl = String(env.SHINAWASE_NPM_REGISTRY || 'https://registry.npmmirror.com').replace(/\/+$/u, '');
+  return [
+    ...bases.map((base) => ({ id: `mirror ${base}`, url: `${base}/npm/`, timeoutMs: 240_000 })),
+    { id: 'registry', url: publicUrl, timeoutMs: 900_000 },
+  ];
+};
+
+// Official Node ships npm inside <prefix>/lib, a distro Node only puts `npm` on PATH.
+export const resolveNpmRunner = ({
+  loaderRoot,
+  nodePath = process.execPath,
+  env = process.env,
+  exists = existsSync,
+} = {}) => {
+  const binDir = dirname(resolve(nodePath));
+  for (const cli of [
+    join(loaderRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(binDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(binDir), 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]) {
+    if (exists(cli)) return { file: nodePath, prefixArgs: [cli] };
+  }
+  return { file: env.SHINAWASE_NPM_BIN || 'npm', prefixArgs: [] };
+};
+
+export const installStreamingBridgeDeps = ({
+  loaderRoot,
+  nodePath = process.execPath,
+  env = process.env,
+  spawn = spawnSync,
+  registries = npmRegistrySources({ env }),
+  exists = existsSync,
+  readFile = (file) => readFileSync(file, 'utf8'),
+  writeFile = (file, data) => writeFileSync(file, data, 'utf8'),
+} = {}) => {
+  if (!exists(join(loaderRoot, 'package.json'))) return { status: 'skipped', reason: 'no_package_json' };
+  const marker = join(loaderRoot, ...DEPS_MARKER);
+  const stampFile = join(loaderRoot, ...LOCK_STAMP);
+  let lockHash = '';
+  try { lockHash = sha256Hex(readFile(join(loaderRoot, 'package-lock.json'))); } catch { lockHash = ''; }
+  if (lockHash && exists(marker)) {
+    try { if (readFile(stampFile).trim() === lockHash) return { status: 'up-to-date' }; } catch {}
+  }
+  const runner = resolveNpmRunner({ loaderRoot, nodePath, env, exists });
+  const attempts = [];
+  for (const source of registries) {
+    const result = spawn(runner.file, [...runner.prefixArgs, ...NPM_INSTALL_ARGS, `--registry=${source.url}`], {
+      cwd: loaderRoot,
+      encoding: 'utf8',
+      timeout: source.timeoutMs,
+      env: { ...env, npm_config_registry: source.url, npm_config_engine_strict: 'false' },
+    });
+    const detail = `${String(result.stderr || result.stdout || result.error?.message || '').trim().slice(-400)}`;
+    const ok = result.status === 0 && exists(marker);
+    attempts.push({ id: source.id, ok, detail });
+    if (!ok) continue;
+    if (lockHash) {
+      try { mkdirSync(dirname(stampFile), { recursive: true }); writeFile(stampFile, lockHash); } catch {}
+    }
+    return { status: 'installed', registry: source.id, attempts };
+  }
+  return { status: 'failed', hint: attempts.find((item) => item.detail)?.detail || 'npm install failed' };
+};
+
+export const streamingDepsWarning = (result) => (
+  result && result.status === 'failed'
+    ? `streaming 依赖安装失败（${result.hint}）。网易云音源会保持降级，可在 Loader 目录手动执行 npm install 后重试。`
+    : null
+);
 
 export const installMacLoader = ({
   source = join(repoRoot, 'ShinawaseLoader'),
