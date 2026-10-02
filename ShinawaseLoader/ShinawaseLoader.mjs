@@ -1866,6 +1866,32 @@ const syncTogetherRelay = () => {
   }).catch((error) => log('WARN', `Together relay: ${error.message}`));
   return togetherRelaySync;
 };
+// One failing interval tick repeats every second; without dedupe a single
+// unreachable CDP endpoint buries loader.log in identical lines.
+let intervalFailure = null;
+const intervalFailureSummaryMs = 60000;
+const describeIntervalFailure = (error) => {
+  const name = error instanceof Error ? error.name : typeof error;
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error && error.cause
+    ? ` (${error.cause instanceof Error ? error.cause.message : String(error.cause)})`
+    : '';
+  return `${name}: ${message}${cause}`;
+};
+const intervalFailureHint = () => `check that ECHO was started with --remote-debugging-port=${debugPort} (ECHO.modded.exe and start-echo-with-mods.cmd add it; the stock Steam entry does not)`;
+const noteIntervalInjectionFailure = (error) => {
+  const signature = describeIntervalFailure(error);
+  const now = Date.now();
+  if (!intervalFailure || intervalFailure.signature !== signature) {
+    intervalFailure = { signature, count: 1, lastLoggedAt: now };
+    log('WARN', `interval injection failed: ${signature} - ${intervalFailureHint()}`);
+    return;
+  }
+  intervalFailure.count += 1;
+  if (now - intervalFailure.lastLoggedAt < intervalFailureSummaryMs) return;
+  intervalFailure.lastLoggedAt = now;
+  log('WARN', `interval injection still failing (${intervalFailure.count} attempts): ${signature} - ${intervalFailureHint()}`);
+};
 const startWatch = () => {
   if (safeMode || loadMode === 'disabled') {
     log('INFO', `Mod injection disabled (${safeMode ? 'safe-mode' : 'load-mode'})`);
@@ -1878,7 +1904,15 @@ const startWatch = () => {
   // injected or while no ECHO is running at all.
   const fastPollMs = Math.min(1000, injectIntervalMs);
   const tick = async () => {
-    try { await requestInjection('interval'); } catch (error) { log('WARN', 'interval injection failed', error); }
+    try {
+      await requestInjection('interval');
+      if (intervalFailure) {
+        log('INFO', `interval injection recovered after ${intervalFailure.count} failed attempt(s)`);
+        intervalFailure = null;
+      }
+    } catch (error) {
+      noteIntervalInjectionFailure(error);
+    }
     const startupPending = lastCycleTargetCount > 0 && lastCycleReadyCount === 0;
     watchTimer = setTimeout(tick, startupPending ? fastPollMs : injectIntervalMs);
   };
@@ -3080,8 +3114,16 @@ const run = async () => {
       auto: hasFlag('--auto') || hasFlag('--quiet'),
     });
     if (!hasFlag('--quiet')) printLogo(result.remote || loaderVersion);
-    // Exit explicitly once stdout is flushed: idle keep-alive sockets must not delay the launcher.
-    process.stdout.write(`${JSON.stringify(result, null, hasFlag('--quiet') ? 0 : 2)}\n`, () => process.exit(0));
+    // Undici leaves an idle keep-alive socket behind after the last update
+    // request. Exiting from inside the write callback raced that socket's
+    // teardown and tripped the libuv UV_HANDLE_CLOSING assertion on Windows, so
+    // let the loop drain; the unref'd watchdog only force-exits when something
+    // is still pending, so the launcher is never held open.
+    process.exitCode = 0;
+    process.stdout.write(`${JSON.stringify(result, null, hasFlag('--quiet') ? 0 : 2)}\n`, () => {
+      const watchdog = setTimeout(() => process.exit(0), 5000);
+      watchdog.unref();
+    });
     return;
   }
   if (!locale) locale = await promptLocale();
@@ -3093,10 +3135,18 @@ const run = async () => {
   }
   if (command === 'list') return printList();
   if (command === 'import' || command === 'install') {
-    const source = args[0];
+    const sourceIndex = args.findIndex((value) => !value.startsWith('-'));
+    const source = args[sourceIndex];
     if (!source) throw new Error('ShinawaseLoader.mjs import <file.echomod|file.echo>');
+    const stateBeforeImport = readState();
     const manifest = importPackage(source);
     console.log(`${c.gray}${t('imported')}${c.reset}  ${manifest.name || manifest.id}  ${manifest.version || '1.0.0'}`);
+    // '--enable' only turns on a freshly installed package; re-importing a Mod
+    // the user already switched off keeps it off, as the macOS setup does.
+    if (hasFlag('--enable') && !stateBeforeImport.mods[manifest.id]) {
+      setEnabled(manifest.id, true);
+      console.log(`${c.gray}${t('enabled')}${c.reset}  ${manifest.id}`);
+    }
     return;
   }
   if (command === 'uninstall') {
