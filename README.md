@@ -109,7 +109,7 @@ macOS 安装器只认包含 `ECHO.app` 的目录（Steam 一般是 `~/Library/Ap
 
 ### Linux
 
-Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目录（Electron 平铺布局，和 Windows 一样，只是没有 `.exe`）。Steam 一般是 `~/.local/share/Steam/steamapps/common/ECHO`。它不编译 `ECHO.modded.exe`，也不改 Windows 与 macOS 的安装脚本。本机需要已有的 Node **22.23.2**。
+Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目录（Electron 平铺布局，和 Windows 一样，只是没有 `.exe`）。Steam 一般是 `~/.local/share/Steam/steamapps/common/ECHO`。它不编译 `ECHO.modded.exe`，也不改 Windows 与 macOS 的安装脚本。需要 Node 22 或更高；本机没有时，`setup-modloader.sh` 会自动下载官方 Node **22.23.2** 到 `~/.local/opt`（校验固定的 SHA-256，依次尝试 nodejs.org、npmmirror、华为云镜像）。真正的 Electron 程序在 Linux 上是 `ECHO.bin`，`ECHO` 只是它的包装脚本，两者都会进入隔离运行时。
 
 不传目录时，安装器会自己找：`ECHO_ROOT`、`~/.local/share/Steam`、`~/.steam`、Flatpak 与 Snap 版 Steam 的库（含 `libraryfolders.vdf` 里的其他库）、上次的 `selection.json`。Playtest 不会被自动选中。
 
@@ -129,7 +129,7 @@ Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目�
 "<游戏目录>/ECHO.modded.sh" %command%
 ```
 
-调试、安全模式和附加启动器在 `ShinawaseLoader/` 下，扩展名是 `.sh`。userData 在 `~/.config/ECHO Steam`（遵循 `XDG_CONFIG_HOME`），Loader 自己的选择记录在 `~/.config/ShinawaseLoader/selection.json`。原生 host（`echo-native-host.node` / host-dll）仍只在 Windows 上构建，Linux 会跳过它，CDP 注入照常进行。
+调试、安全模式和附加启动器在 `ShinawaseLoader/` 下，扩展名是 `.sh`。Flatpak 或 Snap 版 Steam 看不到宿主机的 Node，所以安装器会把 Node 复制到 `ShinawaseLoader/node`（发行版自带、依赖共享库的 Node 复制后不能用，安装器会提示改用官方二进制）。userData 在 `~/.config/ECHO Steam`（遵循 `XDG_CONFIG_HOME`），Loader 自己的选择记录在 `~/.config/ShinawaseLoader/selection.json`。原生 host（`echo-native-host.node` / host-dll）仍只在 Windows 上构建，Linux 会跳过它，CDP 注入照常进行。
 
 如果 ECHO 因 `chrome-sandbox` 不是 root 的 setuid 文件而启动失败（常见于 Ubuntu 24.04 一类限制了非特权用户命名空间的发行版），原版同样会遇到；可以在启动项里追加 `--no-sandbox`，Loader 会原样传给 ECHO。
 

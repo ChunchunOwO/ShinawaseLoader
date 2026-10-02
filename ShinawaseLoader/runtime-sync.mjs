@@ -30,8 +30,11 @@ const echoExeNames = isLinux ? LINUX_EXE_NAMES : ['ECHO.exe', 'ECHO Steam.exe', 
 // The isolated copy always names its executable ECHO.exe (Windows) or ECHO (Linux).
 const runtimeExeName = isLinux ? 'ECHO' : 'ECHO.exe';
 // Stock launchers and the loader's own ECHO.modded.* never go into the runtime copy.
+// On Linux the stock ECHO is a wrapper script that execs ECHO.bin, so ECHO.bin is
+// a normal file and must be linked into the copy.
+const stockBinFor = (exe) => (isLinux && exe && existsSync(`${exe}.bin`) ? `${exe}.bin` : null);
 const isLauncherFile = (name) => (isLinux
-  ? /^ECHO/u.test(name) || LINUX_EXE_NAMES.includes(name)
+  ? name.startsWith('ECHO.modded.') || LINUX_EXE_NAMES.includes(name)
   : /^ECHO/iu.test(name) && /\.exe$/iu.test(name));
 const skipRootDirs = new Set(['resources', 'ShinawaseLoader', 'Mods', 'Plugins', 'modded-runtime']);
 const fingerprintName = 'runtime-sync.json';
@@ -194,7 +197,8 @@ export const fingerprintStock = (echoRoot) => {
     throw new Error(`stock_echo_missing:${echoRoot}`);
   }
   const asarStat = statSync(asar);
-  const exeStat = statSync(exe);
+  // The Linux wrapper script never changes; the Electron binary beside it does.
+  const exeStat = statSync(stockBinFor(exe) || exe);
   const pkg = readAsarJson(asar, 'package.json') || {};
   let electronVersion = null;
   try {
@@ -227,6 +231,7 @@ const runtimeNeedsSync = (stock, previous, runtimeRoot, force = false) => {
     if (stock.appName && darwinRuntimeLinksStock(runtimeRoot, stock.appName)) return 'runtime-layout';
   } else {
     if (!existsSync(join(runtimeRoot, runtimeExeName))) return 'missing-runtime-exe';
+    if (stockBinFor(stock.exe) && !existsSync(join(runtimeRoot, 'ECHO.bin'))) return 'missing-runtime-exe';
     if (!existsSync(join(runtimeRoot, 'resources', 'app.asar'))) return 'missing-runtime-asar';
   }
   if (!previous) return 'no-fingerprint';
@@ -332,7 +337,7 @@ export const syncModdedRuntime = (options = {}) => {
 
   const runtimeExe = process.platform === 'darwin' && stock.appName
     ? join(runtimeRoot, stock.appName, 'Contents', 'MacOS', 'ECHO')
-    : join(runtimeRoot, runtimeExeName);
+    : join(runtimeRoot, stockBinFor(stock.exe) ? 'ECHO.bin' : runtimeExeName);
   if (fileBusy(runtimeExe)) {
     return {
       ok: false,
