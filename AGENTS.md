@@ -205,7 +205,7 @@ This flow requires a Loader already installed at the explicit target. It packs, 
 .\dev-with-latest-mods.bat -EchoRoot "<ECHO_ROOT>" -NoLaunch
 ```
 
-`-NoLaunch` skips quitting and launching ECHO but still changes installed packages and enablement state. `-Watch` repeats package import and can request reinjection from a running Loader. Without `-NoLaunch`, the relaunch path stops processes by name as well as path, so even an explicit `-EchoRoot` does not confine termination to one installation. `-KeepRunning` can still enter that relaunch path if no Loader API responds. Use these flows only when their process and installation side effects are part of the intended check.
+`-NoLaunch` skips quitting and launching ECHO but still changes installed packages and enablement state. `-Watch` repeats package import and can request reinjection from a running Loader. Without `-NoLaunch`, the relaunch path stops only processes whose executable path is under the selected `-EchoRoot`; pass `-KillEchoByProcessName` to widen that to every `ECHO`/`ECHO.modded` process on the machine, which is off by default. `-KeepRunning` can still enter that relaunch path if no Loader API responds. Use these flows only when their process and installation side effects are part of the intended check.
 
 Runtime synchronization also writes files. Select both the source installation and the Loader directory explicitly and disable its automatic updater:
 

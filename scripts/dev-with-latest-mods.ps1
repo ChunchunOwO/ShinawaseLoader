@@ -8,6 +8,8 @@
   only when ECHO is started with --inspect so main-bootstrap can load streaming-bridge.
   This script always quits existing ECHO first (unless -KeepRunning), then starts
   Loader in debug/run mode and waits for the inspect port before finishing.
+  Quitting is confined to processes whose executable lives under EchoRoot; use
+  -KillEchoByProcessName only when a stale ECHO elsewhere must be stopped too.
 
 .PARAMETER EchoRoot
   ECHO install folder that contains ECHO.exe (and ShinawaseLoader after setup).
@@ -27,6 +29,11 @@
 
 .PARAMETER LaunchDebug
   Pass --debug --log-level debug to Loader (default true).
+
+.PARAMETER KillEchoByProcessName
+  Also quit ECHO processes by executable name, machine-wide. Off by default:
+  without it only processes whose executable path is inside EchoRoot are stopped,
+  so a second ECHO installation (Steam playtest, another drive) is left alone.
 #>
 [CmdletBinding()]
 param(
@@ -35,7 +42,8 @@ param(
   [switch]$Watch,
   [switch]$NoLaunch,
   [switch]$KeepRunning,
-  [bool]$LaunchDebug = $true
+  [bool]$LaunchDebug = $true,
+  [switch]$KillEchoByProcessName
 )
 
 $ErrorActionPreference = 'Stop'
@@ -138,9 +146,10 @@ function Invoke-LoaderApi([string]$Method, [string]$Path) {
 }
 
 function Stop-EchoProcesses {
-  param([string]$EchoRootPath)
+  param([string]$EchoRootPath, [switch]$ByName)
 
   $stopped = @()
+  $script:StopEchoUnknownPath = 0
   $pathMatchers = @(
     "$EchoRootPath\ECHO.exe",
     "$EchoRootPath\ECHO.modded.exe",
@@ -149,11 +158,18 @@ function Stop-EchoProcesses {
 
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
+      if ($ByName -and $_.Name -match '^(ECHO|ECHO\.modded)\.exe$') { return $true }
       $exePath = [string]$_.ExecutablePath
-      if ($_.Name -match '^(ECHO|ECHO\.modded)\.exe$') { return $true }
-      if (-not $exePath) { return $false }
+      if (-not $exePath) {
+        # Unreadable path (another user's or elevated process). Never kill those
+        # by name: -EchoRoot has to confine termination to one installation.
+        if ($_.Name -match '^(ECHO|ECHO\.modded)\.exe$') { $script:StopEchoUnknownPath += 1 }
+        return $false
+      }
       foreach ($pattern in $pathMatchers) {
-        if ($exePath -like $pattern) { return $true }
+        # -ieq, not -like: '[ ]' or '?' in a real install path must not be read
+        # as a wildcard class.
+        if ($exePath -ieq $pattern) { return $true }
       }
       return $false
     } |
@@ -164,21 +180,14 @@ function Stop-EchoProcesses {
       } catch {}
     }
 
-  # Name-based fallback (child utility processes share ECHO.exe name).
-  foreach ($name in @('ECHO', 'ECHO.modded')) {
-    Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-      try {
-        Stop-Process -Id $_.Id -Force -ErrorAction Stop
-        $stopped += ("{0}({1})" -f $_.ProcessName, $_.Id)
-      } catch {}
-    }
-  }
-
   if ($stopped.Count -gt 0) {
     Write-Step ("Quit ECHO: {0}" -f (($stopped | Select-Object -Unique) -join ', ')) 'Yellow'
     Start-Sleep -Seconds 1
   } else {
-    Write-Step 'No running ECHO process'
+    Write-Step ("No running ECHO process under {0}" -f $EchoRootPath)
+  }
+  if ($script:StopEchoUnknownPath -gt 0 -and -not $ByName) {
+    Write-Step ("{0} ECHO-named process(es) with unreadable paths were left running. Pass -KillEchoByProcessName to quit them too." -f $script:StopEchoUnknownPath) 'DarkGray'
   }
 }
 
@@ -272,11 +281,16 @@ function Wait-DesktopBridge {
     return $true
   }
 
+  $reason = if (-not $cdpOk) {
+    "CDP :$DebugPort never answered, so nothing could be injected. ECHO.modded.exe exits with code 4 and writes ShinawaseLoader\Logs\modded-host.log when another modded ECHO still holds its mutex."
+  } else {
+    'Steam ECHO ignores --inspect; use ECHO.modded.exe (asar-bridge).'
+  }
   Write-Step @"
 Desktop bridge FAILED - window.echo.accounts is still null.
-Steam ECHO ignores --inspect; use ECHO.modded.exe (asar-bridge).
+$reason
 cdp=:$DebugPort ($cdpOk)  inspect=:$InspectPort ($inspectOk)
-Fully quit every ECHO process, do not use Steam Start, then re-run this bat.
+Fully quit every ECHO process under the target root, do not use Steam Start, then re-run this bat.
 "@ 'Red'
   return $false
 }
@@ -347,7 +361,7 @@ function Start-EchoFresh {
     [bool]$UseDebug
   )
 
-  Stop-EchoProcesses -EchoRootPath $EchoRootPath
+  Stop-EchoProcesses -EchoRootPath $EchoRootPath -ByName:$KillEchoByProcessName
 
   # Stock Steam ECHO.exe ignores --inspect, so accounts/streaming stay null.
   # ECHO.modded.exe launches the isolated asar-bridge runtime that loads
@@ -400,6 +414,7 @@ Write-Host ("  Project   {0}" -f $ProjectRoot) -ForegroundColor DarkGray
 Write-Host ("  ECHO      {0}" -f $echoRootResolved) -ForegroundColor DarkGray
 Write-Host ("  Inspect   :{0}   CDP :{1}   Loader :{2}" -f $InspectPort, $DebugPort, $LoaderPort) -ForegroundColor DarkGray
 Write-Host ("  Watch     {0}" -f ($(if ($Watch) { 'on' } else { 'off' }))) -ForegroundColor DarkGray
+Write-Host ("  Quit scope  {0}" -f ($(if ($KillEchoByProcessName) { 'machine-wide by process name' } else { "paths under $echoRootResolved" }))) -ForegroundColor DarkGray
 Write-Host ''
 
 if (-not (Test-Path -LiteralPath $loaderJs)) {

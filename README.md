@@ -150,7 +150,7 @@ Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目�
 
 任选其一：
 
-1. 安装 Loader 时在 **可选包** 勾选 ECHO Streaming / ECHO MV（默认勾选），脚本会把对应 `.echomod` 导入游戏 `Mods`。
+1. 安装 Loader 时在 **可选包** 勾选 ECHO Streaming / ECHO MV（默认勾选），脚本会把对应 `.echomod` 导入游戏 `Mods` 并启用（`node ShinawaseLoader.mjs import <包> --enable`）。只对**新装**的包生效：先前已被你手动关掉的包，重复导入仍保持关闭。
 2. 用 Loader 启动 ECHO 后，打开应用内侧栏 **Mod Market**，从官方目录一键安装或更新。
 3. 打开应用内 **Mods** 页，导入 `.echomod` / `.echo`（也支持拖放）。
 4. 把包文件丢进游戏目录的 `Mods` 或 `Plugins` 文件夹，渲染进程就绪后会注入已启用的包。
@@ -349,11 +349,13 @@ Pet、osu!downloader、AudioBand、Wallpaper Bridge、Together、Steam Listen Bo
 **Mod 没有生效？**  
 确认 Steam 启动项已设为 `"<游戏目录>\ECHO.modded.exe" %command%`，或双击了 `ECHO.modded.exe` / `start-echo-with-mods.cmd`。未改启动项时，Steam 原版入口不会走隔离运行时与 inspector bootstrap。
 
+再确认注入通道真的通：`http://127.0.0.1:9229/json` 有响应，包在 Loader 的 Mods 页是**已启用**状态，`node ShinawaseLoader\testing\cli.mjs doctor --json` 里不是 `cdp_unreachable`。`ECHO.modded.exe` 是单实例：已有 modded ECHO 在跑时它记日志并以退出码 4 直接结束（见 `ShinawaseLoader/Logs/modded-host.log`），这一次什么都没有注入。安装器的「启动 ECHO」一步现在会先退出同目录的旧实例、启动后校验调试端口，校验不过会明确报错而不是只显示「完成」。
+
 **ECHO 43.3+ 双击 `ECHO.modded.exe` 立刻退出？**  
 新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。Steam 更新后 Loader / `ECHO.modded.exe` 会自动对照指纹并调用 `runtime-sync.mjs`；也可手动 `node ShinawaseLoader.mjs sync-runtime --force`。
 
 **日志在哪里？**  
-游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误）。
+游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误）、`ShinawaseLoader/Logs/modded-host.log`（`ECHO.modded.exe` 启动器自身的记录，例如因已有实例占用而退出）。
 
 **语言选错了？**  
 删除或编辑 `%LOCALAPPDATA%\ShinawaseLoader\selection.json`，或在应用内 Loader 页切换。也可用 `--locale`。
