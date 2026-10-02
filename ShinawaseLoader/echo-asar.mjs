@@ -44,9 +44,10 @@ const isIsolatedRuntimePath = (value) => /\/modded-runtime(?:\/|$)/iu.test(norma
 // Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
 // older folder layouts and are only resolved inside an isolated runtime copy.
 const echoExeFor = (root) => {
-  // Linux is flat like Windows, with extensionless executables.
+  // Linux is flat like Windows, with extensionless executables. The stock ECHO is a
+  // wrapper script around ECHO.bin, and the embedded asar hash lives in ECHO.bin.
   const flatNames = process.platform === 'linux'
-    ? ['ECHO', 'ECHO Steam', 'ECHO NEXT', 'ECHO Playtest', 'echo-steam']
+    ? ['ECHO', 'ECHO Steam', 'ECHO NEXT', 'ECHO Playtest', 'echo-steam'].flatMap((name) => [`${name}.bin`, name])
     : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
   const windows = flatNames
     .map((name) => join(root, name))
@@ -65,7 +66,7 @@ const isSteamStockArchive = (archive) => {
 const isSteamStockExe = (exePath) => {
   const n = normalizeFsPath(exePath);
   if (isIsolatedRuntimePath(n)) return false;
-  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/(?:ECHO(?: NEXT| Playtest| Steam)?\.exe|ECHO(?: NEXT| Playtest| Steam)?|echo-steam)$/iu.test(n)
+  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/(?:ECHO(?: NEXT| Playtest| Steam)?\.exe|ECHO(?: NEXT| Playtest| Steam)?|echo-steam)(?:\.bin)?$/iu.test(n)
     || /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.app\/Contents\/MacOS\/ECHO$/iu.test(n);
 };
 const headerJsonBytes = (parsed) => {

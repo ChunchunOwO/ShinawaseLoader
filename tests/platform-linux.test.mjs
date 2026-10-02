@@ -129,6 +129,8 @@ test('linux runtime sync copies a flat runtime and leaves the stock archive unto
   try {
     const exe = touchEcho(root);
     writeFileSync(join(root, 'libffmpeg.so'), 'lib');
+    // The stock ECHO is a wrapper script around the real Electron binary, ECHO.bin.
+    writeFileSync(join(root, 'ECHO.bin'), 'elf', { mode: 0o755 });
     writeFileSync(join(root, 'ECHO.modded.sh'), '#!/bin/sh\n');
     mkdirSync(join(root, 'locales'));
     writeFileSync(join(root, 'locales', 'en-US.pak'), 'pak');
@@ -144,6 +146,12 @@ test('linux runtime sync copies a flat runtime and leaves the stock archive unto
     assert.throws(() => statSync(join(runtime, 'ECHO.modded.sh')));
     assert.equal(readFileSync(join(root, 'resources', 'app.asar')).equals(stockAsar), true);
     assert.equal(['updated', 'copied-unpatched'].includes(result.status), true);
+    assert.equal(readFileSync(join(runtime, 'ECHO.bin'), 'utf8'), 'elf');
+    // A runtime synced before ECHO.bin was linked must heal on the next sync.
+    rmSync(join(runtime, 'ECHO.bin'));
+    const healed = syncModdedRuntime({ echoRoot: root, loaderRoot });
+    assert.notEqual(healed.status, 'current');
+    assert.equal(readFileSync(join(runtime, 'ECHO.bin'), 'utf8'), 'elf');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -168,4 +176,12 @@ test('linux installer writes the shell launcher without touching the stock insta
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('setup-modloader.sh pins the same Node version as loader-version.json', () => {
+  const pinned = JSON.parse(readFileSync(new URL('../ShinawaseLoader/loader-version.json', import.meta.url), 'utf8')).nodeVersion;
+  const script = readFileSync(new URL('../setup-modloader.sh', import.meta.url), 'utf8');
+  assert.equal(script.match(/^NODE_VERSION="([^"]+)"/mu)?.[1], pinned);
+  assert.equal(/^NODE_SHA256_X64="[0-9a-f]{64}"/mu.test(script), true);
+  assert.equal(/^NODE_SHA256_ARM64="[0-9a-f]{64}"/mu.test(script), true);
 });

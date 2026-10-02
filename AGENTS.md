@@ -129,7 +129,7 @@ Linux installation uses the same entry point and also writes into the selected E
 ./setup-modloader.sh --echo "<ECHO_ROOT>" --no-packages
 ```
 
-Without `--echo` it searches `ECHO_ROOT`, `~/.local/share/Steam`, `~/.steam`, Flatpak and Snap Steam libraries, and the saved selection. Playtest is not auto-selected. It installs `ECHO.modded.sh` beside the executable; the isolated runtime is a flat copy in `ShinawaseLoader/modded-runtime/` (directories symlinked, files hard-linked where possible). The script refuses to run on other platforms.
+Without `--echo` it searches `ECHO_ROOT`, `~/.local/share/Steam`, `~/.steam`, Flatpak and Snap Steam libraries, and the saved selection. Playtest is not auto-selected. It installs `ECHO.modded.sh` beside the executable; the isolated runtime is a flat copy in `ShinawaseLoader/modded-runtime/` (directories symlinked, files hard-linked where possible). On Linux the stock `ECHO` may be a wrapper script around `ECHO.bin`; both are handled by `runtime-sync.mjs`. `setup-modloader.sh` downloads the pinned official Node tarball (hash-checked, `NODE_VERSION` must match `loader-version.json`) when no Node 22+ is found, and the installer copies Node into `ShinawaseLoader/node` for Flatpak/Snap Steam. The script refuses to run on other platforms.
 
 ### Package a Mod or Plugin
 

@@ -4,7 +4,7 @@
 // flat copy. Shared helpers come from the macOS installer; nothing here runs on
 // Windows or macOS.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +104,23 @@ export const installLinuxLoader = ({
   const configPath = join(loaderRoot, 'loader.config.json');
   let config = {};
   try { config = JSON.parse(readFileSync(existsSync(configPath) ? configPath : join(source, 'loader.config.json'), 'utf8')); } catch {}
-  config.runtimePath = nodePath;
+  // Flatpak and Snap Steam cannot see the host's Node, so give the game its own copy
+  // beside the loader (the launcher script looks there too).
+  let runtimePath = nodePath;
+  let nodeWarning = null;
+  if (contentRoot.includes('/.var/app/') || contentRoot.includes('/snap/')) {
+    const own = join(loaderRoot, 'node');
+    try {
+      copyFileSync(nodePath, own);
+      chmodSync(own, 0o755);
+      if (spawnSync(own, ['--version'], { encoding: 'utf8' }).status !== 0) throw new Error('node_copy_unusable');
+      runtimePath = own;
+    } catch {
+      rmSync(own, { force: true });
+      nodeWarning = '检测到沙盒版 Steam，但当前 Node 无法复制到游戏目录（常见于发行版自带、依赖共享库的 Node）。请改用官方 Node 22 二进制后重新安装，否则从 Steam 启动时可能找不到 Node。';
+    }
+  }
+  config.runtimePath = runtimePath;
   config.autoStart = true;
   config.autoStartMode = 'app-asar-bridge';
   config.loadMode = 'external-cdp';
@@ -153,6 +169,8 @@ export const installLinuxLoader = ({
     executable,
     loaderRoot,
     launcher,
+    nodeWarning,
+    runtimePath,
     syncStatus: sync.status,
     syncOutput: `${sync.stdout || ''}${sync.stderr || ''}`.trim(),
   };
@@ -186,6 +204,7 @@ if (isMain) {
     console.log(`Installed beside ${installed.echoRoot}`);
     console.log('Steam launch option:');
     console.log(`"${installed.launcher}" %command%`);
+    if (installed.nodeWarning) console.warn(installed.nodeWarning);
     if (installed.syncStatus !== 0) console.log(installed.syncOutput);
     if (args.includes('--launch')) {
       console.log('正在启动…');
