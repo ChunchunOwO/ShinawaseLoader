@@ -7,15 +7,15 @@
 *Community external ModLoader for ECHO Steam — local CDP injection, no built-in plugin VM.*
 
 ![version](https://img.shields.io/badge/version-1.7.0-3b82f6?style=flat-square)
-![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6?style=flat-square)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6?style=flat-square)
 ![node](https://img.shields.io/badge/node-22.23.2-339933?style=flat-square)
 ![mode](https://img.shields.io/badge/mode-external--CDP-8b5cf6?style=flat-square)
 
-[GitHub](https://github.com/ChunchunOwO/ShinawaseLoader) · 分支 `main` · Windows 与 macOS
+[GitHub](https://github.com/ChunchunOwO/ShinawaseLoader) · 分支 `main` · Windows、macOS 与 Linux
 
 </div>
 
-ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `ECHO.app` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar 与可执行文件。userData 在 Windows 为 `%APPDATA%\ECHO Steam`，在 macOS 为 `~/Library/Application Support/ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
+ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 43.3.0）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `ECHO.app` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar 与可执行文件。userData 在 Windows 为 `%APPDATA%\ECHO Steam`，在 macOS 为 `~/Library/Application Support/ECHO Steam`，在 Linux 为 `~/.config/ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
 > **v1.7.0**（当前）对齐 echo-steam 26.9.1。Loader 生成独立的 `ECHO.modded.exe`，**不取代** Steam 原版；安装结束后会指导把 Steam 启动项设为 `"…\ECHO.modded.exe" %command%`。侧栏 Mods 下方提供 **Mod Market**，从 `echo.shiinasuki.com` 浏览并一键安装 / 更新社区插件。双击该 exe 或 `start-echo-with-mods.cmd` 时会自动检查 GitHub 上的 Loader 与预装包并更新，Steam 更新后也会自动刷新隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
@@ -49,7 +49,7 @@ ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.9.1**，Electron 4
 
 ## 🚀 快速开始
 
-Windows 安装程序会扫描 Steam 库定位 `ECHO.exe` / `ECHO Steam.exe`（优先 `D:\SteamLibrary\steamapps\common\ECHO\ECHO.exe`，不会因路径排序默默选中 Playtest），把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。可用 `ECHO_ROOT`、`--echo` 或 `%LOCALAPPDATA%\ShinawaseLoader\selection.json` 覆盖目标。macOS 用下方的 shell 安装器，不走这套 PowerShell 菜单。
+Windows 安装程序会扫描 Steam 库定位 `ECHO.exe` / `ECHO Steam.exe`（优先 `D:\SteamLibrary\steamapps\common\ECHO\ECHO.exe`，不会因路径排序默默选中 Playtest），把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。可用 `ECHO_ROOT`、`--echo` 或 `%LOCALAPPDATA%\ShinawaseLoader\selection.json` 覆盖目标。macOS 与 Linux 用下方的 shell 安装器，不走这套 PowerShell 菜单。
 
 ```powershell
 git clone https://github.com/ChunchunOwO/ShinawaseLoader.git
@@ -106,6 +106,32 @@ macOS 安装器只认包含 `ECHO.app` 的目录（Steam 一般是 `~/Library/Ap
 ```
 
 也可以直接双击 `ECHO.modded.command`。调试、安全模式和附加启动器在 `ShinawaseLoader/` 下，扩展名是 `.command`。原生 host（`echo-native-host.node` / host-dll）仍只在 Windows 上构建；没有对应的 Darwin 插件时，macOS 会跳过它，CDP 注入照常进行。Loader 自己的选择记录在 `~/Library/Application Support/ShinawaseLoader/selection.json`。
+
+### Linux
+
+Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目录（Electron 平铺布局，和 Windows 一样，只是没有 `.exe`）。Steam 一般是 `~/.local/share/Steam/steamapps/common/ECHO`。它不编译 `ECHO.modded.exe`，也不改 Windows 与 macOS 的安装脚本。本机需要已有的 Node **22.23.2**。
+
+不传目录时，安装器会自己找：`ECHO_ROOT`、`~/.local/share/Steam`、`~/.steam`、Flatpak 与 Snap 版 Steam 的库（含 `libraryfolders.vdf` 里的其他库）、上次的 `selection.json`。Playtest 不会被自动选中。
+
+```bash
+./setup-modloader.sh --launch
+```
+
+已经知道目录时可以指定（`<ECHO_ROOT>` 是含有 `ECHO` 的目录，也可以直接是 `ECHO` 可执行文件）：
+
+```bash
+./setup-modloader.sh --echo "<ECHO_ROOT>"
+```
+
+安装会在该目录里写入 `ECHO.modded.sh`、`ShinawaseLoader/`、`Mods/` 和 `Plugins/`。隔离运行时放在 `ShinawaseLoader/modded-runtime/`，是一份平铺副本（目录用符号链接，其余文件优先硬链接），补丁只写在这份副本的 `app.asar` 上，Steam 里的原始文件不会被修改。从 Steam 里直接点「开始游戏」开的是原版；要用 Mod，请运行 `ECHO.modded.sh`，或把启动项设成：
+
+```text
+"<游戏目录>/ECHO.modded.sh" %command%
+```
+
+调试、安全模式和附加启动器在 `ShinawaseLoader/` 下，扩展名是 `.sh`。userData 在 `~/.config/ECHO Steam`（遵循 `XDG_CONFIG_HOME`），Loader 自己的选择记录在 `~/.config/ShinawaseLoader/selection.json`。原生 host（`echo-native-host.node` / host-dll）仍只在 Windows 上构建，Linux 会跳过它，CDP 注入照常进行。
+
+如果 ECHO 因 `chrome-sandbox` 不是 root 的 setuid 文件而启动失败（常见于 Ubuntu 24.04 一类限制了非特权用户命名空间的发行版），原版同样会遇到；可以在启动项里追加 `--no-sandbox`，Loader 会原样传给 ECHO。
 
 ### 命令行旗标
 

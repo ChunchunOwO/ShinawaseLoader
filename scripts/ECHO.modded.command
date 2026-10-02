@@ -1,5 +1,6 @@
 #!/bin/bash
-# macOS stand-in for ECHO.modded.exe. Steam's copy of ECHO.app is not modified.
+# macOS and Linux stand-in for ECHO.modded.exe (installed as ECHO.modded.sh on Linux).
+# Steam's copy of ECHO is not modified.
 # Steam launches this with a minimal PATH, so Node must be found by absolute path.
 set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -14,14 +15,14 @@ find_node() {
   fi
   if [[ -f "$LOADER/loader.config.json" ]]; then
     local configured
-    configured="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runtimePath") or "")' "$LOADER/loader.config.json" 2>/dev/null || true)"
+    configured="$(grep -o '"runtimePath"[^,}]*' "$LOADER/loader.config.json" 2>/dev/null | head -n 1 | cut -d'"' -f4)"
     if [[ -n "$configured" && -x "$configured" ]]; then
       printf '%s\n' "$configured"
       return
     fi
   fi
   local candidate
-  local candidates=("$LOADER/node" "$HOME/.local/bin/node" "/opt/homebrew/bin/node" "/usr/local/bin/node")
+  local candidates=("$LOADER/node" "$HOME/.local/bin/node" "/opt/homebrew/bin/node" "/usr/local/bin/node" "/usr/bin/node")
   local bundled
   for bundled in "$HOME/.local/opt"/node-v22.23.2*/bin/node; do
     candidates+=("$bundled")

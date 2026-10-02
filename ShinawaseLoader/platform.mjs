@@ -1,11 +1,30 @@
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 // Windows path classification uses explicit separators so the same results
 // hold when these helpers run on macOS. Filesystem joins stay path.join.
 
 export const DARWIN_APP_NAMES = ['ECHO.app', 'ECHO Steam.app', 'ECHO NEXT.app', 'ECHO Playtest.app'];
+
+// A Linux Electron install is flat like Windows (ECHO beside resources/app.asar), minus the .exe.
+export const LINUX_EXE_NAMES = ['ECHO', 'ECHO Steam', 'ECHO NEXT', 'ECHO Playtest', 'echo-steam'];
+
+// Existing Steam roots on Linux, de-duplicated by real path (~/.steam/steam is a symlink).
+export const linuxSteamRoots = ({ home = homedir(), env = process.env } = {}) => {
+  const roots = new Set();
+  for (const candidate of [
+    join(env.XDG_DATA_HOME || join(home, '.local', 'share'), 'Steam'),
+    join(home, '.steam', 'steam'),
+    join(home, '.steam', 'root'),
+    join(home, '.var', 'app', 'com.valvesoftware.Steam', '.local', 'share', 'Steam'),
+    join(home, 'snap', 'steam', 'common', '.local', 'share', 'Steam'),
+  ]) {
+    try { roots.add(realpathSync(candidate)); } catch {}
+  }
+  return [...roots];
+};
 
 const winSegments = (value) => String(value || '').replaceAll('/', '\\').replace(/\\+$/u, '').split('\\');
 
@@ -50,6 +69,11 @@ export const isEchoExecutablePath = (filePath, platform = process.platform) => {
   const name = winBase(filePath);
   if (platform === 'win32') return /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
   if (platform === 'darwin') return /\/Contents\/MacOS\/ECHO$/u.test(String(filePath || '').replaceAll('\\', '/'));
+  if (platform === 'linux') {
+    // "echo" is also a coreutils binary, so require the Electron layout beside it.
+    const file = String(filePath || '');
+    return LINUX_EXE_NAMES.includes(basename(file)) && existsSync(join(dirname(file), 'resources', 'app.asar'));
+  }
   return /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
 };
 
@@ -63,6 +87,15 @@ export const isPlaytestPath = (exePath, platform = process.platform) => {
 };
 
 export const rankEchoInstall = (exePath, platform = process.platform) => {
+  if (platform === 'linux') {
+    const normalized = String(exePath || '').replaceAll('\\', '/');
+    if (isPlaytestPath(normalized, platform)) return 80;
+    if (/\/ECHO NEXT\/[^/]+$/u.test(normalized)) return 70;
+    if (/\/common\/ECHO\/ECHO$/u.test(normalized)) return 0;
+    if (/\/(?:ECHO Steam|echo-steam)$/u.test(normalized)) return 10;
+    if (/\/ECHO$/u.test(normalized)) return 20;
+    return 40;
+  }
   if (platform !== 'win32') {
     const normalized = String(exePath || '').replaceAll('\\', '/');
     if (isPlaytestPath(normalized, platform)) return 80;
@@ -95,6 +128,7 @@ export const installRootFromTarget = (target, platform = process.platform) => {
 };
 
 export const resourcesDirForExecutable = (exePath, platform = process.platform) => {
+  if (platform === 'linux') return join(dirname(exePath), 'resources');
   if (platform !== 'win32') {
     const macOs = dirname(exePath);
     const contents = dirname(macOs);
@@ -111,6 +145,11 @@ export const filterSteamCommandArgs = (args) => {
     'echo playtest.exe',
     'echo.modded.exe',
     'echo.modded.command',
+    'echo.modded.sh',
+    'echo steam',
+    'echo next',
+    'echo playtest',
+    'echo-steam',
     'echo',
   ]);
   return (Array.isArray(args) ? args : []).filter((value) => {

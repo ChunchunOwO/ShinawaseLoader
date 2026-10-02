@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,10 +44,14 @@ const isIsolatedRuntimePath = (value) => /\/modded-runtime(?:\/|$)/iu.test(norma
 // Steam ships ECHO.exe. NEXT / Playtest / Steam names are leftover from
 // older folder layouts and are only resolved inside an isolated runtime copy.
 const echoExeFor = (root) => {
-  const windows = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']
+  // Linux is flat like Windows, with extensionless executables.
+  const flatNames = process.platform === 'linux'
+    ? ['ECHO', 'ECHO Steam', 'ECHO NEXT', 'ECHO Playtest', 'echo-steam']
+    : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+  const windows = flatNames
     .map((name) => join(root, name))
-    .find((file) => existsSync(file));
-  if (windows || process.platform === 'win32') return windows;
+    .find((file) => existsSync(file) && statSync(file).isFile());
+  if (windows || process.platform === 'win32' || process.platform === 'linux') return windows;
   return ['ECHO.app', 'ECHO Steam.app', 'ECHO NEXT.app', 'ECHO Playtest.app']
     .map((name) => join(root, name, 'Contents', 'MacOS', 'ECHO'))
     .find((file) => existsSync(file));
@@ -61,7 +65,7 @@ const isSteamStockArchive = (archive) => {
 const isSteamStockExe = (exePath) => {
   const n = normalizeFsPath(exePath);
   if (isIsolatedRuntimePath(n)) return false;
-  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.exe$/iu.test(n)
+  return /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/(?:ECHO(?: NEXT| Playtest| Steam)?\.exe|ECHO(?: NEXT| Playtest| Steam)?|echo-steam)$/iu.test(n)
     || /\/steamapps\/common\/ECHO(?: NEXT| Playtest| Steam)?\/ECHO(?: NEXT| Playtest| Steam)?\.app\/Contents\/MacOS\/ECHO$/iu.test(n);
 };
 const headerJsonBytes = (parsed) => {

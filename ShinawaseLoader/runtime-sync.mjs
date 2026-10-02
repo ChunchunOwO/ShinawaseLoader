@@ -22,10 +22,17 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { patch, syncIntegrity } from './echo-asar.mjs';
-import { DARWIN_APP_NAMES, installRootFromTarget, pathsEqual } from './platform.mjs';
+import { DARWIN_APP_NAMES, LINUX_EXE_NAMES, installRootFromTarget, pathsEqual } from './platform.mjs';
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const echoExeNames = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+const isLinux = process.platform === 'linux';
+const echoExeNames = isLinux ? LINUX_EXE_NAMES : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+// The isolated copy always names its executable ECHO.exe (Windows) or ECHO (Linux).
+const runtimeExeName = isLinux ? 'ECHO' : 'ECHO.exe';
+// Stock launchers and the loader's own ECHO.modded.* never go into the runtime copy.
+const isLauncherFile = (name) => (isLinux
+  ? /^ECHO/u.test(name) || LINUX_EXE_NAMES.includes(name)
+  : /^ECHO/iu.test(name) && /\.exe$/iu.test(name));
 const skipRootDirs = new Set(['resources', 'ShinawaseLoader', 'Mods', 'Plugins', 'modded-runtime']);
 const fingerprintName = 'runtime-sync.json';
 
@@ -80,7 +87,7 @@ const fileBusy = (file) => {
     closeSync(fd);
     return false;
   } catch (error) {
-    return error && ['EBUSY', 'EPERM', 'EACCES', 'EAGAIN'].includes(error.code);
+    return error && ['EBUSY', 'EPERM', 'EACCES', 'EAGAIN', 'ETXTBSY'].includes(error.code);
   }
 };
 
@@ -219,7 +226,7 @@ const runtimeNeedsSync = (stock, previous, runtimeRoot, force = false) => {
     if (!runtimeAppPresent(runtimeRoot, 'asar')) return 'missing-runtime-asar';
     if (stock.appName && darwinRuntimeLinksStock(runtimeRoot, stock.appName)) return 'runtime-layout';
   } else {
-    if (!existsSync(join(runtimeRoot, 'ECHO.exe'))) return 'missing-runtime-exe';
+    if (!existsSync(join(runtimeRoot, runtimeExeName))) return 'missing-runtime-exe';
     if (!existsSync(join(runtimeRoot, 'resources', 'app.asar'))) return 'missing-runtime-asar';
   }
   if (!previous) return 'no-fingerprint';
@@ -236,14 +243,14 @@ const rebuildRuntimeFiles = (echoRoot, stockExe, runtimeRoot) => {
     const source = join(echoRoot, entry.name);
     const target = join(runtimeRoot, entry.name);
     if (entry.isFile()) {
-      if (/^ECHO/iu.test(entry.name) && /\.exe$/iu.test(entry.name)) continue;
+      if (isLauncherFile(entry.name)) continue;
       replaceFile(source, target, { hardlink: true });
       continue;
     }
     if (!entry.isDirectory() || skipRootDirs.has(entry.name)) continue;
     ensureJunction(source, target);
   }
-  replaceFile(stockExe, join(runtimeRoot, 'ECHO.exe'), { hardlink: false });
+  replaceFile(stockExe, join(runtimeRoot, runtimeExeName), { hardlink: false });
   const stockResources = join(echoRoot, 'resources');
   const runtimeResources = join(runtimeRoot, 'resources');
   mkdirSync(runtimeResources, { recursive: true });
@@ -325,7 +332,7 @@ export const syncModdedRuntime = (options = {}) => {
 
   const runtimeExe = process.platform === 'darwin' && stock.appName
     ? join(runtimeRoot, stock.appName, 'Contents', 'MacOS', 'ECHO')
-    : join(runtimeRoot, 'ECHO.exe');
+    : join(runtimeRoot, runtimeExeName);
   if (fileBusy(runtimeExe)) {
     return {
       ok: false,
