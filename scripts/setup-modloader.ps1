@@ -10,6 +10,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 / .NET Framework may default to SSL3/TLS 1.0, which
+# every HTTPS mirror rejects ("underlying connection was closed" on send).
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 12288 } catch {   # 12288 = Tls13 (.NET 4.8+)
+  try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+}
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalSource = Join-Path $ProjectRoot 'ShinawaseLoader'
 $BaseData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
@@ -515,7 +520,7 @@ function Get-NpmRegistry {
 # integrity hashes in package-lock.json, so a mirror cannot alter what is installed.
 # Override with $env:SHINAWASE_MIRRORS (comma separated; the word "none" disables) or "mirrors"
 # in selection.json. Choosing "Node.js official / direct" in setup opts out.
-$script:DefaultMirrors = @('http://43.248.10.82/shinawase')
+$script:DefaultMirrors = @('https://mirror.shiinasuki.com/shinawase', 'http://43.248.10.82/shinawase')
 $script:MirrorProbeCache = @{}
 function Get-PreferredMirrors {
   if ($null -ne $env:SHINAWASE_MIRRORS) { $list = @($env:SHINAWASE_MIRRORS -split ',') }

@@ -16,7 +16,7 @@ export const UPDATE_PACKAGES = [
 // Tried first; GitHub (through the ghproxy mirror, then directly) is the fallback.
 // Override with `updateMirrors` in loader.config.json or SHINAWASE_UPDATE_MIRRORS
 // (comma separated); an empty list disables the mirror.
-export const DEFAULT_UPDATE_MIRRORS = ['http://43.248.10.82/shinawase'];
+export const DEFAULT_UPDATE_MIRRORS = ['https://mirror.shiinasuki.com/shinawase', 'http://43.248.10.82/shinawase'];
 
 // Mirror manifests are signed with the maintainer's Ed25519 key, so a mirror
 // (or anyone on the path to it, since it may be plain HTTP) cannot substitute

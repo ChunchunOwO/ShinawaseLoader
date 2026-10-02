@@ -100,4 +100,4 @@ writeFileSync(join(outDir, 'mirror-manifest.sig'), `${signature}\n`);
 console.log(`mirror built in ${outDir}`);
 console.log(`  loader ${manifest.loader.version}  ${(archive.length / 1048576).toFixed(2)} MB  sha256 ${manifest.loader.sha256.slice(0, 16)}...`);
 for (const item of packages) console.log(`  ${item.id} ${item.version}  ${item.file}`);
-console.log('Upload the contents of that folder to the mirror base URL (default http://43.248.10.82/shinawase/).');
+console.log('Upload the contents of that folder to the mirror base URL (default https://mirror.shiinasuki.com/shinawase/, IP fallback http://43.248.10.82/shinawase/).');
