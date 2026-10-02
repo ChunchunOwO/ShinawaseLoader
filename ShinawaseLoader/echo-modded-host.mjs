@@ -32,6 +32,13 @@ export const findIsolatedDarwinBinary = (runtimeRoot) => DARWIN_APP_NAMES
   .filter((file) => existsSync(file))
   .sort((left, right) => rankEchoInstall(left, 'darwin') - rankEchoInstall(right, 'darwin') || left.localeCompare(right))[0] || null;
 
+// Linux keeps the Windows layout: a flat runtime copy with its own ECHO executable.
+export const findIsolatedBinary = (runtimeRoot, platform = process.platform) => {
+  if (platform !== 'linux') return findIsolatedDarwinBinary(runtimeRoot);
+  const executable = join(runtimeRoot, 'ECHO');
+  return existsSync(executable) ? executable : null;
+};
+
 const runNodeScript = (node, loaderRoot, scriptName, args, env) => {
   const script = join(loaderRoot, scriptName);
   if (!existsSync(script)) return;
@@ -70,7 +77,7 @@ const acquireLock = (loaderRoot) => {
   return lockPath;
 };
 
-export const launchIsolatedDarwin = ({
+export const launchIsolated = ({
   echoRoot,
   loaderRoot = join(echoRoot, 'ShinawaseLoader'),
   args = [],
@@ -96,7 +103,7 @@ export const launchIsolatedDarwin = ({
     runNodeScript(node, loader, 'ShinawaseLoader.mjs', ['self-update', '--auto', '--quiet'], childEnv);
   }
   runNodeScript(node, loader, 'runtime-sync.mjs', ['--echo', root, '--loader', loader, '--skip-update'], childEnv);
-  const executable = findIsolatedDarwinBinary(join(loader, 'modded-runtime'));
+  const executable = findIsolatedBinary(join(loader, 'modded-runtime'));
   if (!executable) {
     const error = new Error('isolated_runtime_missing');
     error.code = 'isolated_runtime_missing';
@@ -118,7 +125,7 @@ if (isMain) {
   const release = () => { try { writeFileSync(lock, ''); } catch {} };
   process.on('exit', release);
   try {
-    const child = launchIsolatedDarwin({
+    const child = launchIsolated({
       echoRoot,
       loaderRoot,
       args: process.argv.slice(2),

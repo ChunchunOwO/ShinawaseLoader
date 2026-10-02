@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DARWIN_APP_NAMES, installRootFromTarget, isPlaytestPath, rankEchoInstall } from '../ShinawaseLoader/platform.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const copySkip = new Set([
+export const copySkip = new Set([
   'node.exe',
   'loader-state.json',
   'loader-debug.log',
@@ -18,7 +18,7 @@ const copySkip = new Set([
   'native-host.json',
 ]);
 
-const option = (args, name) => {
+export const option = (args, name) => {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? args[index + 1] : null;
 };
@@ -114,7 +114,7 @@ export const findDarwinExecutable = (hint) => {
   return found[0] || null;
 };
 
-const writeCommand = (file, lines) => {
+export const writeCommand = (file, lines) => {
   writeFileSync(file, `${lines.join('\n')}\n`, 'utf8');
   chmodSync(file, 0o755);
 };
@@ -241,7 +241,7 @@ const readModState = (loaderRoot) => {
 
 // Bundled packages are enabled on first import. A later install keeps a mod
 // the user already turned off. Windows setup does not call this helper.
-const importBundledPackages = (nodePath, echoRoot, loaderRoot, locale) => {
+export const importBundledPackages = (nodePath, echoRoot, loaderRoot, locale) => {
   const packages = join(repoRoot, 'examples', 'packages');
   if (!existsSync(packages)) return [];
   const enabled = [];

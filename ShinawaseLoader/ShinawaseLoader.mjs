@@ -12,10 +12,12 @@ import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './r
 import { DEFAULT_UPDATE_MIRRORS, UPDATE_PACKAGES, UPDATE_REPO, acquireLock, createDeadline, createSourceHealth, dropStaleCache, fetchBuffer, fetchFirstValid, fetchSmallFromSources, isNetworkFailure, normalizeMirrorBases, parseMirrorManifest } from './update-net.mjs';
 import {
   DARWIN_APP_NAMES,
+  LINUX_EXE_NAMES,
   echoUserDataDirectory,
   installRootFromTarget,
   isEchoExecutablePath,
   isPlaytestPath,
+  linuxSteamRoots,
   loaderStateDirectory,
   rankEchoInstall,
   resourcesDirForExecutable,
@@ -89,7 +91,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.4';
+const loaderVersion = '1.7.5';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
@@ -1883,7 +1885,7 @@ const startWatch = () => {
   watchTimer = setTimeout(tick, startupDelayMs);
   log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
-const echoExeNames = ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+const echoExeNames = process.platform === 'linux' ? LINUX_EXE_NAMES : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
 const isPlaytestInstall = (exePath) => isPlaytestPath(exePath);
 const addSteamCommonRoots = (roots, libraryRoot) => {
   if (!libraryRoot) return;
@@ -1908,6 +1910,7 @@ const echoCandidateRoots = () => {
     process.env.ProgramFiles && join(process.env.ProgramFiles, 'Steam', 'steamapps', 'libraryfolders.vdf'),
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Steam', 'steamapps', 'libraryfolders.vdf'),
     ...(process.platform === 'darwin' ? [join(homedir(), 'Library', 'Application Support', 'Steam', 'steamapps', 'libraryfolders.vdf')] : []),
+    ...(process.platform === 'linux' ? linuxSteamRoots().map((steam) => join(steam, 'steamapps', 'libraryfolders.vdf')) : []),
   ];
   for (const vdf of vdfRoots) {
     if (!vdf || !existsSync(vdf)) continue;
@@ -1925,6 +1928,9 @@ const echoCandidateRoots = () => {
   }
   if (process.platform === 'darwin') {
     addSteamCommonRoots(roots, join(homedir(), 'Library', 'Application Support', 'Steam'));
+  }
+  if (process.platform === 'linux') {
+    for (const steam of linuxSteamRoots()) addSteamCommonRoots(roots, steam);
   }
   return [...roots].filter(Boolean).map((value) => resolve(String(value)));
 };
