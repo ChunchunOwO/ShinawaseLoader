@@ -892,7 +892,7 @@ function Invoke-NpmInstallOnce([string]$Node, [string]$NpmCli, [string]$LoaderRo
     $npmArgs = @('install', '--omit=dev', '--no-audit', '--no-fund', '--engine-strict=false', '--replace-registry-host=always', '--fetch-timeout=30000', '--fetch-retries=1', "--registry=$Registry")
     if (Test-Path -LiteralPath $NpmCli) {
       $file = $Node
-      $argList = @($NpmCli) + $npmArgs
+      $argList = @('"' + $NpmCli + '"') + $npmArgs # Start-Process does not quote paths with spaces
     } else {
       $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
       if (-not $npmCmd) { $npmCmd = Get-Command npm -ErrorAction SilentlyContinue }
@@ -989,8 +989,15 @@ function Build-ModdedHost([string]$echoRoot, [string]$loaderRoot, [string]$echoE
     (Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe')
   ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
   if (-not $compiler) { throw 'Microsoft C# compiler was not found; cannot create ECHO.modded.exe.' }
-  & $compiler /nologo /target:winexe /optimize+ /win32icon:$icon /out:$target $source | Out-Null
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $target)) { throw 'ECHO.modded.exe compilation failed.' }
+  # Compile beside the source, then copy: a locked or odd-pathed target must not look like a compiler error.
+  $built = Join-Path $loaderRoot 'ECHO.modded.exe.build'
+  $log = & $compiler /nologo /target:winexe /optimize+ "/win32icon:$icon" "/out:$built" $source 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $built)) {
+    throw ('ECHO.modded.exe compilation failed: ' + ($log -replace '\s+', ' ').Trim())
+  }
+  try { Copy-Item -LiteralPath $built -Destination $target -Force -ErrorAction Stop }
+  catch { throw "Cannot write '$target' (quit any running ECHO.modded.exe / ECHO.exe and retry): $($_.Exception.Message)" }
+  finally { Remove-Item -LiteralPath $built -Force -ErrorAction SilentlyContinue }
   return $target
 }
 
