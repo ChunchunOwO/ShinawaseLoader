@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { discoverLinuxEchoExecutables, findLinuxExecutable, installLinuxLoader, resolveLinuxInstallRoot } from '../scripts/setup-modloader-linux.mjs';
+import { installStreamingBridgeDeps, npmRegistrySources, resolveNpmRunner, streamingDepsWarning } from '../scripts/setup-modloader-macos.mjs';
 import {
   echoUserDataDirectory,
   filterSteamCommandArgs,
@@ -164,7 +166,9 @@ test('linux installer writes the shell launcher without touching the stock insta
     const install = join(root, 'ECHO');
     touchEcho(install);
     const stock = readFileSync(join(install, 'resources', 'app.asar'));
-    const installed = installLinuxLoader({ echoRoot: install, packages: false, locale: 'zh', stateDirectory: state });
+    const installed = installLinuxLoader({
+      echoRoot: install, packages: false, streamingDeps: false, locale: 'zh', stateDirectory: state,
+    });
     assert.equal(installed.echoRoot, install);
     assert.equal(installed.launcher, join(install, 'ECHO.modded.sh'));
     assert.equal(statSync(installed.launcher).mode & 0o111, 0o111);
@@ -176,6 +180,117 @@ test('linux installer writes the shell launcher without touching the stock insta
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('linux installer skips the streaming deps when the lock stamp matches', { skip: process.platform !== 'linux' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'shinawase-linux-deps-'));
+  const state = join(root, 'state');
+  try {
+    const install = join(root, 'ECHO');
+    touchEcho(install);
+    installLinuxLoader({ echoRoot: install, packages: false, streamingDeps: false, locale: 'zh', stateDirectory: state });
+    const loaderRoot = join(install, 'ShinawaseLoader');
+    const marker = join(loaderRoot, 'node_modules', '@neteasecloudmusicapienhanced', 'api', 'package.json');
+    mkdirSync(join(marker, '..'), { recursive: true });
+    writeFileSync(marker, '{}', 'utf8');
+    writeFileSync(
+      join(loaderRoot, 'node_modules', '.shinawase-deps-lock.sha256'),
+      createHash('sha256').update(readFileSync(join(loaderRoot, 'package-lock.json'), 'utf8')).digest('hex'),
+      'utf8',
+    );
+    const again = installLinuxLoader({ echoRoot: install, packages: false, locale: 'zh', stateDirectory: state });
+    assert.equal(again.depsStatus.status, 'up-to-date');
+    assert.equal(again.depsWarning, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const depsLoaderRoot = () => {
+  const root = mkdtempSync(join(tmpdir(), 'shinawase-deps-'));
+  writeFileSync(join(root, 'package.json'), '{"name":"shinawase-loader-runtime"}', 'utf8');
+  writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3}', 'utf8');
+  return root;
+};
+
+test('streaming deps fall through registries and stamp the lock on success', () => {
+  const loaderRoot = depsLoaderRoot();
+  try {
+    const calls = [];
+    const marker = join(loaderRoot, 'node_modules', '@neteasecloudmusicapienhanced', 'api', 'package.json');
+    const result = installStreamingBridgeDeps({
+      loaderRoot,
+      nodePath: process.execPath,
+      env: {},
+      registries: [
+        { id: 'mirror', url: 'https://mirror.invalid/npm/', timeoutMs: 1000 },
+        { id: 'registry', url: 'https://registry.npmmirror.com', timeoutMs: 1000 },
+      ],
+      spawn: (file, args, options) => {
+        calls.push({ file, args, options });
+        if (options.env.npm_config_registry !== 'https://registry.npmmirror.com') return { status: 1, stderr: 'mirror down' };
+        mkdirSync(join(marker, '..'), { recursive: true });
+        writeFileSync(marker, '{}', 'utf8');
+        return { status: 0, stdout: '' };
+      },
+    });
+    assert.equal(result.status, 'installed');
+    assert.equal(result.registry, 'registry');
+    assert.equal(calls.length, 2);
+    const runner = resolveNpmRunner({ loaderRoot, nodePath: process.execPath, env: {} });
+    assert.equal(calls[0].file, runner.file);
+    assert.deepEqual(calls[0].args.slice(0, runner.prefixArgs.length), runner.prefixArgs);
+    assert.equal(calls[1].options.cwd, loaderRoot);
+    assert.ok(calls[1].args.includes('install'));
+    assert.ok(calls[1].args.includes('--registry=https://registry.npmmirror.com'));
+    assert.equal(
+      readFileSync(join(loaderRoot, 'node_modules', '.shinawase-deps-lock.sha256'), 'utf8').trim(),
+      createHash('sha256').update(readFileSync(join(loaderRoot, 'package-lock.json'), 'utf8')).digest('hex'),
+    );
+  } finally {
+    rmSync(loaderRoot, { recursive: true, force: true });
+  }
+});
+
+test('streaming deps report failure without breaking the install', () => {
+  const loaderRoot = depsLoaderRoot();
+  try {
+    let attempts = 0;
+    const result = installStreamingBridgeDeps({
+      loaderRoot,
+      env: {},
+      registries: [{ id: 'registry', url: 'https://registry.npmmirror.com', timeoutMs: 1000 }],
+      spawn: () => {
+        attempts += 1;
+        return { status: 124, stderr: 'ETIMEDOUT reading /@neteasecloudmusicapienhanced' };
+      },
+    });
+    assert.equal(attempts, 1);
+    assert.equal(result.status, 'failed');
+    assert.match(result.hint, /ETIMEDOUT/);
+    assert.match(streamingDepsWarning(result), /npm install/);
+    assert.equal(streamingDepsWarning({ status: 'installed', registry: 'registry' }), null);
+    assert.equal(existsSync(join(loaderRoot, 'node_modules', '.shinawase-deps-lock.sha256')), false);
+    assert.equal(
+      installStreamingBridgeDeps({ loaderRoot: join(loaderRoot, 'nowhere'), env: {}, spawn: () => ({ status: 0 }) }).status,
+      'skipped',
+    );
+  } finally {
+    rmSync(loaderRoot, { recursive: true, force: true });
+  }
+});
+
+test('npm registry sources honor the mirror overrides', () => {
+  assert.deepEqual(
+    npmRegistrySources({ env: { SHINAWASE_MIRRORS: 'none' } }).map((item) => item.url),
+    ['https://registry.npmmirror.com'],
+  );
+  assert.deepEqual(
+    npmRegistrySources({
+      env: { SHINAWASE_MIRRORS: 'https://a.example/mirror/,', SHINAWASE_NPM_REGISTRY: 'https://registry.npmjs.org/' },
+    }).map((item) => item.url),
+    ['https://a.example/mirror/npm/', 'https://registry.npmjs.org'],
+  );
 });
 
 test('setup-modloader.sh pins the same Node version as loader-version.json', () => {
