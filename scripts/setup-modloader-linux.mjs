@@ -16,7 +16,7 @@ import {
   loaderStateDirectory,
   rankEchoInstall,
 } from '../ShinawaseLoader/platform.mjs';
-import { copySkip, importBundledPackages, option, writeCommand } from './setup-modloader-macos.mjs';
+import { copySkip, importBundledPackages, installStreamingBridgeDeps, option, streamingDepsWarning, writeCommand } from './setup-modloader-macos.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STEAM_LIBRARY_FOLDERS = ['ECHO', 'ECHO NEXT', 'ECHO Steam', 'ECHO Playtest'];
@@ -86,6 +86,7 @@ export const installLinuxLoader = ({
   echoRoot,
   nodePath = process.execPath,
   packages = false,
+  streamingDeps = true,
   locale = 'zh',
   stateDirectory = loaderStateDirectory({ platform: 'linux' }),
 } = {}) => {
@@ -143,6 +144,9 @@ export const installLinuxLoader = ({
     encoding: 'utf8',
   });
   if (init.status !== 0) throw new Error(`loader_init_failed:${init.stderr || init.stdout || init.status}`);
+  const deps = streamingDeps
+    ? installStreamingBridgeDeps({ loaderRoot, nodePath, env })
+    : { status: 'skipped', reason: 'no_deps_flag' };
   const sync = spawnSync(nodePath, [join(loaderRoot, 'runtime-sync.mjs'), '--echo', contentRoot, '--loader', loaderRoot, '--skip-update'], {
     cwd: contentRoot,
     env,
@@ -170,6 +174,8 @@ export const installLinuxLoader = ({
     loaderRoot,
     launcher,
     nodeWarning,
+    depsStatus: deps,
+    depsWarning: streamingDepsWarning(deps),
     runtimePath,
     syncStatus: sync.status,
     syncOutput: `${sync.stdout || ''}${sync.stderr || ''}`.trim(),
@@ -196,15 +202,19 @@ if (isMain) {
       }
       console.log(`找到 ECHO：${echoRoot}`);
     }
+    if (!args.includes('--no-deps')) console.log('正在安装 streaming 桥依赖（npm install，可用 --no-deps 跳过）……');
     const installed = installLinuxLoader({
       echoRoot,
       packages: !args.includes('--no-packages'),
+      streamingDeps: !args.includes('--no-deps'),
       locale: option(args, '--locale') || process.env.ECHO_LOADER_LOCALE || 'zh',
     });
     console.log(`Installed beside ${installed.echoRoot}`);
+    console.log(`streaming deps: ${installed.depsStatus.status}${installed.depsStatus.registry ? ` via ${installed.depsStatus.registry}` : ''}`);
     console.log('Steam launch option:');
     console.log(`"${installed.launcher}" %command%`);
     if (installed.nodeWarning) console.warn(installed.nodeWarning);
+    if (installed.depsWarning) console.warn(installed.depsWarning);
     if (installed.syncStatus !== 0) console.log(installed.syncOutput);
     if (args.includes('--launch')) {
       console.log('正在启动…');
