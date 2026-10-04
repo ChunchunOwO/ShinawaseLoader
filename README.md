@@ -283,7 +283,7 @@ flowchart TB
 
 - **CDP 注入**：HTML / CSS / JS / WASM、侧栏页面、`window.echo` 均在渲染进程可用。
 - **inspector bootstrap**：启动时带 `--inspect`，在主进程求值 `main-bootstrap.cjs`，注册 streaming / account IPC、`streaming-preload.cjs` 与 native host。
-- **单实例**：Loader 监听 `17862`；日志写入 `ShinawaseLoader/Logs/loader.log` 与 `errors.log`。
+- **单实例**：Loader 监听 `17862`；日志写入 `ShinawaseLoader/Logs/loader.log` 与 `errors.log`。asar-bridge 发现 Loader 意外退出时会记录退出码并最多重启 3 次，Loader 自身的 stderr 落在 `Logs/loader-stderr.log`。
 
 ## 📁 目录结构
 
@@ -357,7 +357,7 @@ Pet、osu!downloader、AudioBand、Wallpaper Bridge、Together、Steam Listen Bo
 新版 Electron 会校验 `app.asar` 的 header hash 和每个文件的 SHA256 blocks。隔离运行时必须使用独立的 `ECHO.exe` 副本；打补丁时会重算文件 integrity 并同步 exe 内的 header hash，不要 hardlink Steam 原版 exe。Steam 更新后 Loader / `ECHO.modded.exe` 会自动对照指纹并调用 `runtime-sync.mjs`；也可手动 `node ShinawaseLoader.mjs sync-runtime --force`。
 
 **日志在哪里？**  
-游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误）、`ShinawaseLoader/Logs/modded-host.log`（`ECHO.modded.exe` 启动器自身的记录，例如因已有实例占用而退出）。
+游戏目录旁：`ShinawaseLoader/Logs/loader.log`（运行与包日志）、`ShinawaseLoader/Logs/errors.log`（仅错误，Loader 退出时还会写下 `loader exited code=`）、`ShinawaseLoader/Logs/loader-stderr.log`（Loader 进程的 stderr，崩溃栈只出现在这里）、`ShinawaseLoader/Logs/modded-host.log`（`ECHO.modded.exe` 启动器自身的记录，例如因已有实例占用而退出）。
 
 **语言选错了？**  
 删除或编辑 `%LOCALAPPDATA%\ShinawaseLoader\selection.json`，或在应用内 Loader 页切换。也可用 `--locale`。
