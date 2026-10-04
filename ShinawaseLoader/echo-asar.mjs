@@ -400,23 +400,41 @@ const createShinawaseQobuzApi = (ipc, channels) => ({
 });
 `;
 
-const echoApiAnchor = '  const echoApi = {\n    listening: createListeningApi(ipcRenderer),';
-const echoApiInsert = '  const echoApi = {\n    streaming: createShinawaseStreamingApi(ipcRenderer, IpcChannels),\n    downloads: createShinawaseDownloadsApi(ipcRenderer, IpcChannels),\n    qobuz: createShinawaseQobuzApi(ipcRenderer, IpcChannels),\n    accounts: createShinawaseAccountsApi(ipcRenderer, IpcChannels),\n    listening: createListeningApi(ipcRenderer),';
+// 26.9.16 dropped the Steam `streaming: null` stubs for a shared `echoApi`
+// literal, and 26.10.3 adds its own keys immediately after the opening brace, so
+// the anchor is the declaration line itself - never the first key inside the
+// object, which a new ECHO key can shift, and not the closing brace either, in
+// case a rebuild keeps the literal head on one line.
+const echoApiOpenRe = /^([ \t]*)const echoApi = \{/mu;
+const preloadApiNames = {
+  streaming: 'createShinawaseStreamingApi(ipcRenderer, IpcChannels)',
+  downloads: 'createShinawaseDownloadsApi(ipcRenderer, IpcChannels)',
+  qobuz: 'createShinawaseQobuzApi(ipcRenderer, IpcChannels)',
+  accounts: 'createShinawaseAccountsApi(ipcRenderer, IpcChannels)',
+};
+const preloadStubTriple = (text) => ['streaming: null,', 'downloads: null,', 'accounts: null,']
+  .every((stub) => text.includes(stub));
+const findEchoApiOpen = (text) => {
+  const match = echoApiOpenRe.exec(text);
+  return match ? { insertAt: match.index + match[0].length, indent: match[1] } : null;
+};
 const patchPreload = (text) => {
   if (text.includes(preloadMarker)) return text;
-  const replacements = [
-    ['streaming: null,', 'streaming: createShinawaseStreamingApi(ipcRenderer, IpcChannels),'],
-    ['downloads: null,', 'downloads: createShinawaseDownloadsApi(ipcRenderer, IpcChannels),'],
-    ['accounts: null,', 'qobuz: createShinawaseQobuzApi(ipcRenderer, IpcChannels),\n  accounts: createShinawaseAccountsApi(ipcRenderer, IpcChannels),'],
-  ];
   let next = text;
-  if (replacements.every(([from]) => next.includes(from))) {
+  if (preloadStubTriple(next)) {
+    const replacements = [
+      ['streaming: null,', `streaming: ${preloadApiNames.streaming},`],
+      ['downloads: null,', `downloads: ${preloadApiNames.downloads},`],
+      ['accounts: null,', `qobuz: ${preloadApiNames.qobuz},\n  accounts: ${preloadApiNames.accounts},`],
+    ];
     for (const [from, to] of replacements) next = next.replace(from, to);
-  } else if (next.includes(echoApiAnchor)) {
-    // 26.9.16 dropped the Steam `streaming: null` stubs. Inject onto echoApi.
-    next = next.replace(echoApiAnchor, echoApiInsert);
   } else {
-    throw new Error('asar_preload_entry_missing:streaming');
+    const open = findEchoApiOpen(next);
+    if (!open) throw new Error('asar_preload_entry_missing:streaming');
+    const inserted = Object.entries(preloadApiNames)
+      .map(([key, creator]) => `${open.indent}  ${key}: ${creator},`)
+      .join('\n');
+    next = `${next.slice(0, open.insertAt)}\n${inserted}${next.slice(open.insertAt)}`;
   }
   return `${next.split('\n').slice(0, 1).join('\n')}\n${preloadBridge}\n${next.split('\n').slice(1).join('\n')}`;
 };
@@ -751,9 +769,7 @@ const verifyAnchors = (root) => {
     streamingPath: mainText.includes('  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {'),
     streamingReturn: mainText.includes('  return { filePath, mimeType: null, probe, durationSeconds };'),
     qualityPassthrough: mainText.includes('quality: "standard",\n      stableKey:'),
-    preloadStreamingNull: preloadText.includes('streaming: null,') || preloadText.includes(echoApiAnchor),
-    preloadDownloadsNull: preloadText.includes('downloads: null,') || preloadText.includes(echoApiAnchor),
-    preloadAccountsNull: preloadText.includes('accounts: null,') || preloadText.includes(echoApiAnchor),
+    preloadApiAnchor: preloadStubTriple(preloadText) || Boolean(findEchoApiOpen(preloadText)),
     playlistFilter: playlistHits.some((item) => item.filterMatches.length),
     aotMiniPlayerCtor: mainText.includes(aotCurrentCtor) || mainText.includes(aotOverlayCtor),
     aotPetHelper: mainText.includes(aotCurrentPet) || mainText.includes(aotWin32Pet),
@@ -780,7 +796,7 @@ const verifyAnchors = (root) => {
   };
 };
 
-export { patch, restore, syncIntegrity, verifyAnchors };
+export { patch, restore, syncIntegrity, verifyAnchors, patchPreload };
 
 const isMain = process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
 if (isMain) {
