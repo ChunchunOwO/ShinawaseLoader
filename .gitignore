@@ -35,3 +35,6 @@ Packages/template-self-test.echomod
 ShinawaseLoader/.api-token
 .update-signing-key.pem
 /mirror-*/
+/Mods/
+/Plugins/
+/ShinawaseLoader/Logs/

@@ -252,19 +252,28 @@ const bridge = `${marker}
     // log line - an unhandled stream error, a libuv abort - leaves no trace at
     // all once its stderr goes to /dev/null. Keep stderr on disk to make the next
     // one diagnosable.
-    const loaderStdio = () => {
-      if (showConsole) return 'inherit';
-      try {
-        fs.mkdirSync(logsDir, { recursive: true });
-        return ['ignore', 'ignore', fs.openSync(path.join(logsDir, 'loader-stderr.log'), 'a')];
-      } catch {
-        return 'ignore';
-      }
+    const maxStderrLogBytes = 1024 * 1024;
+    const openLoaderStderr = () => {
+      const file = path.join(logsDir, 'loader-stderr.log');
+      let flags = 'a';
+      try { if (fs.statSync(file).size > maxStderrLogBytes) flags = 'w'; } catch {}
+      return fs.openSync(file, flags);
     };
     const maxLoaderRestarts = 3;
+    // A Loader that ran this long counts as healthy, so only crashes in quick
+    // succession use up the restart budget.
+    const stableLoaderMs = 10 * 60 * 1000;
     let loaderRestarts = 0;
     const spawnLoader = () => {
       if (loaderShuttingDown || globalThis.__shinawaseLoaderProcess) return;
+      let stderrFd = null;
+      if (!showConsole) {
+        try {
+          fs.mkdirSync(logsDir, { recursive: true });
+          stderrFd = openLoaderStderr();
+        } catch {}
+      }
+      const startedAt = Date.now();
       const child = childProcess.spawn(command, args, {
         cwd: installRoot,
         env: {
@@ -277,13 +286,16 @@ const bridge = `${marker}
           ECHO_LOGS_HOME: logsDir,
         },
         windowsHide: !showConsole,
-        stdio: loaderStdio(),
+        stdio: showConsole ? 'inherit' : (stderrFd === null ? 'ignore' : ['ignore', 'ignore', stderrFd]),
       });
+      // The child holds its own copy of the descriptor.
+      if (stderrFd !== null) { try { fs.closeSync(stderrFd); } catch {} }
       globalThis.__shinawaseLoaderProcess = child;
       child.once('error', (error) => { noteLoaderEvent('loader spawn failed\\n' + (error && error.message)); });
       child.once('exit', (code, signal) => {
         globalThis.__shinawaseLoaderProcess = null;
         if (loaderShuttingDown) return;
+        if (Date.now() - startedAt >= stableLoaderMs) loaderRestarts = 0;
         // code is null when the process was signalled and an NT abort arrives as
         // a raw status number, so record both rather than guess which happened.
         loaderRestarts += 1;

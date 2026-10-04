@@ -55,6 +55,15 @@ export const createZip = (entries) => {
   return Buffer.concat([...locals, centralData, end]);
 };
 
+const inflateBounded = (compressed, size) => {
+  try {
+    return inflateRawSync(compressed, { maxOutputLength: Math.max(size, 1) });
+  } catch (error) {
+    if (error?.code === 'ERR_BUFFER_TOO_LARGE') throw new Error('echomod_zip_crc_invalid');
+    throw error;
+  }
+};
+
 export const readZip = (archive, limits = {}) => {
   const bytes = Buffer.isBuffer(archive) ? archive : Buffer.from(archive);
   const maxEntries = limits.maxEntries ?? 512;
@@ -94,7 +103,9 @@ export const readZip = (archive, limits = {}) => {
     const dataEnd = dataStart + compressedSize;
     if (dataEnd > bytes.length) throw new Error('echomod_zip_data_invalid');
     const compressed = bytes.subarray(dataStart, dataEnd);
-    const data = method === 0 ? Buffer.from(compressed) : method === 8 ? inflateRawSync(compressed) : (() => { throw new Error('echomod_zip_method_unsupported'); })();
+    // Cap the output at the declared size so an entry that lies about it cannot
+    // inflate past the limits checked above before the length comparison runs.
+    const data = method === 0 ? Buffer.from(compressed) : method === 8 ? inflateBounded(compressed, size) : (() => { throw new Error('echomod_zip_method_unsupported'); })();
     if (data.length !== size || crc32(data) !== expectedCrc) throw new Error('echomod_zip_crc_invalid');
     total += data.length;
     files.push({ path: name, data });

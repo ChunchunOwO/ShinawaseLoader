@@ -106,3 +106,15 @@ test('a package the user disabled stays disabled across restarts', (t) => {
   assert.equal(runLoader(ws, ['init']).status, 0);
   assert.equal(stateOf(ws)[orphanMod]?.enabled, false);
 });
+
+test('a half-imported package with a manifest but no entry file is not registered', (t) => {
+  const ws = workspace(t);
+  const halfImported = 'test.half-imported';
+  mkdirSync(join(ws.mods, 'installed', halfImported), { recursive: true });
+  writeFileSync(join(ws.mods, 'installed', halfImported, 'echo.mod.json'), JSON.stringify({
+    id: halfImported, name: 'Half imported', version: '1.0.0', type: 'echo-external-mod', entry: 'mod.js',
+  }));
+  assert.equal(runLoader(ws, ['init']).status, 0);
+  assert.equal(halfImported in stateOf(ws), false);
+  assert.equal(orphanMod in stateOf(ws), true, 'complete packages are still registered');
+});

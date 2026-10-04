@@ -91,7 +91,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.6';
+const loaderVersion = '1.7.7';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
@@ -346,6 +346,17 @@ const exportLoaderSettings = () => {
     settings: { ...settings, locale: locale || 'zh', ui: uiSettings },
   };
 };
+const configPortKeys = new Set(['port', 'debugPort', 'nativePort', 'inspectPort']);
+const configBooleanKeys = new Set(['autoStart', 'enableWebConsole', 'showConsole', 'safeMode', 'debugMode', 'nativeHost', 'nativeMemoryApi', 'autoUpdate']);
+// Imported values land in loader.config.json and are read on the next start, so
+// a bad port or a non-boolean flag must be rejected here rather than stop the
+// Loader from booting.
+const isValidConfigValue = (key, value) => {
+  if (configPortKeys.has(key)) return Number.isInteger(value) && value >= 1 && value <= 65535;
+  if (configBooleanKeys.has(key)) return typeof value === 'boolean';
+  if (key === 'injectIntervalMs' || key === 'startupDelayMs') return Number.isInteger(value) && value >= 0 && value <= 3600000;
+  return typeof value === 'string' && value.length <= 64;
+};
 const importLoaderSettings = (payload) => {
   const wrapper = payload && typeof payload === 'object' ? payload : null;
   const source = wrapper && wrapper.settings && typeof wrapper.settings === 'object' ? wrapper.settings : wrapper;
@@ -355,6 +366,7 @@ const importLoaderSettings = (payload) => {
   const config = readJson(loaderConfigPath, loaderConfig);
   for (const key of exportableConfigKeys) {
     if (source[key] === undefined || JSON.stringify(config[key]) === JSON.stringify(source[key])) continue;
+    if (!isValidConfigValue(key, source[key])) throw new Error(`settings_import_invalid_${key}`);
     config[key] = source[key];
     if (key === 'debugMode') applied.push(key);
     else requiresRestart.push(key);
@@ -419,6 +431,15 @@ const readManifest = (id, kind = null) => findPackage(id, kind)?.manifest || nul
 // reads disk, so such a package looks installed in one and missing in the other.
 // Register it disabled - visible and togglable, and never injected until the
 // user opts in.
+// An interrupted import writes the manifest before the payload files, so a
+// manifest alone does not prove the package is usable.
+const hasPackageEntry = (record) => {
+  const manifest = record.manifest || {};
+  try {
+    const entry = safeRelative(manifest.entry || manifest.main || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js'));
+    return existsSync(join(record.directory, entry));
+  } catch { return false; }
+};
 const packagesOnDisk = () => {
   const found = [];
   for (const [directory, kind] of [[installedRoot, 'mod'], [installedPluginsRoot, 'plugin']]) {
@@ -427,7 +448,7 @@ const packagesOnDisk = () => {
     for (const entry of entries) {
       if (!entry.isDirectory() || !safeId(entry.name)) continue;
       const record = findPackage(entry.name, kind);
-      if (record) found.push({ id: entry.name, kind: record.kind });
+      if (record && hasPackageEntry(record)) found.push({ id: entry.name, kind: record.kind });
     }
   }
   return found;

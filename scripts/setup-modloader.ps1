@@ -843,10 +843,10 @@ function Get-NodeRuntime($versionInfo, $loaderRoot) {
         try {
           Write-Host "Node source: $($candidate.Id)" -ForegroundColor DarkGray
           Download-File $candidate.Url $zip -ConnectTimeoutMs $candidate.ConnectMs
-          if ($versionInfo.nodeSha256) {
-            $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
-            if ($actualHash -ine [string]$versionInfo.nodeSha256) { throw 'Downloaded Node archive SHA-256 mismatch.' }
-          }
+          # Fail closed: a version file without a pin must not turn the check off.
+          if (-not $versionInfo.nodeSha256) { throw 'loader-version.json has no nodeSha256; refusing to use an unverified Node archive.' }
+          $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($actualHash -ine [string]$versionInfo.nodeSha256) { throw 'Downloaded Node archive SHA-256 mismatch.' }
           $fetched = $true
           break
         } catch {
