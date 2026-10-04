@@ -413,6 +413,34 @@ const findPackage = (id, preferredKind = null) => {
   return null;
 };
 const readManifest = (id, kind = null) => findPackage(id, kind)?.manifest || null;
+// A package can be on disk with no loader-state record: an install interrupted
+// between the folder write and the state write, a hand-copied folder, or a file
+// dropped in by an older Loader. The Mods page reads state while the Market
+// reads disk, so such a package looks installed in one and missing in the other.
+// Register it disabled - visible and togglable, and never injected until the
+// user opts in.
+const packagesOnDisk = () => {
+  const found = [];
+  for (const [directory, kind] of [[installedRoot, 'mod'], [installedPluginsRoot, 'plugin']]) {
+    let entries = [];
+    try { entries = readdirSync(directory, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !safeId(entry.name)) continue;
+      const record = findPackage(entry.name, kind);
+      if (record) found.push({ id: entry.name, kind: record.kind });
+    }
+  }
+  return found;
+};
+const reconcileStateWithDisk = () => {
+  const state = readState();
+  const missing = packagesOnDisk().filter(({ id }) => !state.mods[id]);
+  if (!missing.length) return [];
+  for (const { id, kind } of missing) state.mods[id] = { kind, enabled: false, importedAt: null };
+  saveState(state);
+  log('INFO', `registered unrecorded packages on disk: ${missing.map(({ id }) => id).join(', ')}`);
+  return missing.map(({ id }) => id);
+};
 const configPath = (id, manifest = null) => {
   const record = findPackage(id);
   if (!record || !manifest) throw new Error('mod_not_installed');
@@ -3129,6 +3157,7 @@ const run = async () => {
   if (!locale) locale = await promptLocale();
   printLogo();
   if (command === 'init' || command === 'install-loader') {
+    reconcileStateWithDisk();
     writeJson(statePath, readState());
     console.log(`${c.gray}${t('initialized')}${c.reset}  ${root}`);
     return;
@@ -3190,6 +3219,7 @@ const run = async () => {
       }
     }
   } catch {}
+  reconcileStateWithDisk();
   relayLifecycleActive = true;
   startDropWatcher();
   await syncTogetherRelay();
