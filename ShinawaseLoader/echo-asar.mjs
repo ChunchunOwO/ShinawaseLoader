@@ -221,6 +221,7 @@ const bridge = `${marker}
   const debugPort = process.env.ECHO_MOD_DEBUG_PORT || String(config.debugPort || 9229);
   const showConsole = process.argv.includes('--mod-loader-console') || config.showConsole === true;
   app.commandLine.appendSwitch('remote-debugging-port', debugPort);
+  let loaderShuttingDown = false;
   app.whenReady().then(() => {
     if (globalThis.__shinawaseLoaderProcess) return;
     // Resolve the Node runtime to spawn. Prefer an explicit override, then the
@@ -240,28 +241,61 @@ const bridge = `${marker}
     const args = showConsole && process.platform === 'win32'
       ? ['/d', '/k', [node, ...loaderArgs].map((value) => '"' + value.replaceAll('"', '\\"') + '"').join(' ')]
       : loaderArgs;
-    const child = childProcess.spawn(command, args, {
-      cwd: installRoot,
-      env: {
-        ...process.env,
-        ECHO_WORKSPACE_ROOT: installRoot,
-        ECHO_GAME_ROOT: installRoot,
-        ECHO_MOD_HOME: loaderRoot,
-        ECHO_MODS_HOME: path.join(installRoot, 'Mods'),
-        ECHO_PLUGINS_HOME: path.join(installRoot, 'Plugins'),
-        ECHO_LOGS_HOME: path.join(loaderRoot, 'Logs'),
-      },
-      windowsHide: !showConsole,
-      stdio: showConsole ? 'inherit' : 'ignore',
-    });
-    globalThis.__shinawaseLoaderProcess = child;
-    child.once('error', (error) => {
+    const logsDir = path.join(loaderRoot, 'Logs');
+    const noteLoaderEvent = (message) => {
       try {
-        fs.mkdirSync(path.join(loaderRoot, 'Logs'), { recursive: true });
-        fs.appendFileSync(path.join(loaderRoot, 'Logs', 'errors.log'), '[' + new Date().toISOString() + '] loader spawn failed\\n' + (error && error.message) + '\\n');
+        fs.mkdirSync(logsDir, { recursive: true });
+        fs.appendFileSync(path.join(logsDir, 'errors.log'), '[' + new Date().toISOString() + '] ' + message + '\\n');
       } catch {}
-    });
-    child.once('exit', () => { globalThis.__shinawaseLoaderProcess = null; });
+    };
+    // The Loader logs from inside itself, so a death that never reaches the next
+    // log line - an unhandled stream error, a libuv abort - leaves no trace at
+    // all once its stderr goes to /dev/null. Keep stderr on disk to make the next
+    // one diagnosable.
+    const loaderStdio = () => {
+      if (showConsole) return 'inherit';
+      try {
+        fs.mkdirSync(logsDir, { recursive: true });
+        return ['ignore', 'ignore', fs.openSync(path.join(logsDir, 'loader-stderr.log'), 'a')];
+      } catch {
+        return 'ignore';
+      }
+    };
+    const maxLoaderRestarts = 3;
+    let loaderRestarts = 0;
+    const spawnLoader = () => {
+      if (loaderShuttingDown || globalThis.__shinawaseLoaderProcess) return;
+      const child = childProcess.spawn(command, args, {
+        cwd: installRoot,
+        env: {
+          ...process.env,
+          ECHO_WORKSPACE_ROOT: installRoot,
+          ECHO_GAME_ROOT: installRoot,
+          ECHO_MOD_HOME: loaderRoot,
+          ECHO_MODS_HOME: path.join(installRoot, 'Mods'),
+          ECHO_PLUGINS_HOME: path.join(installRoot, 'Plugins'),
+          ECHO_LOGS_HOME: logsDir,
+        },
+        windowsHide: !showConsole,
+        stdio: loaderStdio(),
+      });
+      globalThis.__shinawaseLoaderProcess = child;
+      child.once('error', (error) => { noteLoaderEvent('loader spawn failed\\n' + (error && error.message)); });
+      child.once('exit', (code, signal) => {
+        globalThis.__shinawaseLoaderProcess = null;
+        if (loaderShuttingDown) return;
+        // code is null when the process was signalled and an NT abort arrives as
+        // a raw status number, so record both rather than guess which happened.
+        loaderRestarts += 1;
+        noteLoaderEvent('loader exited code=' + code + ' signal=' + signal);
+        if (loaderRestarts > maxLoaderRestarts) {
+          noteLoaderEvent('loader restart limit reached: Mods stay uninjectable until ECHO is restarted');
+          return;
+        }
+        setTimeout(spawnLoader, 5000);
+      });
+    };
+    spawnLoader();
     const bridge = path.join(loaderRoot, 'streaming-bridge.cjs');
     if (fs.existsSync(bridge) && !globalThis.__shinawaseStreamingBridge) {
       globalThis.__shinawaseStreamingBridge = import(url.pathToFileURL(bridge).href)
@@ -277,6 +311,7 @@ const bridge = `${marker}
     }
   }).catch(() => {});
   app.once('will-quit', () => {
+    loaderShuttingDown = true;
     const child = globalThis.__shinawaseLoaderProcess;
     if (!child) return;
     if (process.platform === 'win32' && child.pid) childProcess.spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'taskkill', '/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });

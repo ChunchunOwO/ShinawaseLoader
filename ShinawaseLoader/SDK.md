@@ -110,7 +110,8 @@ echo-steam 26.9.1 (the current Steam renderer; older docs called this "ECHO Next
 - `Mods/`: Mod drop folder; installed Mods live in `Mods/installed`.
 - `Plugins/`: Plugin drop folder; installed Plugins live in `Plugins/installed`.
 - `ShinawaseLoader/Logs/loader.log`: runtime and package logs.
-- `ShinawaseLoader/Logs/errors.log`: errors only.
+- `ShinawaseLoader/Logs/errors.log`: errors only, including `loader exited code=...` when the Loader process dies.
+- `ShinawaseLoader/Logs/loader-stderr.log`: the Loader's own stderr; a crash stack appears here and nowhere else.
 
 ## Native code
 
