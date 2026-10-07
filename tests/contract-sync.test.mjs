@@ -93,6 +93,14 @@ test('loader-ui runtime version floor still matches the injection cycle', () => 
   assert.equal(cycleMatch[1], uiMatch[1], 'loader-ui version and injection floor diverged');
 });
 
+test('replacing a live loader UI re-runs the mods so their sidebar pages come back', () => {
+  // Sidebar pages are registered on the UI instance; a newer UI injected into a
+  // running ECHO starts empty unless the mods run again.
+  assert.ok(loaderSource.includes('const uiReplaced = uiReloaded && targetState.uiVersion > 0;'), 'uiReplaced gate missing');
+  assert.ok(loaderSource.includes('injectIntoTarget(session, plan, { force: uiReplaced })'), 'mods are not forced after a UI swap');
+  assert.ok(loaderSource.includes("if (old?.signature === signature && !${force ? 'true' : 'false'}) return { status: 'already' };"), 'signature dedupe ignores force');
+});
+
 test('player/extend runtime version floors are mirrored', () => {
   const playerMatch = loaderSource.match(/playerVersion < (\d+)/u);
   const extendMatch = loaderSource.match(/extendVersion < (\d+)/u);

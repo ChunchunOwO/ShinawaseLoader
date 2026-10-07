@@ -1,6 +1,6 @@
 // Keep this guard in sync with window.__echoExternalLoaderUi.version
-// and ShinawaseLoader.mjs (uiVersion < 63).
-if (window.__echoExternalLoaderUi?.version >= 63) return 'already';
+// and ShinawaseLoader.mjs (uiVersion < 64).
+if (window.__echoExternalLoaderUi?.version >= 64) return 'already';
 window.__echoExternalLoaderUi?.dispose?.();
 
 const base = 'http://127.0.0.1:' + LOADER_PORT;
@@ -33,6 +33,25 @@ let activeNav = null;
 let activeSidebar = null;
 let loaderGroup = null;
 let loaderNav = null;
+let drawer = null;
+let drawerBody = null;
+let drawerPagesNav = null;
+let dockButton = null;
+let dockToggle = null;
+let drawerState = 'closed';
+let drawerTarget = 0;
+let drawerProgress = 0;
+let drawerAnim = 0;
+let drawerAnimTimer = 0;
+let drawerLayout = 'full';
+let drawerEnterTimer = 0;
+let drawerPullTimer = 0;
+let drawerLayoutFrame = 0;
+let drawerNativeSurfaces = null;
+let drawerSuppressClickAt = -Infinity;
+let drawerDrag = null;
+let drawerFilter = '';
+let drawerRestored = false;
 let loaderButton = null;
 let modsButton = null;
 let marketButton = null;
@@ -267,7 +286,7 @@ css.textContent = `
      ===================================================================== */
   :root, .echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page,
   .echo-config-overlay, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast, .echo-inject-popup,
-  [data-echo-external-loader-group] {
+  [data-echo-external-loader-group], .shl-drawer {
     --shl-font: var(--echo-font-family, Outfit, ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif);
     --shl-mono: var(--font-mono, ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace);
     --shl-accent: var(--theme-accent, #4b55e8);
@@ -1682,142 +1701,172 @@ css.textContent = `
   .echo-steam-reminder-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 
-  /* ---- Sidebar nav ---- */
-  [data-echo-external-loader-group] .nav-icon-shell { display: grid; place-items: center; }
-  [data-echo-external-loader-group] .nav-icon-shell svg { width: 21px; height: 21px; display: block; }
-  /* Many registered mods outgrow the sidebar. Keep an internal scrollport so
-     library + utility stay pinned, but NEVER paint a scrollbar on any sidebar
-     surface (wheel/touch scroll still works). */
-  .sidebar,
-  .sidebar .sidebar-groups,
-  .sidebar-groups > [data-echo-external-loader-group],
-  .sidebar-groups > [data-echo-external-loader-group] .nav-list,
-  .sidebar > [data-echo-external-loader-group],
-  .sidebar > [data-echo-external-loader-group] .nav-list {
-    scrollbar-width: none !important;
+  /* ---- Sidebar: Shinawase dock + drawer ----
+     The dock is one native-looking row pinned right above ECHO's utility group
+     (Settings). Its arrow raises the drawer: an overlay inside aside.sidebar
+     that covers everything above the dock and swaps ECHO's navigation for
+     Loader, Market, Mods and every registered mod page. ECHO's own blocks are
+     only faded underneath, never moved or restyled, so their scroll positions
+     survive and nothing of ours scrolls inside ECHO's scrollports. */
+  html .sidebar .sidebar-groups > [data-echo-external-loader-group],
+  html .sidebar > [data-echo-external-loader-group] {
+    display: grid; flex: 0 0 auto; gap: 0; min-height: auto; margin-top: auto;
   }
-  .sidebar::-webkit-scrollbar,
-  .sidebar .sidebar-groups::-webkit-scrollbar,
-  .sidebar-groups > [data-echo-external-loader-group]::-webkit-scrollbar,
-  .sidebar-groups > [data-echo-external-loader-group] .nav-list::-webkit-scrollbar,
-  .sidebar > [data-echo-external-loader-group]::-webkit-scrollbar,
-  .sidebar > [data-echo-external-loader-group] .nav-list::-webkit-scrollbar {
-    width: 0 !important;
-    height: 0 !important;
-    display: none !important;
+  html .sidebar .sidebar-groups > [data-echo-external-loader-group] + .sidebar-group--utility { margin-top: 0; }
+  html .sidebar [data-echo-external-loader-group][data-shl-layout="horizontal"] { margin-top: 0; }
+  html .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer { flex: 0 0 0; min-height: 0; height: 0; overflow: hidden; }
+  /* ECHO only lets the library scroll once it flags the sidebar as
+     overflowing, and that check does not count the dock's row. Let it scroll
+     whenever the dock takes room so its last rows are never clipped. */
+  @media (min-width: 641px) {
+    html .sidebar:has(> .sidebar-groups > [data-echo-external-loader-group]) .sidebar-main-groups { overflow-y: auto; }
   }
-  .sidebar .sidebar-groups {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+  .shl-dock-row { position: relative; min-width: 0; }
+  .shl-dock-row > .nav-item { width: 100%; }
+  [data-echo-external-loader-group][data-shl-layout="full"] .shl-dock-row > .nav-item { padding-right: 36px; }
+  .shl-dock-main .nav-item-label { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+  .shl-dock-name, .shl-dock-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shl-dock-sub:empty { display: none; }
+  /* With one of our pages open the dock reads as a breadcrumb: a small
+     "Shinawase" over the page's name. */
+  .shl-dock-main[data-shl-sub] .nav-item-label { line-height: 1.15; }
+  .shl-dock-main[data-shl-sub] .shl-dock-name { font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; opacity: 0.72; }
+  .shl-dock-main[data-shl-sub] .shl-dock-sub { margin-top: 1px; font-size: 13.5px; }
+  .shl-dock-main .nav-icon-shell { position: relative; }
+  [data-echo-external-loader-group] .nav-icon-shell svg,
+  .shl-drawer .nav-icon-shell svg { display: block; width: 21px; height: 21px; }
+  .shl-dock-mark-s { stroke-dasharray: 24; stroke-dashoffset: 0; }
+  .shl-dock-main:hover .shl-dock-mark-s { animation: shlDraw 620ms var(--shl-out); }
+  .shl-dock-toggle { touch-action: manipulation; }
+  .shl-dock-chevron, .shl-dock-caret svg { display: block; rotate: calc(var(--shl-drawer-p, 0) * 180deg); }
+  .shl-dock-chevron { width: 16px; height: 16px; }
+  .shl-dock-caret {
+    position: absolute; right: -3px; bottom: -2px; display: none; place-items: center; width: 12px; height: 12px;
+    border-radius: 99px; color: var(--theme-subtle-text, currentColor);
+    background: var(--echo-polish-sidebar-bg, var(--theme-panel-bg, transparent));
   }
-  /* Never flex-shrink the loader group — a tall library list used to crush it
-     to 1px (Shinawase Loader vanished). Size to content; if many mods, the
-     nav-list becomes an internal scrollport (scrollbar still hidden).
-     Zero utility's margin-top:auto so free space stays in .sidebar-groups. */
-  .sidebar-groups:has(> [data-echo-external-loader-group]) > .sidebar-group--utility {
-    margin-top: 0;
+  .shl-dock-caret svg { width: 10px; height: 10px; }
+  [data-echo-external-loader-group]:not([data-shl-layout="full"]) .shl-dock-toggle { display: none; }
+  [data-echo-external-loader-group]:not([data-shl-layout="full"]) .shl-dock-caret { display: grid; }
+  html[data-shl-sidebar="open"] :is(.shl-dock-chevron, .shl-dock-caret svg) { rotate: 180deg; }
+  html[data-shl-sidebar="open"] .shl-dock-toggle { color: var(--echo-polish-accent-text, var(--shl-accent-strong)); }
+
+  /* The sheet's position is --shl-drawer-p on aside.sidebar while it moves
+     (0 tucked into the dock, 1 open); the Loader eases it on click and the
+     pointer or wheel sets it directly. ECHO's blocks are masked off below the
+     sheet's top edge instead of faded, so the two never overlap on a
+     translucent sidebar: the sheet covers them as it rises. */
+  .shl-drawer {
+    position: absolute; z-index: 3; box-sizing: border-box; display: flex; flex-direction: column;
+    min-width: 0; min-height: 0; margin: 0; visibility: hidden; pointer-events: none;
   }
-  .sidebar-groups > [data-echo-external-loader-group] {
-    display: flex;
-    flex: 0 0 auto;
-    flex-direction: column;
-    min-height: auto;
-    margin-top: auto; /* pin Loader + utility to the bottom when space allows */
-    overflow: hidden;
+  html:is([data-shl-sidebar="open"], [data-shl-sidebar="moving"]) .shl-drawer { visibility: visible; pointer-events: auto; }
+  html[data-shl-sidebar="moving"] .shl-drawer {
+    translate: 0 calc((1 - var(--shl-drawer-p, 0)) * 100%);
+    clip-path: inset(0 0 calc((1 - var(--shl-drawer-p, 0)) * 100%) 0);
   }
-  /* No overscroll-behavior: contain on this list. ECHO scrolls the library in
-     .sidebar-groups, or in the sibling .sidebar-main-groups once playlists are
-     open. contain traps the wheel while the pointer is over Shinawase Loader
-     (the list often does not overflow) and the sidebar above stops moving.
-     onLoaderGroupWheel forwards whatever this list does not consume. */
-  .sidebar-groups > [data-echo-external-loader-group] .nav-list {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-height: auto;
-    max-height: min(42vh, 360px);
-    overflow-x: hidden;
-    overflow-y: auto;
+  html[data-shl-sidebar="open"] :is(.sidebar-groups, aside.sidebar) > :has(~ [data-echo-external-loader-group]):not(.sidebar-header, .sidebar-edge) {
+    visibility: hidden; pointer-events: none;
   }
-  /* Flat sidebar (echo-steam dropped .sidebar-groups): style our injected group ourselves. */
-  .sidebar > [data-echo-external-loader-group] {
-    display: flex;
-    flex: 0 0 auto;
-    flex-direction: column;
-    min-height: auto;
-    margin-top: 14px;
-    overflow: hidden;
+  html[data-shl-sidebar="moving"] :is(.sidebar-groups, aside.sidebar) > :has(~ [data-echo-external-loader-group]):not(.sidebar-header, .sidebar-edge) { pointer-events: none; }
+  html[data-shl-sidebar="moving"] .sidebar-groups:has(> [data-echo-external-loader-group]:not([data-shl-layout="horizontal"])) {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(var(--shl-drawer-y, 0px) + (1 - var(--shl-drawer-p, 0)) * var(--shl-drawer-h, 0px)), transparent 0, transparent calc(var(--shl-drawer-y, 0px) + var(--shl-drawer-h, 0px)), #000 0);
+    mask-image: linear-gradient(to bottom, #000 calc(var(--shl-drawer-y, 0px) + (1 - var(--shl-drawer-p, 0)) * var(--shl-drawer-h, 0px)), transparent 0, transparent calc(var(--shl-drawer-y, 0px) + var(--shl-drawer-h, 0px)), #000 0);
   }
-  .sidebar > [data-echo-external-loader-group] .sidebar-group-label {
-    margin: 0 0 6px; padding: 0 12px; font-size: 10.5px; font-weight: 680;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--theme-subtle-text, var(--theme-muted-text, #a0a4aa));
-  }
-  .sidebar > [data-echo-external-loader-group] .nav-list {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-height: auto;
-    max-height: min(42vh, 360px);
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-  /* Loader sits above utility; collapse the spacer. */
-  .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer {
-    flex: 0 0 0;
-    min-height: 0;
-    height: 0;
-    overflow: hidden;
-  }
-  .app-shell--sidebar-icon-only [data-echo-external-loader-group] .sidebar-group-label,
-  .sidebar[data-icon-only] [data-echo-external-loader-group] .sidebar-group-label { display: none; }
-  .app-shell--sidebar-icon-only .sidebar-groups > [data-echo-external-loader-group] .nav-list,
-  .sidebar[data-icon-only] .sidebar-groups > [data-echo-external-loader-group] .nav-list,
-  .app-shell--sidebar-icon-only .sidebar > [data-echo-external-loader-group] .nav-list,
-  .sidebar[data-icon-only] > [data-echo-external-loader-group] .nav-list {
-    max-height: none;
-  }
-  @media (max-width: 980px) {
-    /* Keep Loader reachable in the short icon rail even when the library
-       list overflows — stick the cluster above Settings at the bottom. */
-    .sidebar-groups > [data-echo-external-loader-group] {
-      position: sticky;
-      bottom: 0;
-      z-index: 3;
-      margin-top: auto;
-      background: var(--theme-sidebar-bg, var(--theme-panel-bg, transparent));
-    }
-    .sidebar-groups > [data-echo-external-loader-group] .nav-list,
-    .sidebar > [data-echo-external-loader-group] .nav-list {
-      max-height: none;
-      overflow: visible;
-    }
-    .sidebar > [data-echo-external-loader-group] {
-      flex-direction: column;
-      margin-top: 0;
-      align-items: stretch;
-    }
-    .sidebar > [data-echo-external-loader-group] .nav-list { flex-direction: column; min-width: 0; }
-    .sidebar:has(> [data-echo-external-loader-group]) > .sidebar-spacer { display: none; }
+  /* No .sidebar-groups to mask (flat sidebar, narrow bottom bar): cross-fade. */
+  html[data-shl-sidebar="moving"] :is(aside.sidebar, .sidebar-groups:has(> [data-shl-layout="horizontal"])) > :has(~ [data-echo-external-loader-group]):not(.sidebar-header, .sidebar-edge) {
+    opacity: calc(1 - var(--shl-drawer-p, 0) * 1.6);
   }
 
-
-  /* Sidebar polish: an accent tick that slides in on the active entry, icons that lean in on hover. */
-  [data-echo-external-loader-group] .nav-item { position: relative; }
-  [data-echo-external-loader-group] .nav-item[data-active="true"]::before {
-    content: ""; position: absolute; left: -7px; top: 24%; bottom: 24%; width: 3px; border-radius: 0 3px 3px 0; pointer-events: none;
-    background: linear-gradient(180deg, var(--shl-accent), var(--aurora-2));
-    box-shadow: 0 0 12px 1px var(--shl-glow); animation: shlTick 520ms var(--shl-spring);
+  .shl-drawer-head {
+    position: relative; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px;
+    min-height: 46px; padding: 14px 0 4px 10px; cursor: grab; user-select: none; touch-action: none;
   }
-  [data-echo-external-loader-group] .nav-icon-shell svg { transition: transform 420ms var(--shl-spring); }
-  [data-echo-external-loader-group] .nav-item:hover .nav-icon-shell svg { transform: scale(1.14) rotate(-6deg); }
-  [data-echo-external-loader-group] .nav-item[data-active="true"] .nav-icon-shell { color: var(--shl-accent-strong); }
-  [data-echo-external-loader-group] .sidebar-group-label {
-    background: linear-gradient(90deg, currentColor 30%, var(--shl-accent) 60%, var(--aurora-2) 80%, currentColor);
+  .shl-drawer[data-dragging] .shl-drawer-head { cursor: grabbing; }
+  .shl-drawer-grip {
+    position: absolute; top: 4px; left: 50%; width: 32px; height: 4px; border-radius: 99px; translate: -50% 0;
+    background: color-mix(in srgb, var(--theme-heading-text, currentColor) 16%, transparent);
+    transition: width 260ms var(--shl-out), background-color 180ms var(--shl-ease);
+  }
+  .shl-drawer-head:hover .shl-drawer-grip { width: 46px; background: color-mix(in srgb, var(--shl-accent) 62%, transparent); }
+  .shl-drawer-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .shl-drawer-title {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px; font-weight: 680; letter-spacing: 0.08em; text-transform: uppercase;
+    background: linear-gradient(90deg, var(--theme-subtle-text, currentColor) 30%, var(--shl-accent) 60%, var(--aurora-2) 80%, var(--theme-subtle-text, currentColor));
     background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     animation: shlLabel 9s linear infinite;
   }
+  .shl-drawer-version {
+    flex: none; padding: 2px 6px; border-radius: 6px; font: 600 10px/1.4 var(--shl-mono);
+    color: var(--theme-subtle-text, var(--shl-subtle)); background: color-mix(in srgb, var(--theme-heading-text, #000) 6%, transparent);
+  }
+  .shl-drawer-close {
+    display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px;
+    color: var(--theme-muted-text, var(--shl-muted)); background: transparent; cursor: pointer;
+  }
+  .shl-drawer-close svg { width: 16px; height: 16px; transition: translate 260ms var(--shl-out); }
+  .shl-drawer-close:is(:hover, :focus-visible) { color: var(--theme-heading-text, var(--shl-heading)); background: var(--theme-control-bg, var(--shl-hi)); }
+  .shl-drawer-head:hover .shl-drawer-close svg { translate: 0 2px; }
+  .shl-drawer-close:focus-visible { outline: 2px solid var(--theme-focus-ring, var(--shl-focus-ring)); outline-offset: -2px; }
+  .shl-drawer-body {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 4px 0 6px;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  }
+  .shl-drawer-body::-webkit-scrollbar { display: none; }
+  .shl-drawer-body[data-fade="top"] { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18px); mask-image: linear-gradient(to bottom, transparent, #000 18px); }
+  .shl-drawer-body[data-fade="bottom"] { -webkit-mask-image: linear-gradient(to top, transparent, #000 18px); mask-image: linear-gradient(to top, transparent, #000 18px); }
+  .shl-drawer-body[data-fade="both"] {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  }
+  .shl-drawer-section { display: grid; gap: 4px; min-width: 0; }
+  .shl-drawer .shl-drawer-label { display: flex; align-items: center; gap: 6px; max-height: none; }
+  .shl-drawer-count {
+    padding: 0 5px; border-radius: 99px; font-size: 10px; line-height: 15px; letter-spacing: 0;
+    color: var(--theme-subtle-text, var(--shl-subtle)); background: color-mix(in srgb, var(--theme-heading-text, #000) 7%, transparent);
+  }
+  .shl-drawer-count:empty { display: none; }
+  .shl-drawer-filter { position: relative; display: block; margin: 2px 0 4px; }
+  .shl-drawer-filter[hidden] { display: none; }
+  .shl-drawer-filter svg { position: absolute; top: 50%; left: 9px; width: 14px; height: 14px; translate: 0 -50%; color: var(--theme-subtle-text, var(--shl-subtle)); pointer-events: none; }
+  .shl-drawer-filter input {
+    box-sizing: border-box; width: 100%; height: 32px; padding: 0 10px 0 30px; outline: none;
+    border: 1px solid color-mix(in srgb, var(--theme-panel-border, var(--shl-border)) 85%, transparent); border-radius: 8px;
+    color: var(--theme-heading-text, var(--shl-heading)); background: color-mix(in srgb, var(--theme-heading-text, #000) 3%, transparent);
+    font: inherit; font-size: 13px; transition: border-color 160ms var(--shl-ease), box-shadow 160ms var(--shl-ease);
+  }
+  .shl-drawer-filter input:focus { border-color: color-mix(in srgb, var(--shl-accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--shl-accent) 16%, transparent); }
+  .shl-drawer-empty { margin: 2px 10px 0; font-size: 12px; line-height: 1.55; color: var(--theme-subtle-text, var(--shl-subtle)); }
+  .shl-drawer-empty[hidden] { display: none; }
+  .shl-drawer-empty button {
+    display: inline; padding: 0; border: 0; background: none; cursor: pointer;
+    color: var(--echo-polish-accent-text, var(--shl-accent-strong)); font: inherit; font-weight: 600;
+  }
+  .shl-drawer-empty button:hover { text-decoration: underline; }
+  .shl-drawer .nav-item[data-shl-filtered="true"] { display: none; }
+  .shl-drawer .nav-icon-shell { font-size: 17px; line-height: 1; }
+  /* Rows rise in a short cascade when the drawer opens from a click. */
+  .shl-drawer[data-entering] :is(.shl-drawer-head, .shl-drawer-label, .shl-drawer-filter, .shl-drawer-empty, .nav-item) {
+    animation: shlDrawerRise 460ms var(--shl-out) both; animation-delay: calc(60ms + var(--i, 0) * 24ms);
+  }
+  @keyframes shlDrawerRise { from { opacity: 0; translate: 0 14px; } to { opacity: 1; translate: 0 0; } }
+  /* Icon rail (collapsed or narrow window): icons only, the dock shows a caret. */
+  .shl-drawer[data-shl-layout="rail"] .shl-drawer-head { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 14px 0 4px; }
+  .shl-drawer[data-shl-layout="rail"] :is(.shl-drawer-brand, .shl-drawer-label, .shl-drawer-filter, .shl-drawer-empty) { display: none; }
+  .shl-drawer[data-shl-layout="rail"] .shl-drawer-pages { padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--theme-panel-border, var(--shl-border)) 60%, transparent); }
+  .shl-drawer[data-shl-layout="rail"] .shl-drawer-pages:not(:has(.nav-item:not([data-shl-filtered="true"]))) { display: none; }
+  /* Bottom bar (very narrow window): the drawer becomes a row beside the dock. */
+  .shl-drawer[data-shl-layout="horizontal"] .shl-drawer-head { display: none; }
+  .shl-drawer[data-shl-layout="horizontal"] .shl-drawer-body { flex-direction: row; align-items: center; padding: 0; overflow-x: auto; overflow-y: hidden; -webkit-mask-image: none; mask-image: none; }
+  .shl-drawer[data-shl-layout="horizontal"] .shl-drawer-section { display: flex; align-items: center; }
+  .shl-drawer[data-shl-layout="horizontal"] :is(.shl-drawer-label, .shl-drawer-filter, .shl-drawer-empty) { display: none; }
+  .shl-drawer[data-shl-layout="horizontal"] .nav-list { flex-direction: row; }
+  @media (prefers-reduced-motion: reduce) {
+    .shl-drawer *, .shl-dock-main .shl-dock-mark-s { animation: none !important; transition-duration: 1ms !important; }
+  }
+  html[data-accessibility-reduce-motion="true"] :is(.shl-drawer *, .shl-dock-main .shl-dock-mark-s) { animation: none !important; transition-duration: 1ms !important; }
+
   /* ---- Titlebar Shiawase mark (CSS-only so React re-renders cannot wipe it) ---- */
   .app-titlebar-brand > strong { order: 0; }
   .app-titlebar-brand > strong + span { order: 1; }
@@ -1966,7 +2015,7 @@ motionCss.id = 'echo-loader-ui-motion';
 document.head.append(css, accentCss, motionCss);
 document.documentElement.toggleAttribute('data-shl-hide-titlebar-brand', uiSettings.showTitlebarBrand === false);
 
-const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group]';
+const loaderSurfaces = '.echo-external-mod-panel, .echo-external-loader-panel, .echo-external-mod-page, .echo-config-overlay, .echo-disclaimer-overlay, .echo-steam-reminder, .echo-toast-stack, .echo-toast, .echo-inject-popup, [data-echo-external-loader-group], .shl-drawer';
 const hexToRgba = (hex, alpha) => {
   const value = Number.parseInt(hex.slice(1), 16);
   return 'rgba(' + ((value >> 16) & 255) + ',' + ((value >> 8) & 255) + ',' + (value & 255) + ',' + alpha + ')';
@@ -2285,6 +2334,7 @@ const hideAllPanels = () => {
     button.dataset.active = 'false';
   });
   sidebarButtons.forEach((button) => { button.setAttribute('aria-current', 'false'); button.dataset.active = 'false'; });
+  syncDock();
 };
 const showPanel = (panel, button) => {
   attachPanel(panel);
@@ -2297,13 +2347,17 @@ const showPanel = (panel, button) => {
     button.setAttribute('aria-current', 'page');
     button.dataset.active = 'true';
   }
+  syncDock();
 };
 const closeSidebarPage = () => {
   hideAllPanels();
   restoreNativeSurfaces();
 };
 const nativeRouteEvents = ['app:navigate:lyrics', 'app:navigate:lyrics-back', 'app:navigate:route'];
-const onNativeRoute = () => closeSidebarPage();
+const onNativeRoute = () => {
+  closeSidebarPage();
+  closeDrawer();
+};
 nativeRouteEvents.forEach((eventName) => window.addEventListener(eventName, onNativeRoute));
 
 // ECHO also routes from entry points the .nav-item click hook never sees
@@ -2325,14 +2379,23 @@ const surfaceMutationRelevant = (records) => records.some((record) => {
   }
   return false;
 });
+const visibleNativeSurfaces = () => new Set([...document.querySelectorAll('.page-surface:not([hidden])')]
+  .filter((surface) => !isLoaderSurface(surface) && !surface.closest('aside.sidebar, .sidebar, .sidebar-groups')));
 const onSurfaceMutation = (records) => {
-  if (!loaderPageActive()) return;
+  const pageActive = loaderPageActive();
+  if (!pageActive && !drawerNativeSurfaces) return;
   if (!surfaceMutationRelevant(records)) return;
-  const nativeVisible = [...document.querySelectorAll('.page-surface:not([hidden])')]
-    .some((surface) => !isLoaderSurface(surface) && !surface.closest('aside.sidebar, .sidebar, .sidebar-groups'));
-  if (!nativeVisible) return;
+  const visible = visibleNativeSurfaces();
+  if (!pageActive) {
+    // The drawer is up over a native page. Another native page appearing
+    // means ECHO navigated, so hand the sidebar back to ECHO's own nav.
+    if ([...visible].some((surface) => !drawerNativeSurfaces.has(surface))) closeDrawer();
+    return;
+  }
+  if (!visible.size) return;
   hideAllPanels();
   document.querySelectorAll('[data-echo-external-hidden="true"]').forEach((surface) => { delete surface.dataset.echoExternalHidden; });
+  closeDrawer();
 };
 const surfaceObserver = new MutationObserver(onSurfaceMutation);
 let surfaceObserverTarget = null;
@@ -2382,94 +2445,653 @@ const makeNavButton = (nav, key, label, icon, onClick) => {
   return button;
 };
 
-// The loader nav-list scrolls on its own. ECHO scrolls the library on an ancestor
-// (.sidebar-groups / .sidebar) or, with playlists open, the sibling
-// .sidebar-main-groups. Once this list cannot consume the wheel, forward it there.
-const loaderGroupWheelTarget = (group, delta, eventTarget) => {
-  if (!group || !Number.isFinite(delta) || delta === 0) return null;
-  const canScrollBy = (element) => {
-    if (!element || element.nodeType !== 1) return false;
-    let overflow = '';
-    try { overflow = getComputedStyle(element).overflowY; } catch { return false; }
-    if (overflow !== 'auto' && overflow !== 'scroll' && overflow !== 'overlay') return false;
-    if (element.scrollHeight <= element.clientHeight + 1) return false;
-    if (delta < 0) return element.scrollTop > 0;
-    return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+// ---- Sidebar: Shinawase dock + drawer ---------------------------------------
+// The dock is one row above ECHO's Settings. Its arrow raises the drawer, an
+// overlay inside aside.sidebar that covers every native block above the dock
+// and lists Loader, Market, Mods and each registered mod page. ECHO's own nav
+// is only faded out underneath, so its scroll position and React state survive
+// and nothing of ours has to scroll inside ECHO's scrollports.
+const DRAWER_STATE_KEY = 'shinawase:sidebar-drawer';
+const LAST_PAGE_KEY = 'shinawase:last-page';
+const DRAWER_FILTER_MIN = 8;
+const lineSvg = (paths, className = '', width = 2) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + width + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + (className ? ' class="' + className + '"' : '') + '>' + paths + '</svg>';
+const shinawaseMarkIcon = navSvg('<path d="M12 2.9 19.8 7.4v9.2L12 21.1 4.2 16.6V7.4L12 2.9z"/><path class="shl-dock-mark-s" pathLength="24" d="M14.7 9.4c-.5-1-1.5-1.6-2.7-1.6-1.5 0-2.6.9-2.6 2.1 0 2.9 5.4 1.6 5.4 4.5 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.4-.6-2.9-1.7"/>');
+const chevronUpPath = '<path d="m18 15-6-6-6 6"/>';
+
+const readStorage = (store, key) => {
+  try { return window[store]?.getItem(key) || ''; } catch { return ''; }
+};
+const writeStorage = (store, key, value) => {
+  try {
+    if (value) window[store]?.setItem(key, value);
+    else window[store]?.removeItem(key);
+  } catch {}
+};
+const setText = (node, text) => { if (node && node.textContent !== text) node.textContent = text; };
+const setAttr = (node, name, value) => { if (node && node.getAttribute(name) !== value) node.setAttribute(name, value); };
+
+// Box of `el` in `root`'s positioning space. Offsets ignore transforms, so a
+// sidebar that is still sliding in measures where it will settle.
+const boxWithin = (el, root) => {
+  let top = 0;
+  let left = 0;
+  let node = el;
+  while (node && node !== root) {
+    top += node.offsetTop;
+    left += node.offsetLeft;
+    node = node.offsetParent;
+  }
+  if (node !== root) return null;
+  return { top, left, width: el.offsetWidth, height: el.offsetHeight };
+};
+const rectWithin = (el, root) => {
+  const outer = root.getBoundingClientRect();
+  const inner = el.getBoundingClientRect();
+  return {
+    top: inner.top - outer.top - root.clientTop + root.scrollTop,
+    left: inner.left - outer.left - root.clientLeft + root.scrollLeft,
+    width: inner.width,
+    height: inner.height,
   };
-  let node = eventTarget?.nodeType === 1 ? eventTarget : eventTarget?.parentElement || null;
-  while (node && node !== group) {
-    if (canScrollBy(node)) return null;
-    node = node.parentElement;
-  }
-  const sidebar = group.closest?.('aside.sidebar, .sidebar') || null;
-  const mainGroups = sidebar?.querySelector?.('.sidebar-main-groups') || null;
-  const candidates = [group.parentElement, mainGroups, sidebar];
-  for (const candidate of candidates) {
-    if (!candidate || candidate === group || group.contains(candidate)) continue;
-    if (canScrollBy(candidate)) return candidate;
-  }
-  return null;
 };
-const onLoaderGroupWheel = (event) => {
-  if (event.defaultPrevented || event.ctrlKey) return;
-  const raw = Number(event.deltaY) || 0;
-  const pixels = event.deltaMode === 1 ? raw * 16 : event.deltaMode === 2 ? raw * (event.currentTarget?.clientHeight || 0) : raw;
-  const target = loaderGroupWheelTarget(event.currentTarget, pixels, event.target);
-  if (!target) return;
-  target.scrollTop += pixels;
-  event.preventDefault();
+// The drawer spans the native blocks before the dock: down to the dock in the
+// vertical sidebar, across to it in the narrow-window bottom bar.
+const drawerFrame = (start, dock, horizontal, gap) => (horizontal
+  ? { top: start.top, left: start.left, width: Math.max(0, dock.left - gap - start.left), height: start.height }
+  : { top: start.top, left: start.left, width: start.width, height: Math.max(0, dock.top - gap - start.top) });
+// Where a released drag settles. A flick (px/ms, positive = opening) wins;
+// otherwise the sheet has to travel 30% away from where it started.
+const drawerSettlesOpen = (progress, velocity, startedOpen) => {
+  if (Math.abs(velocity) >= 0.35) return velocity > 0;
+  return startedOpen ? progress > 0.7 : progress > 0.3;
 };
-const bindLoaderGroupWheel = (group) => {
-  if (!group || group.dataset.echoExternalWheel === 'true') return;
-  group.dataset.echoExternalWheel = 'true';
-  group.addEventListener('wheel', onLoaderGroupWheel, { capture: true, passive: false });
+// Wheel "pull down" at the top of the drawer closes it. Only a gesture that
+// starts while the list already rests at the top counts, so the fling that
+// scrolls back up to the top does not slam the drawer shut.
+const createPullToClose = ({ threshold = 150, settleMs = 260 } = {}) => {
+  let pulled = 0;
+  let lastScrollAt = -Infinity;
+  let lastPullAt = -Infinity;
+  return {
+    scrolled(now) {
+      lastScrollAt = now;
+      pulled = 0;
+    },
+    wheel(deltaY, atTop, now) {
+      if (deltaY >= 0 || !atTop) {
+        pulled = 0;
+        return { progress: 0, close: false };
+      }
+      if (now - lastScrollAt < settleMs) {
+        lastScrollAt = now;
+        return { progress: 0, close: false };
+      }
+      if (now - lastPullAt > settleMs) pulled = 0;
+      lastPullAt = now;
+      pulled += -deltaY;
+      return { progress: Math.min(1, pulled / threshold), close: pulled >= threshold };
+    },
+    reset() {
+      pulled = 0;
+      lastPullAt = -Infinity;
+    },
+  };
+};
+const drawerPull = createPullToClose();
+
+// The sheet's position is one number, --shl-drawer-p on aside.sidebar: 0 is
+// tucked into the dock, 1 is fully open. Clicks ease it, drags and the wheel
+// set it directly; CSS only renders it.
+const drawerOpen = () => drawerTarget === 1;
+const drawerMotionOff = () => motionOff() || document.documentElement.dataset.accessibilityReduceMotion === 'true';
+const setDrawerState = (state) => {
+  drawerState = state;
+  document.documentElement.dataset.shlSidebar = state;
+};
+const setDrawerProgress = (progress) => {
+  drawerProgress = Math.min(1, Math.max(0, progress));
+  drawer?.parentElement?.style.setProperty('--shl-drawer-p', String(Math.round(drawerProgress * 1000) / 1000));
+};
+const clearDrawerProgress = () => drawer?.parentElement?.style.removeProperty('--shl-drawer-p');
+const stopDrawerAnimation = () => {
+  window.cancelAnimationFrame(drawerAnim);
+  window.clearTimeout(drawerAnimTimer);
+  drawerAnim = 0;
+};
+const settleDrawer = (progress) => {
+  stopDrawerAnimation();
+  if (progress > 0 && progress < 1) {
+    setDrawerState('moving');
+    setDrawerProgress(progress);
+    return;
+  }
+  drawerProgress = progress >= 1 ? 1 : 0;
+  clearDrawerProgress();
+  setDrawerState(drawerProgress ? 'open' : 'closed');
+};
+// Ease the sheet to `target`. Time scales with the distance left, and a
+// flick (px/ms) shortens it so a fast release keeps its momentum.
+const animateDrawer = (target, { duration = 0, velocity = 0 } = {}) => {
+  stopDrawerAnimation();
+  const from = drawerProgress;
+  if (drawerMotionOff() || Math.abs(target - from) < 0.002) {
+    settleDrawer(target);
+    return;
+  }
+  const span = duration || Math.max(170, Math.min(460, (470 * Math.abs(target - from)) / (1 + Math.abs(velocity) * 1.5)));
+  layoutDrawer();
+  setDrawerState('moving');
+  setDrawerProgress(from);
+  const start = performance.now();
+  const frame = (now) => {
+    const t = Math.min(1, (now - start) / span);
+    if (t >= 1) {
+      settleDrawer(target);
+      return;
+    }
+    setDrawerProgress(from + (target - from) * (1 - (1 - t) ** 4));
+    drawerAnim = window.requestAnimationFrame(frame);
+  };
+  drawerAnim = window.requestAnimationFrame(frame);
+  // rAF stalls while the window is hidden; never leave the sheet half-way.
+  drawerAnimTimer = window.setTimeout(() => settleDrawer(target), span + 250);
 };
 
-const ensureLoaderGroup = () => {
-  // Older ECHO renders a grouped sidebar (.sidebar-groups). echo-steam flattened
-  // the sidebar to <aside class="sidebar"> with plain .nav-list children, so fall
-  // back to the flat sidebar and slot our group above the spacer / utility nav.
-  const groups = document.querySelector('.sidebar-groups');
-  const flatSidebar = groups ? null : document.querySelector('aside.sidebar, .sidebar');
-  const host = groups || flatSidebar;
-  if (!host) return null;
-  document.querySelectorAll('[data-echo-external-owned="true"]').forEach((button) => {
-    if (!button.closest('[data-echo-external-loader-group]')) button.remove();
+const activeShinawasePage = () => {
+  if (loaderPanel && !loaderPanel.hidden) return { key: 'loader', label: T.loader };
+  if (modsPanel && !modsPanel.hidden) return { key: 'mods', label: T.mods };
+  if (marketPanel && !marketPanel.hidden) return { key: 'market', label: T.market || 'Mod Market' };
+  const entry = activeSidebar ? sidebarEntries.get(activeSidebar) : null;
+  const page = entry ? sidebarPages.get(entry.id) : null;
+  if (entry && page && !page.hidden) return { key: 'page:' + entry.id, label: entry.label || entry.id };
+  return null;
+};
+
+// The dock mirrors where the user is: active while one of our pages shows,
+// with that page's name under "Shinawase" while the drawer is down.
+const syncDock = () => {
+  if (!dockButton) return;
+  const page = activeShinawasePage();
+  if (page) writeStorage('localStorage', LAST_PAGE_KEY, page.key);
+  const open = drawerOpen();
+  setAttr(dockButton, 'data-active', page ? 'true' : 'false');
+  setAttr(dockButton, 'aria-current', page ? 'page' : 'false');
+  const sub = page && !open ? page.label : '';
+  setText(dockButton.querySelector('.shl-dock-sub'), sub);
+  if (dockButton.hasAttribute('data-shl-sub') !== Boolean(sub)) dockButton.toggleAttribute('data-shl-sub', Boolean(sub));
+  const dockName = T.sidebarDock || 'Shinawase';
+  setAttr(dockButton, 'title', open ? (T.sidebarCollapse || dockName) : (page ? dockName + ' · ' + page.label : (T.sidebarExpand || dockName)));
+  setAttr(dockButton, 'aria-expanded', String(open));
+  const toggleLabel = open ? (T.sidebarCollapse || 'Close') : (T.sidebarExpand || 'Open');
+  setAttr(dockToggle, 'aria-expanded', String(open));
+  setAttr(dockToggle, 'aria-label', toggleLabel);
+  setAttr(dockToggle, 'title', toggleLabel);
+};
+
+const syncDrawerText = () => {
+  const groupLabel = T.loaderGroup || 'Shinawase Loader';
+  if (loaderGroup) {
+    setText(loaderGroup.querySelector('.shl-dock-name'), T.sidebarDock || 'Shinawase');
+    setAttr(dockButton, 'aria-label', T.sidebarDock || 'Shinawase');
+    setAttr(loaderGroup.querySelector('nav'), 'aria-label', groupLabel);
+  }
+  if (!drawer) return;
+  setAttr(drawer, 'aria-label', groupLabel);
+  setText(drawer.querySelector('.shl-drawer-title'), T.sidebarDock || 'Shinawase');
+  setText(drawer.querySelector('.shl-drawer-version'), 'v' + LOADER_VERSION);
+  setAttr(drawer.querySelector('[data-shl-drawer-head]'), 'title', T.sidebarDragHint || '');
+  const close = drawer.querySelector('[data-shl-drawer-close]');
+  setAttr(close, 'aria-label', T.sidebarCollapse || 'Close');
+  setAttr(close, 'title', T.sidebarCollapse || 'Close');
+  setText(drawer.querySelector('[data-shl-pages-label]'), T.sidebarPages || 'Mod pages');
+  const filter = drawer.querySelector('[data-shl-drawer-filter]');
+  setAttr(filter, 'placeholder', T.sidebarFilter || 'Filter');
+  setAttr(filter, 'aria-label', T.sidebarFilter || 'Filter');
+  setAttr(loaderNav, 'aria-label', groupLabel);
+  setAttr(drawerPagesNav, 'aria-label', T.sidebarPages || 'Mod pages');
+};
+
+const syncDrawerFade = () => {
+  if (!drawerBody) return;
+  const rest = drawerBody.scrollHeight - drawerBody.clientHeight - drawerBody.scrollTop;
+  const top = drawerBody.scrollTop > 2;
+  const bottom = rest > 2;
+  const fade = top && bottom ? 'both' : top ? 'top' : bottom ? 'bottom' : '';
+  if ((drawerBody.dataset.fade || '') === fade) return;
+  if (fade) drawerBody.dataset.fade = fade;
+  else delete drawerBody.dataset.fade;
+};
+
+const syncDrawerEmpty = (total, matches) => {
+  const empty = drawer?.querySelector('[data-shl-drawer-empty]');
+  if (!empty) return;
+  const kind = total === 0 ? 'none' : matches === 0 ? 'filter' : '';
+  empty.hidden = !kind;
+  if (!kind) return;
+  const text = kind === 'filter' ? (T.sidebarFilterEmpty || 'No matches') : (T.sidebarPagesEmpty || '') + ' ';
+  if (empty.dataset.kind === kind && empty.firstChild?.textContent === text) return;
+  empty.dataset.kind = kind;
+  empty.textContent = text;
+  if (kind === 'none') {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.textContent = T.sidebarBrowseMarket || T.market || 'Mod Market';
+    link.addEventListener('click', () => {
+      activeNav = marketButton;
+      void openMarket();
+    });
+    empty.append(link);
+  }
+};
+
+const applyDrawerFilter = () => {
+  if (!drawer || !drawerPagesNav) return;
+  const query = drawerFilter.trim().toLowerCase();
+  const buttons = [...drawerPagesNav.children];
+  let matches = 0;
+  for (const button of buttons) {
+    const haystack = (String(button.getAttribute('aria-label') || '') + ' ' + String(button.dataset.echoExternalSidebar || '')).toLowerCase();
+    const hit = !query || haystack.includes(query);
+    setAttr(button, 'data-shl-filtered', hit ? 'false' : 'true');
+    if (hit) matches += 1;
+  }
+  syncDrawerEmpty(buttons.length, matches);
+  // Cascade order for the entrance animation, in document order.
+  let index = 0;
+  drawer.querySelectorAll('.shl-drawer-head, [data-shl-drawer-core] > .nav-item, .shl-drawer-label, .shl-drawer-filter:not([hidden]), [data-shl-drawer-pages] > .nav-item:not([data-shl-filtered="true"]), .shl-drawer-empty:not([hidden])').forEach((node) => {
+    const value = String(Math.min(index, 14));
+    if (node.style.getPropertyValue('--i') !== value) node.style.setProperty('--i', value);
+    index += 1;
   });
-  let group = document.querySelector('[data-echo-external-loader-group]');
-  if (!group) {
-    group = document.createElement('section');
-    group.className = 'sidebar-group';
-    group.dataset.echoExternalLoaderGroup = 'true';
-    const heading = document.createElement('h2');
-    heading.className = 'sidebar-group-label sidebar-section-label';
-    heading.textContent = T.loaderGroup || 'Shinawase Loader';
-    const nav = document.createElement('nav');
-    nav.className = 'nav-list';
-    group.append(heading, nav);
-  } else {
-    const heading = group.querySelector('.sidebar-group-label');
-    if (heading) heading.textContent = T.loaderGroup || 'Shinawase Loader';
+  syncDrawerFade();
+};
+
+const layoutDrawer = () => {
+  if (!drawer?.isConnected || !loaderGroup?.isConnected) return;
+  const aside = drawer.parentElement;
+  const host = loaderGroup.parentElement;
+  if (!aside || !host || !aside.offsetWidth) return;
+  let style;
+  try { style = getComputedStyle(host); } catch { return; }
+  const horizontal = String(style.flexDirection || '').startsWith('row');
+  drawerLayout = horizontal ? 'horizontal' : (aside.clientWidth < 150 ? 'rail' : 'full');
+  setAttr(drawer, 'data-shl-layout', drawerLayout);
+  setAttr(loaderGroup, 'data-shl-layout', drawerLayout);
+  const gap = Number.parseFloat(horizontal ? style.columnGap : style.rowGap) || 6;
+  const measure = (el) => boxWithin(el, aside) || rectWithin(el, aside);
+  const dock = measure(loaderGroup);
+  let start = null;
+  if (host !== aside) start = measure(host);
+  else {
+    // Flat sidebar: cover every block before the dock except the search header.
+    for (let node = loaderGroup.previousElementSibling; node; node = node.previousElementSibling) {
+      if (node.matches('.sidebar-header, .sidebar-edge, [data-shl-drawer]')) continue;
+      const box = measure(node);
+      if (!start) { start = box; continue; }
+      const right = Math.max(start.left + start.width, box.left + box.width);
+      const bottom = Math.max(start.top + start.height, box.top + box.height);
+      start = { top: Math.min(start.top, box.top), left: Math.min(start.left, box.left), width: 0, height: 0 };
+      start.width = right - start.left;
+      start.height = bottom - start.top;
+    }
   }
-  if (groups) {
-    // Keep utility (Settings) pinned below us — never append after it or the
-    // loader collapses under contain:paint when the window is short.
-    const utility = groups.querySelector(':scope > .sidebar-group--utility');
-    if (group.parentElement !== groups || group.nextElementSibling !== (utility || null)) {
-      if (utility) groups.insertBefore(group, utility);
-      else groups.append(group);
+  if (!dock || !start) return;
+  if (horizontal) {
+    // The bottom bar centres taller rows; keep the sheet inside the bar.
+    const pad = getComputedStyle(aside);
+    const top = Number.parseFloat(pad.paddingTop) || 0;
+    start = { ...start, top, height: Math.max(0, aside.clientHeight - top - (Number.parseFloat(pad.paddingBottom) || 0)) };
+  }
+  const frame = drawerFrame(start, dock, horizontal, gap);
+  for (const key of ['top', 'left', 'width', 'height']) {
+    const value = Math.round(frame[key]) + 'px';
+    if (drawer.style[key] !== value) drawer.style[key] = value;
+  }
+  // Where the sheet sits inside .sidebar-groups, for the mask that hides
+  // ECHO's blocks under it while it moves.
+  if (host !== aside) {
+    const y = Math.round(frame.top - start.top) + 'px';
+    const h = Math.round(frame.height) + 'px';
+    if (aside.style.getPropertyValue('--shl-drawer-y') !== y) aside.style.setProperty('--shl-drawer-y', y);
+    if (aside.style.getPropertyValue('--shl-drawer-h') !== h) aside.style.setProperty('--shl-drawer-h', h);
+  }
+  syncDrawerFade();
+};
+const scheduleDrawerLayout = () => {
+  if (drawerLayoutFrame) return;
+  drawerLayoutFrame = window.requestAnimationFrame(() => {
+    drawerLayoutFrame = 0;
+    layoutDrawer();
+  });
+};
+const drawerResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleDrawerLayout) : null;
+const drawerObserved = new Set();
+const observeDrawerLayout = (targets) => {
+  if (!drawerResizeObserver) return;
+  if (targets.length === drawerObserved.size && targets.every((target) => drawerObserved.has(target))) return;
+  drawerResizeObserver.disconnect();
+  drawerObserved.clear();
+  targets.forEach((target) => {
+    drawerResizeObserver.observe(target);
+    drawerObserved.add(target);
+  });
+};
+
+const focusDrawerItem = () => {
+  const target = drawer?.querySelector('.nav-item[data-active="true"]') || drawer?.querySelector('.nav-item');
+  target?.focus({ preventScroll: true });
+};
+const openDrawer = ({ focus = false, entering = true, velocity = 0 } = {}) => {
+  if (!drawer?.isConnected && !ensure()) return;
+  if (!drawer?.isConnected) return;
+  window.clearTimeout(drawerPullTimer);
+  drawerPull.reset();
+  const wasOpen = drawerTarget === 1;
+  drawerTarget = 1;
+  if (!wasOpen) drawerNativeSurfaces = visibleNativeSurfaces();
+  writeStorage('sessionStorage', DRAWER_STATE_KEY, 'open');
+  if (entering && !wasOpen && drawerProgress === 0 && !drawerMotionOff()) {
+    drawer.dataset.entering = '';
+    window.clearTimeout(drawerEnterTimer);
+    drawerEnterTimer = window.setTimeout(() => { if (drawer) delete drawer.dataset.entering; }, 1100);
+  }
+  animateDrawer(1, { velocity });
+  syncDock();
+  if (focus) focusDrawerItem();
+};
+const closeDrawer = ({ focusDock = false, velocity = 0 } = {}) => {
+  if (drawerTarget === 0) return;
+  const hadFocus = Boolean(drawer?.contains(document.activeElement));
+  window.clearTimeout(drawerPullTimer);
+  window.clearTimeout(drawerEnterTimer);
+  if (drawer) delete drawer.dataset.entering;
+  drawerPull.reset();
+  drawerTarget = 0;
+  drawerNativeSurfaces = null;
+  writeStorage('sessionStorage', DRAWER_STATE_KEY, '');
+  animateDrawer(0, { velocity });
+  syncDock();
+  if ((focusDock || hadFocus) && dockButton?.isConnected) dockButton.focus({ preventScroll: true });
+};
+
+// Opens the page the user last had open from Shinawase (Mods the first time).
+const openLastPage = () => {
+  const key = readStorage('localStorage', LAST_PAGE_KEY);
+  if (key === 'loader') { activeNav = loaderButton; return openLoader(); }
+  if (key === 'market') { activeNav = marketButton; return openMarket(); }
+  if (key.startsWith('page:')) {
+    const entry = sidebarEntries.get(key.slice(5));
+    if (entry && !entry.hidden) {
+      activeNav = sidebarButtons.get(entry.id) || null;
+      mountSidebarPage(entry);
+      return undefined;
+    }
+  }
+  activeNav = modsButton;
+  return openMods();
+};
+
+const recentDrag = () => performance.now() - drawerSuppressClickAt < 400;
+const onDockClick = (event) => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (recentDrag()) return;
+  if (drawerOpen()) {
+    closeDrawer();
+    return;
+  }
+  openDrawer({ focus: event.detail === 0 });
+  if (!activeShinawasePage()) void openLastPage();
+};
+const onDockToggleClick = (event) => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (recentDrag()) return;
+  if (drawerOpen()) closeDrawer();
+  else openDrawer({ focus: event.detail === 0 });
+};
+const onDrawerHeadClick = (event) => {
+  if (recentDrag()) return;
+  closeDrawer({ focusDock: event.detail === 0 });
+};
+
+// Drag the drawer head down to close, or drag the dock up to open. The sheet
+// follows the pointer and settles by distance or flick on release.
+const endDrawerDrag = () => {
+  window.removeEventListener('pointermove', onDrawerPointerMove, true);
+  window.removeEventListener('pointerup', onDrawerPointerUp, true);
+  window.removeEventListener('pointercancel', onDrawerPointerUp, true);
+  const drag = drawerDrag;
+  drawerDrag = null;
+  if (drag?.active) {
+    try { drag.el.releasePointerCapture(drag.id); } catch {}
+    drawer?.removeAttribute('data-dragging');
+  }
+  return drag;
+};
+const onDrawerPointerDown = (event) => {
+  if (event.button !== 0 || event.isPrimary === false || drawerDrag || drawerLayout === 'horizontal') return;
+  const fromDock = event.currentTarget === loaderGroup;
+  if (fromDock === drawerOpen()) return;
+  drawerDrag = { id: event.pointerId, el: event.currentTarget, startY: event.clientY, startedOpen: !fromDock, active: false, base: 0, progress: 0, height: 1, samples: [] };
+  window.addEventListener('pointermove', onDrawerPointerMove, true);
+  window.addEventListener('pointerup', onDrawerPointerUp, true);
+  window.addEventListener('pointercancel', onDrawerPointerUp, true);
+};
+const onDrawerPointerMove = (event) => {
+  const drag = drawerDrag;
+  if (!drag || event.pointerId !== drag.id) return;
+  const dy = event.clientY - drag.startY;
+  if (!drag.active) {
+    if (Math.abs(dy) < 6) return;
+    if (drag.startedOpen ? dy < 0 : dy > 0) {
+      endDrawerDrag();
+      return;
+    }
+    drag.active = true;
+    stopDrawerAnimation();
+    window.clearTimeout(drawerPullTimer);
+    drawerPull.reset();
+    layoutDrawer();
+    drag.height = Math.max(1, drawer?.offsetHeight || 1);
+    // Grab the sheet where it is, even mid-animation.
+    drag.base = drawerProgress;
+    if (!drag.startedOpen && !drawerNativeSurfaces) drawerNativeSurfaces = visibleNativeSurfaces();
+    try { drag.el.setPointerCapture(event.pointerId); } catch {}
+    if (drawer) {
+      delete drawer.dataset.entering;
+      drawer.setAttribute('data-dragging', '');
+    }
+    setDrawerState('moving');
+  }
+  drag.progress = Math.min(1, Math.max(0, drag.base - dy / drag.height));
+  const now = event.timeStamp || performance.now();
+  drag.samples.push({ t: now, y: event.clientY });
+  while (drag.samples.length > 2 && now - drag.samples[0].t > 90) drag.samples.shift();
+  setDrawerProgress(drag.progress);
+  event.preventDefault();
+};
+const onDrawerPointerUp = (event) => {
+  if (!drawerDrag || event.pointerId !== drawerDrag.id) return;
+  const drag = endDrawerDrag();
+  if (!drag.active) return;
+  drawerSuppressClickAt = performance.now();
+  const first = drag.samples[0];
+  const last = drag.samples[drag.samples.length - 1];
+  const velocity = first && last && last.t > first.t ? (first.y - last.y) / (last.t - first.t) : 0;
+  const open = event.type === 'pointercancel' ? drag.startedOpen : drawerSettlesOpen(drag.progress, velocity, drag.startedOpen);
+  if (open === drawerOpen()) {
+    // Snap back to where it started.
+    if (!open) drawerNativeSurfaces = null;
+    animateDrawer(open ? 1 : 0, { velocity });
+  } else if (open) openDrawer({ entering: false, velocity });
+  else closeDrawer({ velocity });
+};
+
+const onDrawerWheel = (event) => {
+  if (!drawerOpen() || drawerDrag || event.ctrlKey || drawerLayout === 'horizontal') return;
+  const raw = Number(event.deltaY) || 0;
+  const delta = event.deltaMode === 1 ? raw * 16 : event.deltaMode === 2 ? raw * (drawerBody?.clientHeight || 400) : raw;
+  const atTop = Boolean(event.target?.closest?.('[data-shl-drawer-head]')) || !drawerBody || drawerBody.scrollTop <= 0;
+  const result = drawerPull.wheel(delta, atTop, performance.now());
+  if (!result.progress) {
+    if (drawerProgress < 1) animateDrawer(1);
+    return;
+  }
+  event.preventDefault();
+  if (result.close) {
+    closeDrawer();
+    return;
+  }
+  // Rubber band: the sheet gives a little with each pull, then springs back.
+  animateDrawer(1 - result.progress * 0.3, { duration: 150 });
+  window.clearTimeout(drawerPullTimer);
+  drawerPullTimer = window.setTimeout(() => {
+    if (drawerOpen() && !drawerDrag) {
+      drawerPull.reset();
+      animateDrawer(1);
+    }
+  }, 340);
+};
+const onDrawerScroll = () => {
+  drawerPull.scrolled(performance.now());
+  syncDrawerFade();
+};
+
+const drawerFocusable = (node) => node.getClientRects().length > 0;
+const onDrawerKeydown = (event) => {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+  const filterInput = event.target?.closest?.('[data-shl-drawer-filter]') || null;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (filterInput?.value) {
+      filterInput.value = '';
+      drawerFilter = '';
+      applyDrawerFilter();
+      return;
+    }
+    closeDrawer({ focusDock: true });
+    return;
+  }
+  if (filterInput && event.key === 'Enter') {
+    const first = drawerPagesNav?.querySelector('.nav-item:not([data-shl-filtered="true"])');
+    if (first) {
+      event.preventDefault();
+      first.click();
+    }
+    return;
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  if (filterInput && (event.key === 'Home' || event.key === 'End')) return;
+  const items = [...drawer.querySelectorAll('.nav-item:not([data-shl-filtered="true"]), [data-shl-drawer-filter]')].filter(drawerFocusable);
+  if (!items.length) return;
+  const index = items.indexOf(event.target?.closest?.('.nav-item, [data-shl-drawer-filter]'));
+  let next = 0;
+  if (event.key === 'End') next = items.length - 1;
+  else if (event.key !== 'Home') next = index < 0 ? 0 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  event.preventDefault();
+  event.stopPropagation();
+  items[next].focus();
+};
+
+const buildDock = () => {
+  const group = document.createElement('section');
+  group.className = 'sidebar-group shl-dock';
+  group.dataset.echoExternalLoaderGroup = 'true';
+  group.dataset.shlLayout = drawerLayout;
+  group.innerHTML = '<nav class="nav-list"><div class="shl-dock-row">'
+    + '<button class="nav-item shl-dock-main" type="button" data-echo-external-shinawase="true" data-echo-external-owned="true" aria-controls="shl-drawer">'
+    + '<span class="nav-icon-shell" aria-hidden="true">' + shinawaseMarkIcon + '<span class="shl-dock-caret">' + lineSvg(chevronUpPath, '', 2.8) + '</span></span>'
+    + '<span class="nav-item-label"><span class="shl-dock-name"></span><span class="shl-dock-sub"></span></span>'
+    + '</button>'
+    + '<button class="nav-item-expand-button shl-dock-toggle" type="button" aria-controls="shl-drawer" aria-expanded="false">' + lineSvg(chevronUpPath, 'shl-dock-chevron') + '</button>'
+    + '</div></nav>';
+  dockButton = group.querySelector('.shl-dock-main');
+  dockToggle = group.querySelector('.shl-dock-toggle');
+  dockButton.addEventListener('click', onDockClick, true);
+  dockToggle.addEventListener('click', onDockToggleClick, true);
+  group.addEventListener('pointerdown', onDrawerPointerDown);
+  return group;
+};
+const buildDrawer = () => {
+  const node = document.createElement('div');
+  node.className = 'shl-drawer';
+  node.id = 'shl-drawer';
+  node.dataset.shlDrawer = 'true';
+  node.dataset.shlLayout = drawerLayout;
+  node.setAttribute('role', 'region');
+  node.innerHTML = '<div class="shl-drawer-head" data-shl-drawer-head>'
+    + '<span class="shl-drawer-grip" aria-hidden="true"></span>'
+    + '<div class="shl-drawer-brand"><span class="shl-drawer-title"></span><span class="shl-drawer-version"></span></div>'
+    + '<button class="shl-drawer-close" type="button" data-shl-drawer-close>' + lineSvg('<path d="m6 9 6 6 6-6"/>') + '</button>'
+    + '</div>'
+    + '<div class="shl-drawer-body" data-shl-drawer-body>'
+    + '<section class="shl-drawer-section"><nav class="nav-list" data-shl-drawer-core></nav></section>'
+    + '<section class="shl-drawer-section shl-drawer-pages">'
+    + '<h2 class="sidebar-group-label shl-drawer-label"><span data-shl-pages-label></span><span class="shl-drawer-count" data-shl-pages-count></span></h2>'
+    + '<label class="shl-drawer-filter" hidden>' + lineSvg('<circle cx="11" cy="11" r="6.4"/><path d="m16.3 16.3 4.2 4.2"/>', '', 1.8) + '<input type="text" spellcheck="false" autocomplete="off" data-shl-drawer-filter></label>'
+    + '<nav class="nav-list" data-shl-drawer-pages></nav>'
+    + '<p class="shl-drawer-empty" data-shl-drawer-empty hidden></p>'
+    + '</section>'
+    + '</div>';
+  drawerBody = node.querySelector('[data-shl-drawer-body]');
+  loaderNav = node.querySelector('[data-shl-drawer-core]');
+  drawerPagesNav = node.querySelector('[data-shl-drawer-pages]');
+  const head = node.querySelector('[data-shl-drawer-head]');
+  head.addEventListener('pointerdown', onDrawerPointerDown);
+  head.addEventListener('click', onDrawerHeadClick);
+  node.addEventListener('keydown', onDrawerKeydown);
+  node.addEventListener('wheel', onDrawerWheel, { passive: false });
+  drawerBody.addEventListener('scroll', onDrawerScroll, { passive: true });
+  const filter = node.querySelector('[data-shl-drawer-filter]');
+  filter.addEventListener('input', () => {
+    drawerFilter = filter.value;
+    applyDrawerFilter();
+  });
+  return node;
+};
+
+// Mount (or re-seat after a React re-render) the dock above Settings and the
+// drawer as the last child of aside.sidebar.
+const ensureSidebarChrome = () => {
+  // Older ECHO renders a grouped sidebar (.sidebar-groups); echo-steam also
+  // shipped a flat <aside class="sidebar"> with plain .nav-list children, where
+  // the dock slots above the spacer / utility nav instead.
+  const groups = document.querySelector('.sidebar-groups');
+  const aside = groups?.closest('aside.sidebar, .sidebar') || document.querySelector('aside.sidebar, .sidebar');
+  if (!aside) return false;
+  const host = groups && aside.contains(groups) ? groups : null;
+  document.querySelectorAll('[data-echo-external-owned="true"]').forEach((node) => {
+    if (!node.closest('[data-echo-external-loader-group], [data-shl-drawer]')) node.remove();
+  });
+  document.querySelectorAll('[data-echo-external-loader-group], [data-shl-drawer]').forEach((node) => {
+    if (node !== loaderGroup && node !== drawer) node.remove();
+  });
+  if (!loaderGroup) loaderGroup = buildDock();
+  if (!drawer) drawer = buildDrawer();
+  if (host) {
+    // Keep utility (Settings) right below the dock.
+    const utility = host.querySelector(':scope > .sidebar-group--utility');
+    if (loaderGroup.parentElement !== host || loaderGroup.nextElementSibling !== (utility || null)) {
+      if (utility) host.insertBefore(loaderGroup, utility);
+      else host.append(loaderGroup);
     }
   } else {
-    const anchor = flatSidebar.querySelector(':scope > .sidebar-spacer') || flatSidebar.querySelector(':scope > .utility-nav');
-    if (group.parentElement !== flatSidebar || (anchor && group.nextElementSibling !== anchor)) {
-      if (anchor) flatSidebar.insertBefore(group, anchor);
-      else flatSidebar.append(group);
+    const anchor = aside.querySelector(':scope > .sidebar-spacer') || aside.querySelector(':scope > .utility-nav');
+    if (loaderGroup.parentElement !== aside || (anchor && loaderGroup.nextElementSibling !== anchor)) {
+      if (anchor) aside.insertBefore(loaderGroup, anchor);
+      else aside.append(loaderGroup);
     }
   }
-  loaderGroup = group;
-  loaderNav = group.querySelector('.nav-list');
-  bindLoaderGroupWheel(group);
-  return loaderNav;
+  if (drawer.parentElement !== aside) aside.append(drawer);
+  if (!document.documentElement.dataset.shlSidebar) setDrawerState(drawerState);
+  observeDrawerLayout([aside, host, loaderGroup].filter(Boolean));
+  // ECHO's nav edit mode needs its own rows visible.
+  if (drawerOpen() && aside.querySelector('.sidebar-edit-bar')) closeDrawer();
+  syncDrawerText();
+  scheduleDrawerLayout();
+  return true;
 };
 
 const ensureLoaderButtons = (nav) => {
@@ -2688,7 +3310,7 @@ const rebuildUi = async () => {
   window.clearInterval(statusTimer);
   window.clearInterval(consoleTimer);
   lastLogText = '';
-  ensureLoaderButtons(loaderNav);
+  renderSidebarButtons();
   if (showMarket) await openMarket();
   else if (showMods) await openMods();
   else await openLoader();
@@ -4862,6 +5484,7 @@ const mountSidebarPage = (entry) => {
     button.setAttribute('aria-current', active ? 'page' : 'false');
     button.dataset.active = String(active);
   });
+  syncDock();
   if (entry.mounted) return;
   try {
     if (typeof entry.render === 'function') entry.cleanup = entry.render(page, entry.context || {});
@@ -4882,6 +5505,7 @@ const removeSidebar = (id) => {
   sidebarPages.get(id)?.remove();
   sidebarPages.delete(id);
   if (activeSidebar === id) closeSidebarPage();
+  renderSidebarButtons();
 };
 
 const hiddenSidebarStash = () => {
@@ -4896,10 +5520,18 @@ const hiddenSidebarStash = () => {
   return stash;
 };
 
+// Children of `nav`, in exactly this order, moving only what is out of place.
+const placeInOrder = (nav, items) => {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    const before = items[index + 1] || null;
+    if (item.parentElement !== nav || item.nextElementSibling !== before) nav.insertBefore(item, before);
+  }
+};
+
 const renderSidebarButtons = () => {
-  const nav = ensureLoaderGroup();
-  if (!nav) return false;
-  ensureLoaderButtons(nav);
+  if (!ensureSidebarChrome()) return false;
+  ensureLoaderButtons(loaderNav);
   for (const [id, button] of sidebarButtons) if (!sidebarEntries.has(id)) { button.remove(); sidebarButtons.delete(id); }
   const entries = [...sidebarEntries.values()].sort((left, right) => (Number(left.order) || 0) - (Number(right.order) || 0) || String(left.label || '').localeCompare(String(right.label || '')));
   const visible = [];
@@ -4920,21 +5552,31 @@ const renderSidebarButtons = () => {
       sidebarButtons.set(entry.id, button);
     }
     const iconShell = button.querySelector('.nav-icon-shell');
-    const icon = entry.icon || '◇';
-    if (typeof icon === 'string' && icon.includes('<svg')) iconShell.innerHTML = icon;
-    else iconShell.textContent = icon;
-    button.querySelector('.nav-item-label').textContent = entry.label || entry.id;
-    button.setAttribute('aria-label', entry.label || entry.id);
-    button.title = entry.label || entry.id;
-    if (entry.hidden) hiddenSidebarStash().append(button);
-    else visible.push(button);
+    const icon = String(entry.icon || '◇');
+    if (button.dataset.shlIcon !== icon) {
+      button.dataset.shlIcon = icon;
+      if (icon.includes('<svg')) iconShell.innerHTML = icon;
+      else iconShell.textContent = icon;
+    }
+    setText(button.querySelector('.nav-item-label'), entry.label || entry.id);
+    setAttr(button, 'aria-label', entry.label || entry.id);
+    setAttr(button, 'title', entry.label || entry.id);
+    if (entry.hidden) {
+      if (button.parentElement !== hiddenSidebarStash()) hiddenSidebarStash().append(button);
+    } else visible.push(button);
   }
-  const rail = [loaderButton, marketButton, modsButton, ...visible].filter(Boolean);
-  for (let index = rail.length - 1; index >= 0; index -= 1) {
-    const button = rail[index];
-    const before = rail[index + 1] || null;
-    if (button.parentElement !== nav || button.nextElementSibling !== before) nav.insertBefore(button, before);
+  placeInOrder(loaderNav, [loaderButton, marketButton, modsButton].filter(Boolean));
+  placeInOrder(drawerPagesNav, visible);
+  setText(drawer.querySelector('[data-shl-pages-count]'), visible.length ? String(visible.length) : '');
+  const filterField = drawer.querySelector('.shl-drawer-filter');
+  const showFilter = visible.length >= DRAWER_FILTER_MIN;
+  if (filterField.hidden === showFilter) filterField.hidden = !showFilter;
+  if (!showFilter && drawerFilter) {
+    drawerFilter = '';
+    filterField.querySelector('input').value = '';
   }
+  applyDrawerFilter();
+  syncDock();
   return true;
 };
 
@@ -5137,10 +5779,12 @@ const ensure = () => {
   attachPanel(modsPanel);
   attachPanel(marketPanel);
   sidebarPages.forEach((page) => attachPanel(page));
-  const nav = ensureLoaderGroup();
-  if (!nav) return false;
-  ensureLoaderButtons(nav);
-  renderSidebarButtons();
+  if (!renderSidebarButtons()) return false;
+  if (!drawerRestored) {
+    // Reinjection (Loader update, renderer reload) keeps the drawer where it was.
+    drawerRestored = true;
+    if (readStorage('sessionStorage', DRAWER_STATE_KEY) === 'open') openDrawer({ entering: false });
+  }
   maybeShowSteamLaunchReminder();
   return true;
 };
@@ -5175,7 +5819,7 @@ startObserver();
 const onNavControlClick = (event) => {
   const control = event.target?.closest?.('.nav-item, .titlebar-action');
   if (!control) return;
-  if (control.dataset.echoExternalSidebar || control.dataset.echoExternalLoader || control.dataset.echoExternalMods || control.dataset.echoExternalMarket) return;
+  if (control.dataset.echoExternalSidebar || control.dataset.echoExternalLoader || control.dataset.echoExternalMods || control.dataset.echoExternalMarket || control.dataset.echoExternalShinawase) return;
   // ECHO route controls toggle away from their page when it is already the
   // current route. Our pages never change ECHO's route, so with one open a
   // click on the active control means "back to that page": swallow it and
@@ -5186,14 +5830,18 @@ const onNavControlClick = (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
     closeSidebarPage();
+    closeDrawer();
     return;
   }
-  if (control.classList.contains('nav-item') && control !== activeNav) closeSidebarPage();
+  if (control.classList.contains('nav-item') && control !== activeNav) {
+    closeSidebarPage();
+    closeDrawer();
+  }
 };
 window.addEventListener('click', onNavControlClick, true);
 
 window.__echoExternalLoaderUi = {
-  version: 63,
+  version: 64,
   registerSidebar,
   unregisterSidebar: removeSidebar,
   uiSettings: () => ({ ...uiSettings }),
@@ -5227,6 +5875,17 @@ window.__echoExternalLoaderUi = {
     motionCss.remove();
     segObserver?.disconnect();
     legacyThemeBridge?.remove();
+    endDrawerDrag();
+    drawerResizeObserver?.disconnect();
+    window.cancelAnimationFrame(drawerLayoutFrame);
+    stopDrawerAnimation();
+    window.clearTimeout(drawerEnterTimer);
+    window.clearTimeout(drawerPullTimer);
+    clearDrawerProgress();
+    drawer?.parentElement?.style.removeProperty('--shl-drawer-y');
+    drawer?.parentElement?.style.removeProperty('--shl-drawer-h');
+    drawer?.remove();
+    delete document.documentElement.dataset.shlSidebar;
     loaderGroup?.remove();
     document.getElementById('echo-hidden-sidebar-stash')?.remove();
     sidebarEntries.forEach((entry) => { try { entry.cleanup?.(); } catch {} });

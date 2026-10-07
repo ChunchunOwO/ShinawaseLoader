@@ -91,7 +91,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.9';
+const loaderVersion = '1.8.0';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
@@ -1398,12 +1398,12 @@ const removeInjected = async (id) => {
   }
 };
 
-const injectIntoTarget = async (session, plan) => {
+const injectIntoTarget = async (session, plan, { force = false } = {}) => {
   const expression = `(async () => {
     const id = ${JSON.stringify(plan.id)}, ctx = ${plan.contextJson}, source = ${JSON.stringify(plan.source)}, signature = ${JSON.stringify(plan.signature)};
     window.__echoExternalMods = window.__echoExternalMods || {};
     const old = window.__echoExternalMods[id];
-    if (old?.signature === signature) return { status: 'already' };
+    if (old?.signature === signature && !${force ? 'true' : 'false'}) return { status: 'already' };
     try { old?.dispose?.(); } catch {}
     const settingsKey = 'echo.external-mod.' + id;
     const settings = {
@@ -1740,13 +1740,16 @@ const injectEnabled = async () => {
       const targetState = probe?.result?.value;
       if (targetState?.ready !== true) continue;
       lastCycleReadyCount += 1;
-      const uiReloaded = targetState.uiVersion < 63;
+      const uiReloaded = targetState.uiVersion < 64;
+      // Replacing a live UI drops the sidebar pages mods registered on it, so
+      // those mods have to run again (dispose + inject, as on disable/enable).
+      const uiReplaced = uiReloaded && targetState.uiVersion > 0;
       if (uiReloaded) await injectLoaderUi(session).catch((error) => log('WARN', `loader UI injection failed: ${error.message}`, error));
       if (targetState.playerVersion < 1) await injectPlayerRuntime(session).catch((error) => log('WARN', `player runtime injection failed: ${error.message}`, error));
       if (targetState.extendVersion < 1) await injectExtendRuntime(session).catch((error) => log('WARN', `extend runtime injection failed: ${error.message}`, error));
       for (const plan of plans) {
         if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
-        await injectIntoTarget(session, plan).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
+        await injectIntoTarget(session, plan, { force: uiReplaced }).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
       }
     } finally { session.close(); }
   }

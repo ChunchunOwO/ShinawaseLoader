@@ -16,7 +16,7 @@ Each external Mod or Plugin receives `echoExternalMod`:
 - `settings.get()` / `settings.set(patch)`: per-package browser storage.
 - `loaderSettings.get()` / `loaderSettings.set(patch)` / `loaderSettings.onChange(handler)`: the loader's shared appearance settings (accent color, density, card layout, badge visibility). `set` applies live when the loader UI is mounted; changes fire the `shinawase:ui-settings` window event. `onChange` disposers run automatically when the package is disabled.
 - `assetUrl(path)` / `loadAsset(path, options)`: serve packaged HTML, CSS, images, WASM, or data assets.
-- `sidebar.register({ id, label, icon, order, render })`: add a page in the ShinawaseLoader sidebar group.
+- `sidebar.register({ id, label, icon, order, render })`: add a page to the Shinawase sidebar, the drawer that the **Shinawase** row above ECHO's Settings opens. Pages sort by `order`, then label, below Loader, Mod Market and Mods; with eight or more pages the drawer adds a filter field. Each page keeps a `.nav-item[data-echo-external-sidebar="<id>"]` button in the DOM while the drawer is closed, so calling `.click()` on it still opens the page.
 - `fetchJson(url, options)`, `uploadFile(input)`: Loader-mediated HTTP helpers.
 - `toast(message)`, `console.debug/info/warn/error`, `log(...)`: user feedback and Logs output.
 
@@ -99,7 +99,7 @@ Mods read the same settings through `echoExternalMod.loaderSettings` and can sub
 
 echo-steam 26.9.1 (the current Steam renderer; older docs called this "ECHO Next") reshaped the UI. The loader adapts automatically, but mod authors should know:
 
-- **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader injects its group into either shape.
+- **Sidebar**: the grouped sidebar (`.sidebar-groups` / `.sidebar-group-label`) was replaced by a flat `aside.sidebar` with a main `nav.nav-list`, a `.sidebar-spacer`, and a `nav.nav-list.utility-nav`. `sidebar.register(...)` keeps working; the loader places its Shinawase row above Settings in either shape.
 - **`extend.hideNav(routeId)`**: the Steam renderer removed the per-route `[data-workshop-icon]` markers, so CSS hiding no longer matches. The loader additionally patches the native `sidebarHiddenRouteIds` app setting (via `window.echo.app.setSettings`) and restores it on `showNav` / cleanup. Route ids follow the current sidebar ids (`home`, `songs`, `streaming`, `queue`, `playlists`, `plugins`, `settings`, ...).
 - **Route surfaces**: `.page-surface[data-route-id]`, `app:navigate:*` events, and `extend.replaceRoute` are unchanged.
 - **Theme variables**: the Steam renderer removed `--theme-accent`, `--theme-code-bg`, `--theme-border`, `--theme-card-bg`, `--theme-card-border`, `--theme-hover-bg`, and `--theme-surface`. The loader bridges these to the new tokens (`--theme-accent-solid-bg`, `--theme-field-bg`, `--theme-panel-border(-strong)`, `--theme-panel-bg`, `--theme-list-row-bg-hover`, `--color-surface`) at runtime, but new CSS should target the new token names directly.
