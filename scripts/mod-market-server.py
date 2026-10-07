@@ -300,6 +300,9 @@ def listing_from_manifest(manifest: dict, data: bytes, files: dict[str, bytes], 
     return listing
 
 
+OFFICIAL_PACKAGE_FIELDS = ("version", "file", "sha256", "size", "icon", "minEchoVersion", "hasReadme", "uploadedAt", "updatedAt")
+
+
 def merge_catalog() -> dict:
     seed = read_json(SEED, {"mods": []})
     community = read_json(COMMUNITY, {"mods": []})
@@ -317,6 +320,14 @@ def merge_catalog() -> dict:
         over = next((row for row in community.get("mods") or [] if isinstance(row, dict) and str(row.get("id") or "") == ident), None)
         if over and (over.get("unlisted") or over.get("deleted")):
             continue
+        # An admin re-upload of an official mod is stored in community.json. Serve
+        # its package once it is newer than the seed, otherwise the catalog keeps
+        # the seed version forever; names, descriptions, tags and featured stay
+        # seed-managed.
+        if over and compare_versions(str(over.get("version") or "0"), str(item.get("version") or "0")) > 0:
+            for key in OFFICIAL_PACKAGE_FIELDS:
+                if over.get(key) is not None:
+                    item[key] = over[key]
         overlay_stats(item, stats, pages)
         official.append(public_mod(item))
     uploaded = []

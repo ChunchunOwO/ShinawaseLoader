@@ -11,8 +11,8 @@
       "author": "Shinawase",
       "tags": ["streaming"],
       "nameZh": "ECHO Streaming",
-      "descriptionZh": "社区流媒体：网易云评论与日推、相似歌曲连播、灰色歌曲解锁、歌手专辑，以及官方风格的一起听。",
-      "descriptionEn": "Community streaming: NetEase comments and dailies, similar-track autoplay, grey-track unblock, artist albums, and official-style listen-together."
+      "descriptionZh": "社区流媒体：网易云日推、相似歌曲连播、灰色歌曲解锁和歌手专辑，轻量版不含一起听与评论。",
+      "descriptionEn": "Community streaming: NetEase dailies, similar-track autoplay, grey-track unblock, and artist albums. Lightweight build without listen-together or comments."
     },
     {
       "id": "echo.mv",

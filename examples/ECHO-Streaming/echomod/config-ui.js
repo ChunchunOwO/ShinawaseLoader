@@ -17,7 +17,6 @@ const defaults = {
   artistStreamingAlbumsEnabled: true,
   artistStreamingAlbumsProvider: 'netease',
   showAccountsSidebar: true,
-  showTogetherTray: false,
 };
 const draft = { ...defaults, ...(config && typeof config === 'object' ? config : {}) };
 const chinese = String(draft.locale || '').toLowerCase().startsWith('zh');
@@ -187,8 +186,6 @@ display.append(toggle('showDisabledProviders',
   t('在平台栏中显示已被禁用的平台。', 'Keep disabled platforms visible in the provider rail.')));
 display.append(toggle('showAccountsSidebar',
   t('在侧栏显示「流媒体账号」。关闭后侧栏不再出现该入口，仍可从流媒体页的「账号登录」进入。重新注入后生效。', 'Show Streaming accounts in the sidebar. Off hides that nav item; the Streaming page 账号登录 button still opens it. Applies after re-injection.')));
-display.append(toggle('showTogetherTray',
-  t('在系统托盘显示一起听图标，可邀请好友、展开侧栏。默认关闭。重新启动 ECHO 后生效。', 'Show a listen-together icon in the system tray for invites and the side rail. Off by default. Applies after relaunching ECHO.')));
 
 const artistProviders = [
   { value: 'netease', label: t('网易云音乐', 'NetEase Cloud Music') },
@@ -247,7 +244,6 @@ echoConfigUi.onSave(() => ({
   artistStreamingAlbumsEnabled: draft.artistStreamingAlbumsEnabled !== false,
   artistStreamingAlbumsProvider: draft.artistStreamingAlbumsProvider === 'qqmusic' ? 'qqmusic' : 'netease',
   showAccountsSidebar: draft.showAccountsSidebar !== false,
-  showTogetherTray: draft.showTogetherTray === true,
 }));
 
 return () => { root.replaceChildren(); };

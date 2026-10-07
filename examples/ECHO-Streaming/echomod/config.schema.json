@@ -97,12 +97,6 @@
       "title": "侧栏显示流媒体账号登录 / Show streaming accounts in sidebar",
       "description": "When off, the sidebar hides 流媒体账号. Sign-in is still available from the Streaming page.",
       "default": true
-    },
-    "showTogetherTray": {
-      "type": "boolean",
-      "title": "托盘显示一起听 / Show listen-together in the tray",
-      "description": "When on, a system-tray icon can invite friends and toggle listen-together. Off by default.",
-      "default": false
     }
   }
 }
