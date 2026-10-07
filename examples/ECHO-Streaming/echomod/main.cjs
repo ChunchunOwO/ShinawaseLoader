@@ -2175,6 +2175,66 @@ const togetherServerRoom = (body) => {
   };
 };
 
+/*
+ * main.cjs activates inside app.whenReady(), while ECHO is still awaiting its own
+ * startup steps before it creates the main window. Anything synchronous started
+ * from activate() lands in that gap and pushes the window back: the first
+ * together poll used to require the NCM client (~1500 modules, 1.4-2.4s of
+ * blocking require on a warm disk, far more on a cold boot). Background work
+ * therefore waits until a window has finished loading and the renderer had a
+ * moment to settle. The fallback still starts it if no window event arrives.
+ */
+const startupSettleMs = 4_000;
+const startupFallbackMs = 30_000;
+
+const afterMainWindowSettled = (electron, run) => {
+  let finished = false;
+  let settleTimer = 0;
+  let fallbackTimer = 0;
+  const detach = [];
+  const release = () => {
+    finished = true;
+    clearTimeout(settleTimer);
+    clearTimeout(fallbackTimer);
+    while (detach.length) {
+      try { detach.pop()(); } catch {}
+    }
+  };
+  const settle = () => {
+    if (finished || settleTimer) return;
+    settleTimer = setTimeout(() => {
+      if (finished) return;
+      release();
+      run();
+    }, startupSettleMs);
+  };
+  const watchWindow = (window) => {
+    const contents = window?.webContents;
+    if (!contents || contents.isDestroyed?.()) return;
+    if (contents.isLoading?.() === false && contents.getURL?.()) {
+      settle();
+      return;
+    }
+    contents.once('did-finish-load', settle);
+    detach.push(() => contents.removeListener('did-finish-load', settle));
+  };
+  fallbackTimer = setTimeout(() => {
+    if (finished) return;
+    release();
+    run();
+  }, startupFallbackMs);
+  const app = electron?.app;
+  if (typeof app?.on === 'function') {
+    const onWindowCreated = (_event, window) => watchWindow(window);
+    app.on('browser-window-created', onWindowCreated);
+    detach.push(() => app.removeListener('browser-window-created', onWindowCreated));
+  }
+  try {
+    for (const window of electron?.BrowserWindow?.getAllWindows?.() || []) watchWindow(window);
+  } catch {}
+  return release;
+};
+
 const createTogetherService = ({ log, broadcast, electron, showTray }) => {
   const state = {
     loggedIn: false,
@@ -3284,15 +3344,24 @@ const createTogetherService = ({ log, broadcast, electron, showTray }) => {
     }
   };
 
+  // The renderer can still ask for a refresh (togetherRefresh) before polling
+  // starts; only the unsolicited startup poll waits for the main window.
+  let cancelStartupGate = null;
   const start = () => {
     if (showTray === true) ensureTray();
-    void pollStatus();
-    statusTimer = setInterval(() => { void pollStatus(); }, 8000);
-    heartbeatTimer = setInterval(() => { void heartbeat(); }, 5000);
+    cancelStartupGate = afterMainWindowSettled(electron, () => {
+      cancelStartupGate = null;
+      if (disposed) return;
+      void pollStatus();
+      statusTimer = setInterval(() => { void pollStatus(); }, 8000);
+      heartbeatTimer = setInterval(() => { void heartbeat(); }, 5000);
+    });
   };
 
   const dispose = () => {
     disposed = true;
+    cancelStartupGate?.();
+    cancelStartupGate = null;
     clearInterval(statusTimer);
     clearInterval(heartbeatTimer);
     try { tray?.destroy?.(); } catch {}

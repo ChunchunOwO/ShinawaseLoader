@@ -303,6 +303,44 @@ const readNativeShellSpec = (record) => {
   catch { return { exe: '', protocolVersion: 1 }; }
 };
 
+// Packages activate inside app.whenReady(), while ECHO is still awaiting its
+// own startup steps before it creates the main window, so every millisecond a
+// main script spends synchronously in require + activate() delays that window.
+// Report it, so a slow package is visible in loader.log instead of looking like
+// a slow ECHO. A main script whose activate() never settles must not hold back
+// the packages after it or "native host ready".
+const slowActivationMs = 250;
+const activationTimeoutMs = Math.max(1, Number(process.env.ECHO_NATIVE_ACTIVATE_TIMEOUT_MS) || 15000);
+
+const settleActivation = (record, host, pending) => {
+  if (!pending || typeof pending.then !== 'function') return { dispose: pending, timedOut: false };
+  return new Promise((resolvePromise, reject) => {
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      log('ERROR', `activate ${record.id} did not settle within ${activationTimeoutMs}ms; continuing without its dispose`);
+      resolvePromise({ dispose: null, timedOut: true });
+    }, activationTimeoutMs);
+    pending.then((dispose) => {
+      clearTimeout(timer);
+      if (!timedOut) return resolvePromise({ dispose, timedOut: false });
+      // Late activation: hand the dispose to the instance that is still
+      // current, or run it at once when that instance was replaced meanwhile.
+      const entry = packages.get(record.id);
+      if (entry?.host === host) {
+        entry.dispose = dispose;
+        log('WARN', `activate ${record.id} settled after the ${activationTimeoutMs}ms budget`);
+      } else if (typeof dispose === 'function') {
+        Promise.resolve().then(dispose).catch(() => undefined);
+      }
+    }, (error) => {
+      clearTimeout(timer);
+      if (!timedOut) return reject(error);
+      log('ERROR', `activate ${record.id} failed after the ${activationTimeoutMs}ms budget`, error instanceof Error ? error.message : String(error));
+    });
+  });
+};
+
 const activatePackage = async (record) => {
   await deactivatePackage(record.id);
   const native = record.manifest.native && typeof record.manifest.native === 'object' ? record.manifest.native : {};
@@ -312,18 +350,33 @@ const activatePackage = async (record) => {
   if (!shellSpec && !mainEntry && !modules.length) return null;
   const host = createPackageHost(record);
   const loaded = { host, dlls: [], addons: [], dispose: null };
+  const startedAt = performance.now();
+  let blockedMs = 0;
+  let timedOut = false;
   if (shellSpec) {
     const shellHost = join(loaderRoot, 'native-shell-host.cjs');
     delete hostRequire.cache[shellHost];
     const activate = hostRequire(shellHost);
-    loaded.dispose = await activate(host, shellSpec);
+    const pending = activate(host, shellSpec);
+    blockedMs = performance.now() - startedAt;
+    ({ dispose: loaded.dispose, timedOut } = await settleActivation(record, host, pending));
   } else if (mainEntry) {
     const file = packageFile(record, mainEntry);
-    const imported = extname(file).toLowerCase() === '.mjs'
+    const esm = extname(file).toLowerCase() === '.mjs';
+    const imported = esm
       ? await import(`${pathToFileURL(file).href}?t=${Date.now()}`)
       : (delete hostRequire.cache[file], hostRequire(file));
+    // An ES module import yields between evaluation and this point, so only its
+    // activate() call counts; a CommonJS require blocks for its whole load.
+    const syncFrom = esm ? performance.now() : startedAt;
     const activate = imported.activate || imported.default || imported;
-    if (typeof activate === 'function') loaded.dispose = await activate(host);
+    if (typeof activate === 'function') {
+      const pending = activate(host);
+      blockedMs = performance.now() - syncFrom;
+      ({ dispose: loaded.dispose, timedOut } = await settleActivation(record, host, pending));
+    } else {
+      blockedMs = performance.now() - syncFrom;
+    }
   }
   for (const spec of modules) {
     const kind = String(spec.kind || 'host-dll').toLowerCase();
@@ -332,7 +385,11 @@ const activatePackage = async (record) => {
     else throw new Error(`native_kind_unsupported:${kind}`);
   }
   packages.set(record.id, { record, ...loaded });
-  log('INFO', `activated native package ${record.id} main=${Boolean(mainEntry)} modules=${modules.length}`);
+  const totalMs = Math.round(performance.now() - startedAt);
+  log('INFO', `activated native package ${record.id} main=${Boolean(mainEntry)} modules=${modules.length} blocked=${Math.round(blockedMs)}ms total=${totalMs}ms${timedOut ? ' timedOut=true' : ''}`);
+  if (blockedMs >= slowActivationMs) {
+    log('WARN', `${record.id} blocked the ECHO main process for ${Math.round(blockedMs)}ms while activating; defer heavy require()/startup work until after the main window loads`);
+  }
   return packages.get(record.id);
 };
 
