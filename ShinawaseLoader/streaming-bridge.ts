@@ -2,16 +2,19 @@ import { ipcMain } from 'electron';
 import { createRequire } from 'node:module';
 import { IpcChannels } from 'ECHOSTEAM_ROOT/src/shared/constants/ipcChannels';
 import { getAccountService } from 'ECHOSTEAM_ROOT/src/main/accounts/AccountService';
-import { registerAccountIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/accountIpc';
-import { registerDownloadsIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/downloadsIpc';
-import { registerQobuzIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/qobuzIpc';
-import { registerStreamingIpc } from 'ECHOSTEAM_ROOT/src/main/ipc/streamingIpc';
 import { getStreamingService } from 'ECHOSTEAM_ROOT/src/main/streaming/StreamingService';
+// ECHOSteam deleted these registrations from src/main/ipc on 2026-09-14
+// (0e4a90f5); the services they call are still upstream. The vendored copies
+// keep the bridge buildable against current ECHO source.
+import { registerAccountIpc } from '../scripts/streaming-bridge-ipc/accountIpc';
+import { registerDownloadsIpc } from '../scripts/streaming-bridge-ipc/downloadsIpc';
+import { registerQobuzIpc } from '../scripts/streaming-bridge-ipc/qobuzIpc';
+import { registerStreamingIpc } from '../scripts/streaming-bridge-ipc/streamingIpc';
 
 let registered = false;
 
 // EchoSteam ships these channel names in out/preload/ipcChannels-*.mjs
-// (709 total) but the official main process does not register streaming/account/
+// but the official main process does not register streaming/account/
 // downloads/qobuz/spotify handlers, and the official preload leaves those APIs
 // null. Re-register only this prefix set. Never remove steam:* / workshop:* /
 // library:* — those are live official channels (leaderboards, listen-together,

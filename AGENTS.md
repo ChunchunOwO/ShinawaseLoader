@@ -34,7 +34,7 @@ There is no root `package.json` or repository-wide formatter. Repository self-te
 
 ## Source and generated files
 
-- Edit `ShinawaseLoader/streaming-bridge.ts` and its build script, not the generated `ShinawaseLoader/streaming-bridge.cjs`. The same build copies `ShinawaseLoader/um_wasm_bg.wasm` from a dependency in the supplied ECHO source tree. Review provenance and licenses before including either output.
+- Edit `ShinawaseLoader/streaming-bridge.ts` and its build script, not the generated `ShinawaseLoader/streaming-bridge.cjs`. ECHOSteam removed its streaming/account/downloads/qobuz IPC registrations from `src/main/ipc` (upstream `0e4a90f5`), so the bridge imports vendored copies from `scripts/streaming-bridge-ipc/` (AGPL-3.0-only, provenance in each file header); re-sync them from upstream history rather than changing their behavior. The build copies `um_wasm_bg.wasm` into `ShinawaseLoader/` only when the bundle still loads it (ECHO builds before 26.9.22). Review provenance and licenses before including either output.
 - `examples/ECHO-MV/echomod/mod.js` is generated from `dev/mod.logic.js`, `dev/i18n.json`, and `echomod/mv.css` within that example. Use `examples/ECHO-MV/dev/build-modjs.mjs` after changing those inputs; review the generated diff before packaging.
 - Rebuild an example `.echomod` only when its packaged content changes. Changes to external development scripts or unrelated documentation do not by themselves require package regeneration. Keep packages beside the corresponding active or reference collection.
 - Do not include `release/`, `dist/`, `node_modules/`, native build directories, logs, Loader state, isolated runtimes, backups, temporary diagnostics, or locally installed `Mods/` and `Plugins/` in a patch. The tracked bridge outputs and example packages above are explicit exceptions to the generated-file rule. Check the actual diff even when `.gitignore` exists.
@@ -63,7 +63,7 @@ Keep this guide and new contributor-facing documentation in en-US. Preserve the 
   npm --prefix .\ShinawaseLoader ci
   ```
 
-- Building the streaming bridge requires a separately supplied, compatible ECHO source tree with its own build dependencies installed, including `esbuild` and the crypto WASM dependency. Installing this repository's dependencies alone does not provide them. Pass the source explicitly or set `ECHOSTEAM_ROOT`; do not rely on sibling-directory or home-directory discovery:
+- Building the streaming bridge requires a separately supplied, compatible ECHO source tree with its own build dependencies installed, including `esbuild` (and, for ECHO builds before 26.9.22, the `@clamber_l/crypto` WASM dependency). Installing this repository's dependencies alone does not provide them. Pass the source explicitly or set `ECHOSTEAM_ROOT`; do not rely on sibling-directory or home-directory discovery:
 
   ```powershell
   npm --prefix .\ShinawaseLoader run build:streaming-bridge -- "<ECHOSTEAM_SOURCE>"

@@ -113,8 +113,16 @@ export const buildEntrySource = (id, manifest, entryPath, source) => {
   return source;
 };
 
-// ShinawaseLoader.mjs classifyEchoWindow(): the loader injects Main windows
-// only; the live client must select the same target.
+// ShinawaseLoader.mjs isEchoRendererDocument() / classifyEchoWindow(): the
+// loader injects Main windows only (ECHO's own renderer document); the live
+// client must select the same target.
+export const isEchoRendererDocument = (href) => {
+  let url;
+  try { url = new URL(href); } catch { return false; }
+  if (url.protocol === 'file:' || url.protocol === 'app:') return /\/renderer\/index\.html$/iu.test(url.pathname);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  return (url.protocol === 'http:' || url.protocol === 'https:') && loopback && (url.pathname === '/' || /\/index\.html$/iu.test(url.pathname));
+};
 export const classifyEchoWindow = (url = '', title = '') => {
   const href = String(url || '');
   const name = String(title || '');
@@ -122,10 +130,12 @@ export const classifyEchoWindow = (url = '', title = '') => {
   if (/[?&]taskbarMiniPlayer=1/i.test(href) || /Taskbar Mini Player/i.test(name)) return 'TaskbarMiniPlayer';
   if (/[?&]miniPlayer=1/i.test(href) || /ECHO Mini Player/i.test(name)) return 'MiniPlayer';
   if (/[?&]pet=1/i.test(href) || /^ECHO Pet$/i.test(name)) return 'Pet';
-  if (/[?&]cli=1/i.test(href) || /ECHO CLI/i.test(name)) return 'Cli';
+  if (/[?&]desktopWall=1/i.test(href) || /Desktop Wall$/i.test(name)) return 'DesktopWall';
+  if (/[?&](?:echo-)?cli=1/i.test(href) || /ECHO CLI/i.test(name)) return 'Cli';
+  if (/quick-search\.html/i.test(href) || /[?&]quickSearch=1/i.test(href) || /^ECHO Quick Search$/i.test(name)) return 'QuickSearch';
   if (/ECHO (?:Debug |Developer )?Console/i.test(name) || /调试控制台/i.test(name) || /^DevConsole$/i.test(name)) return 'DevConsole';
   if (/auxiliary\.html/i.test(href)) return 'Auxiliary';
-  return 'Main';
+  return isEchoRendererDocument(href) ? 'Main' : 'External';
 };
 
 // ShinawaseLoader.mjs targetProbeExpression: readiness + injected-mod state,

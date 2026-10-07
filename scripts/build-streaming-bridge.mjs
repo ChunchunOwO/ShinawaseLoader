@@ -24,7 +24,11 @@ const unique = (paths) => {
   return next;
 };
 
-const isEchoSource = (root) => existsSync(join(root, 'src', 'main', 'ipc', 'streamingIpc.ts'));
+// src/main/ipc/streamingIpc.ts left ECHOSteam on 2026-09-14; the bridge now
+// vendors the IPC registrations (scripts/streaming-bridge-ipc) and only needs
+// the services and channel table from the supplied tree.
+const isEchoSource = (root) => existsSync(join(root, 'src', 'main', 'streaming', 'StreamingService.ts'))
+  && existsSync(join(root, 'src', 'shared', 'constants', 'ipcChannels.ts'));
 
 const echoRootCandidates = unique([
   process.argv[2] ? resolve(process.argv[2]) : '',
@@ -165,9 +169,19 @@ const patchWasmLoader = (js) => {
   return next;
 };
 
-const wasmSource = findCryptoWasm();
+// Vendored sources import ECHO modules as ECHOSTEAM_ROOT/...; the entry has the
+// marker replaced in its text, everything else resolves through this plugin.
+const echoRootPlugin = {
+  name: 'echosteam-root',
+  setup(pluginBuild) {
+    pluginBuild.onResolve({ filter: new RegExp(`^${marker}/`) }, async (args) => {
+      const result = await pluginBuild.resolve(`./${args.path.slice(marker.length + 1)}`, { resolveDir: echoRoot, kind: args.kind });
+      return { path: result.path, external: result.external, namespace: result.namespace, sideEffects: result.sideEffects, errors: result.errors, warnings: result.warnings };
+    });
+  },
+};
+
 const wasmOutput = join(loaderRoot, 'um_wasm_bg.wasm');
-copyFileSync(wasmSource, wasmOutput);
 
 console.log(`Building streaming bridge from ${echoRoot} (${echoPackage.name}@${echoPackage.version})`);
 const sourceText = readFileSync(source, 'utf8').replaceAll(marker, echoRoot.replaceAll('\\', '/'));
@@ -211,6 +225,7 @@ try {
         '__shinawaseModule.Module._initPaths();',
       ].join('\n'),
     },
+    plugins: [echoRootPlugin],
     logLevel: 'info',
     legalComments: 'none',
   });
@@ -218,7 +233,13 @@ try {
   rmSync(temporary, { force: true });
 }
 
-const bundled = patchWasmLoader(readFileSync(buildOutput, 'utf8'));
+// Builds up to 26.9.16 pulled the @clamber_l/crypto wasm in through
+// KgmConverter; ECHOSteam dropped both on 2026-09-22. Patch and ship the wasm
+// only when this bundle still loads it.
+const rawBundle = readFileSync(buildOutput, 'utf8');
+const needsWasm = rawBundle.includes('um_wasm_bg.wasm');
+const bundled = needsWasm ? patchWasmLoader(rawBundle) : rawBundle;
+if (needsWasm) copyFileSync(findCryptoWasm(), wasmOutput);
 const missingInBundle = requiredBridgeChannels.filter((channel) => !bundled.includes(channel));
 if (missingInBundle.length) {
   rmSync(buildOutput, { force: true });
@@ -274,6 +295,6 @@ if (!replaced) {
 }
 
 const bytes = statSync(output).size;
-const wasmBytes = statSync(wasmOutput).size;
 console.log(`Streaming bridge ready: ${output} (${(bytes / 1024 / 1024).toFixed(2)} MB)`);
-console.log(`Streaming wasm copied: ${wasmOutput} (${(wasmBytes / 1024).toFixed(1)} KB)`);
+if (needsWasm) console.log(`Streaming wasm copied: ${wasmOutput} (${(statSync(wasmOutput).size / 1024).toFixed(1)} KB)`);
+else console.log(`Streaming bridge needs no crypto wasm; ${wasmOutput} is unused by this build`);

@@ -46,6 +46,28 @@ test('window classification fragments are mirrored', () => {
   assert.equal(classifyEchoWindow('app://echo/renderer/index.html', 'ECHO'), 'Main');
 });
 
+// Regression: ECHO 26.10 opens more page targets titled "ECHO" or on third-party
+// sites. Anything but the renderer document used to count as Main, so the probe
+// installed the loader API token in account/Workshop login pages and live
+// clients attached to the desktop music wall.
+test('only ECHO\'s renderer document is a Main window', () => {
+  for (const fragment of ['[?&]desktopWall=1', '[?&](?:echo-)?cli=1', 'quick-search\\.html', '\\/renderer\\/index\\.html$']) {
+    assert.ok(loaderSource.includes(fragment), `classifyEchoWindow fragment missing: ${fragment}`);
+  }
+  const main = 'file:///D:/SteamLibrary/steamapps/common/ECHO/ShinawaseLoader/modded-runtime/resources/app.asar/out/renderer/index.html';
+  assert.equal(classifyEchoWindow(main, 'ECHO'), 'Main');
+  assert.equal(classifyEchoWindow(`${main}?desktopWall=1&desktopWallMode=music&desktopWallBottomInset=40`, 'ECHO'), 'DesktopWall');
+  assert.equal(classifyEchoWindow(`${main}?echo-cli=1`, 'ECHO'), 'Cli');
+  assert.equal(classifyEchoWindow(main.replace('index.html', 'quick-search.html'), 'ECHO Quick Search'), 'QuickSearch');
+  assert.equal(classifyEchoWindow('http://localhost:5173/', 'ECHO'), 'Main');
+  for (const url of ['https://music.163.com/#/login', 'http://192.168.1.2/index.html', 'data:text/html;charset=utf-8,%3Chtml%3E', 'file:///C:/somewhere/else.html', 'not a url']) {
+    assert.equal(classifyEchoWindow(url, 'ECHO'), 'External', url);
+  }
+  // The probe must decide the window type before installing the API token.
+  const probe = loaderSource.slice(loaderSource.indexOf('const targetProbeExpression'));
+  assert.ok(probe.indexOf("if (windowType !== 'Main') return") < probe.indexOf('${apiAuthShim}'), 'probe installs the API token before checking the window');
+});
+
 test('per-package settings key prefix is mirrored', () => {
   assert.ok(loaderSource.includes("'echo.external-mod.' + id"), 'settings storage key changed');
   assert.equal(settingsStorageKey('a.b'), 'echo.external-mod.a.b');

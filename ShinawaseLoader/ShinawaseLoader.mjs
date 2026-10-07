@@ -91,7 +91,7 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.7.8';
+const loaderVersion = '1.7.9';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
@@ -863,6 +863,17 @@ const cdpEvaluate = async (webSocketUrl, expression) => {
   const session = await openCdpSession(webSocketUrl);
   try { return await session.evaluate(expression); } finally { session.close(); }
 };
+// Main is ECHO's own renderer document only. Every other page target - account
+// and Workshop login windows on third-party sites, data: popups, the desktop
+// music wall (26.10, index.html?desktopWall=1) - is never probed or injected,
+// because the probe hands the page this loader's API token.
+const isEchoRendererDocument = (href) => {
+  let url;
+  try { url = new URL(href); } catch { return false; }
+  if (url.protocol === 'file:' || url.protocol === 'app:') return /\/renderer\/index\.html$/iu.test(url.pathname);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  return (url.protocol === 'http:' || url.protocol === 'https:') && loopback && (url.pathname === '/' || /\/index\.html$/iu.test(url.pathname));
+};
 const classifyEchoWindow = (url = '', title = '') => {
   const href = String(url || '');
   const name = String(title || '');
@@ -870,10 +881,12 @@ const classifyEchoWindow = (url = '', title = '') => {
   if (/[?&]taskbarMiniPlayer=1/i.test(href) || /Taskbar Mini Player/i.test(name)) return 'TaskbarMiniPlayer';
   if (/[?&]miniPlayer=1/i.test(href) || /ECHO Mini Player/i.test(name)) return 'MiniPlayer';
   if (/[?&]pet=1/i.test(href) || /^ECHO Pet$/i.test(name)) return 'Pet';
-  if (/[?&]cli=1/i.test(href) || /ECHO CLI/i.test(name)) return 'Cli';
+  if (/[?&]desktopWall=1/i.test(href) || /Desktop Wall$/i.test(name)) return 'DesktopWall';
+  if (/[?&](?:echo-)?cli=1/i.test(href) || /ECHO CLI/i.test(name)) return 'Cli';
+  if (/quick-search\.html/i.test(href) || /[?&]quickSearch=1/i.test(href) || /^ECHO Quick Search$/i.test(name)) return 'QuickSearch';
   if (/ECHO (?:Debug |Developer )?Console/i.test(name) || /调试控制台/i.test(name) || /^DevConsole$/i.test(name)) return 'DevConsole';
   if (/auxiliary\.html/i.test(href)) return 'Auxiliary';
-  return 'Main';
+  return isEchoRendererDocument(href) ? 'Main' : 'External';
 };
 const cdpTargets = async () => {
   const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
@@ -1670,21 +1683,15 @@ const apiAuthShim = `(() => {
   };
 })();`;
 
+// The page re-checks its own URL with the same classifier before anything else:
+// a target can navigate between /json/list and this evaluation, and the API
+// token below must only ever reach ECHO's main renderer document.
 const targetProbeExpression = `(() => {
-  ${apiAuthShim}
-  const href = String(location.href || '');
-  const title = String(document.title || '');
-  const windowType = (() => {
-    if (/[?&]desktopLyrics=1/i.test(href) || /ECHO Desktop Lyrics/i.test(title)) return 'DesktopLyrics';
-    if (/[?&]taskbarMiniPlayer=1/i.test(href) || /Taskbar Mini Player/i.test(title)) return 'TaskbarMiniPlayer';
-    if (/[?&]miniPlayer=1/i.test(href) || /ECHO Mini Player/i.test(title)) return 'MiniPlayer';
-    if (/[?&]pet=1/i.test(href) || /^ECHO Pet$/i.test(title)) return 'Pet';
-    if (/[?&]cli=1/i.test(href) || /ECHO CLI/i.test(title)) return 'Cli';
-    if (/ECHO (?:Debug |Developer )?Console/i.test(title) || /调试控制台/i.test(title) || /^DevConsole$/i.test(title)) return 'DevConsole';
-    if (/auxiliary\\.html/i.test(href)) return 'Auxiliary';
-    return 'Main';
-  })();
+  const isEchoRendererDocument = ${isEchoRendererDocument.toString()};
+  const classifyEchoWindow = ${classifyEchoWindow.toString()};
+  const windowType = classifyEchoWindow(String(location.href || ''), String(document.title || ''));
   if (windowType !== 'Main') return { ready: false, windowType };
+  ${apiAuthShim}
   const splash = document.querySelector('.echo-startup-shell');
   if (splash && document.documentElement.dataset.echoStartup !== 'ready') return { ready: false, windowType };
   if (!document.querySelector('.app-shell')) return { ready: false, windowType };
