@@ -915,6 +915,24 @@ const cdpEvaluate = async (webSocketUrl, expression) => {
   const session = await openCdpSession(webSocketUrl);
   try { return await session.evaluate(expression); } finally { session.close(); }
 };
+// Reuse one CDP session per renderer. Opening and closing a DevTools session on
+// every injection cycle makes ECHO tear down and re-create the lyrics provider
+// (the visible symptom is a lyrics-page flash every injectIntervalMs, even when
+// no mod signature changed). Keep the socket alive and only reconnect when it
+// actually closes or the target goes away.
+const cdpSessionCache = new Map();
+const cdpSessionFor = async (webSocketUrl) => {
+  const existing = cdpSessionCache.get(webSocketUrl);
+  if (existing) return existing;
+  const session = await openCdpSession(webSocketUrl);
+  cdpSessionCache.set(webSocketUrl, session);
+  return session;
+};
+const closeCdpSession = (webSocketUrl) => {
+  const session = cdpSessionCache.get(webSocketUrl);
+  cdpSessionCache.delete(webSocketUrl);
+  try { session?.close(); } catch {}
+};
 // Main is ECHO's own renderer document only. Every other page target - account
 // and Workshop login windows on third-party sites, data: popups, the desktop
 // music wall (26.10, index.html?desktopWall=1) - is never probed or injected,
@@ -1818,9 +1836,15 @@ const injectEnabled = async () => {
     lastInjectedTargetCount = targets.length;
     log('INFO', `ECHO main targets=${targets.length}, enabledPackages=${plans.length}`);
   }
+  // Drop sessions for renderer targets that no longer exist.
+  const liveSessionUrls = new Set(targets.map((target) => target.webSocketDebuggerUrl));
+  for (const webSocketUrl of cdpSessionCache.keys()) {
+    if (!liveSessionUrls.has(webSocketUrl)) closeCdpSession(webSocketUrl);
+  }
   for (const target of targets) {
+    const webSocketUrl = target.webSocketDebuggerUrl;
     let session;
-    try { session = await openCdpSession(target.webSocketDebuggerUrl); } catch { continue; }
+    try { session = await cdpSessionFor(webSocketUrl); } catch { continue; }
     try {
       const probe = await session.evaluate(targetProbeExpression).catch(() => null);
       const targetState = probe?.result?.value;
@@ -1837,7 +1861,10 @@ const injectEnabled = async () => {
         if (!uiReloaded && targetState.mods?.[plan.id] === plan.signature) continue;
         await injectIntoTarget(session, plan, { force: uiReplaced }).catch((error) => log('WARN', `inject ${plan.id}: ${error.message}`, error));
       }
-    } finally { session.close(); }
+    } catch (error) {
+      closeCdpSession(webSocketUrl);
+      log('WARN', `injection failed: ${error.message}`, error);
+    }
   }
   loaderStats.injects += 1;
   loaderStats.lastInjectAt = Date.now();
@@ -2058,7 +2085,10 @@ const startWatch = () => {
     } catch (error) {
       noteIntervalInjectionFailure(error);
     }
-    const startupPending = lastCycleTargetCount > 0 && lastCycleReadyCount === 0;
+    // Keep polling fast until the first successful injection, even when ECHO has
+    // not exposed its CDP page yet. A large injectIntervalMs must not delay the
+    // initial mod/UI injection by a full interval after ECHO finishes booting.
+    const startupPending = lastCycleReadyCount === 0;
     watchTimer = setTimeout(tick, startupPending ? fastPollMs : injectIntervalMs);
   };
   watchTimer = setTimeout(tick, startupDelayMs);
