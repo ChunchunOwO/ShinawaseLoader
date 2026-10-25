@@ -1755,11 +1755,24 @@ css.textContent = `
 
   /* The sheet's position is --shl-drawer-p on aside.sidebar while it moves
      (0 tucked into the dock, 1 open); the Loader eases it on click and a
-     pointer drag sets it directly. The wheel only scrolls the list. ECHO's blocks are masked off below the
-     sheet's top edge instead of faded, so the two never overlap on a
-     translucent sidebar: the sheet covers them as it rises. */
+     pointer drag sets it directly. The wheel only scrolls the list. ECHO's
+     blocks are masked off below the sheet's top edge instead of faded, so the
+     two never overlap on a translucent sidebar: the sheet covers them as it
+     rises.
+
+     To do that it has to stay out of aside.sidebar's flex column, because
+     layoutDrawer() sizes it as an overlay over the native blocks above the
+     dock. ECHO raises its own rail children over the wallpaper/theme scrim with
+     a blanket ".sidebar > *" rule (visual protection with a custom background
+     on, and the childrenDoodle preset) that outranks this selector. Losing
+     puts the sheet back in flow: it drops under the dock, gets squeezed to a
+     sliver by the aside's own height, and all that is left on screen is the
+     bare scrim where ECHO's hidden nav used to be. A longer selector only wins
+     until the host writes an even longer one, so the two declarations that
+     carry the overlay are pinned. */
   .shl-drawer {
-    position: absolute; z-index: 3; box-sizing: border-box; display: flex; flex-direction: column;
+    position: absolute !important; z-index: 3 !important; box-sizing: border-box;
+    display: flex; flex-direction: column;
     min-width: 0; min-height: 0; margin: 0; visibility: hidden; pointer-events: none;
   }
   html:is([data-shl-sidebar="open"], [data-shl-sidebar="moving"]) .shl-drawer { visibility: visible; pointer-events: auto; }

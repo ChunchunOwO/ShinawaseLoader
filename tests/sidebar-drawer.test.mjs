@@ -100,3 +100,16 @@ test('boxes are measured in the sidebar positioning space', () => {
   assert.deepEqual(plain(boxWithin(nested, aside)), { top: 654, left: 10, width: 200, height: 38 });
   assert.equal(boxWithin(nested, { offsetParent: null }), null, 'not positioned inside that root');
 });
+
+test('the sheet keeps its overlay when the host restyles every .sidebar child', () => {
+  // ECHO lifts its own rail children above the wallpaper/theme scrim with a
+  // blanket ".sidebar > * { position: relative; z-index: 1 }" (visual
+  // protection with a custom background on, and the childrenDoodle preset).
+  // That selector outranks the sheet's single class, and an in-flow sheet drops
+  // under the dock and leaves the bare scrim where its own list should be.
+  const start = source.indexOf('\n  .shl-drawer {');
+  assert.ok(start > 0, 'the sheet rule is present');
+  const rule = source.slice(start, source.indexOf('\n  }', start));
+  assert.match(rule, /position:\s*absolute\s*!important/u, 'the sheet stays out of the aside flex flow');
+  assert.match(rule, /z-index:\s*3\s*!important/u, 'the sheet keeps its paint order over ECHO blocks');
+});
