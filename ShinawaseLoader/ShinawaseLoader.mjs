@@ -92,13 +92,13 @@ const readChoice = (items, hint) => new Promise((resolve) => {
 });
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
-const loaderVersion = '1.8.1.2';
+const loaderVersion = '1.8.1.3';
 const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index.json';
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
 const alignedEchoProduct = 'echo-steam';
-const alignedEchoVersion = '26.10.18';
-const alignedElectronVersion = '43.5.1';
+const alignedEchoVersion = '26.10.25';
+const alignedElectronVersion = '43.8.1';
 // 5105150 is ECHO Playtest.
 const echoSteamAppId = '5105090';
 const echoUserDataFolderName = 'ECHO Steam';
@@ -279,6 +279,7 @@ const autoUpdateEnabled = () => readJson(loaderConfigPath, loaderConfig).autoUpd
 
 const args = process.argv.slice(2);
 const command = args[0] && !args[0].startsWith('-') ? args.shift() : 'serve';
+const devMode = command === 'dev';
 const option = (name, fallback = null) => {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
@@ -2384,26 +2385,29 @@ const syncIsolatedRuntime = (options = {}) => {
   }
 };
 
+const mainInspectorTarget = async () => {
+  const response = await fetch(`http://127.0.0.1:${inspectPort}/json`);
+  if (!response.ok) return null;
+  const targets = await response.json();
+  return (Array.isArray(targets) ? targets : []).find((item) => item.webSocketDebuggerUrl) || null;
+};
+const bootstrapMainInspector = async (target) => {
+  const loaderLiteral = JSON.stringify(root.replaceAll('\\', '/'));
+  const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(async () => {
+    process.env.ECHO_MOD_HOME = process.env.ECHO_MOD_HOME || ${loaderLiteral};
+    const path = require('node:path');
+    const bootstrap = require(path.join(process.env.ECHO_MOD_HOME, 'main-bootstrap.cjs'));
+    return bootstrap.startShinawaseMainBootstrap();
+  })()`);
+  log('INFO', 'main inspector bootstrap', result?.result?.value || result);
+  return result?.result?.value || { ok: true };
+};
 const attachMainInspector = async () => {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${inspectPort}/json`);
-      if (response.ok) {
-        const targets = await response.json();
-        const target = (Array.isArray(targets) ? targets : []).find((item) => item.webSocketDebuggerUrl);
-        if (target?.webSocketDebuggerUrl) {
-          const loaderLiteral = JSON.stringify(root.replaceAll('\\', '/'));
-          const result = await cdpEvaluate(target.webSocketDebuggerUrl, `(async () => {
-            process.env.ECHO_MOD_HOME = process.env.ECHO_MOD_HOME || ${loaderLiteral};
-            const path = require('node:path');
-            const bootstrap = require(path.join(process.env.ECHO_MOD_HOME, 'main-bootstrap.cjs'));
-            return bootstrap.startShinawaseMainBootstrap();
-          })()`);
-          log('INFO', 'main inspector bootstrap', result?.result?.value || result);
-          return result?.result?.value || { ok: true };
-        }
-      }
+      const target = await mainInspectorTarget();
+      if (target) return await bootstrapMainInspector(target);
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
@@ -2412,6 +2416,7 @@ const attachMainInspector = async () => {
 };
 const launchEcho = () => {
   if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
+  if (devMode) return launchEchoDev();
   syncIsolatedRuntime();
   const executable = findEcho();
   if (echoProcess && !echoProcess.killed) return executable;
@@ -2436,6 +2441,82 @@ const launchEcho = () => {
   void attachMainInspector();
   startWatch();
   return executable;
+};
+
+// `dev --source "<ECHOSTEAM_SOURCE>"` runs an ECHO source checkout's own
+// `npm run dev` (electron-vite) instead of an installed ECHO. electron-vite
+// forwards --remoteDebuggingPort/--inspect to the Electron it spawns, so the
+// renderer (served by the loopback Vite server) and the main process are
+// reached the same way as under ECHO.modded.exe. No isolated runtime is synced
+// and no app.asar is patched, so the startup card and asar bridge do not apply.
+const resolveDevSource = () => {
+  const hint = option('--source', process.env.ECHOSTEAM_ROOT || null);
+  if (!hint) throw new Error('dev mode needs an ECHO source checkout; pass --source <ECHOSTEAM_SOURCE> or set ECHOSTEAM_ROOT');
+  const source = resolve(hint);
+  const manifest = readJson(join(source, 'package.json'), null);
+  const dependencies = { ...(manifest?.dependencies || {}), ...(manifest?.devDependencies || {}) };
+  if (!manifest?.scripts?.dev || !dependencies['electron-vite']) {
+    throw new Error(`not an ECHO source checkout (package.json with a dev script and electron-vite expected): ${source}`);
+  }
+  if (!existsSync(join(source, 'node_modules', 'electron-vite'))) {
+    throw new Error(`ECHO source dependencies are not installed; run npm ci in ${source}`);
+  }
+  return source;
+};
+// electron-vite restarts Electron whenever main or preload sources change, so
+// the main bootstrap re-runs for every new inspector target instead of once.
+let devInspectorTimer = null;
+const watchDevMainInspector = () => {
+  if (devInspectorTimer) return;
+  let bootstrappedId = null;
+  const tick = async () => {
+    try {
+      const target = await mainInspectorTarget();
+      if (target && target.id !== bootstrappedId) {
+        await bootstrapMainInspector(target);
+        bootstrappedId = target.id;
+      }
+    } catch {}
+    devInspectorTimer = echoProcess ? setTimeout(tick, 1500) : null;
+  };
+  devInspectorTimer = setTimeout(tick, 1500);
+};
+const launchEchoDev = () => {
+  const source = resolveDevSource();
+  if (echoProcess) return source;
+  const devArgs = [
+    'run', 'dev', '--',
+    ...(hasFlag('--full') ? ['--full'] : []),
+    '--remoteDebuggingPort', String(debugPort),
+    '--inspect', String(inspectPort),
+  ];
+  // npm is a .cmd shim on Windows, which spawn only runs through a shell; every
+  // argument above is a fixed literal or a number, so nothing needs quoting.
+  const windows = process.platform === 'win32';
+  echoProcess = spawn(windows ? 'npm.cmd' : 'npm', devArgs, {
+    cwd: source,
+    env: {
+      ...process.env,
+      ECHO_MOD_ROOT: gameRoot,
+      ECHO_MOD_HOME: root,
+      ECHO_GAME_ROOT: gameRoot,
+      ECHO_MODS_HOME: modsRoot,
+      ECHO_PLUGINS_HOME: pluginsRoot,
+      ECHO_LOGS_HOME: logsRoot,
+    },
+    shell: windows,
+    stdio: 'inherit',
+  });
+  echoProcess.once('error', (error) => log('ERROR', 'ECHO dev launch failed', error instanceof Error ? error.message : String(error)));
+  echoProcess.once('exit', (code) => {
+    echoProcess = null;
+    log('INFO', `ECHO dev exited${code === null ? '' : ` (${code})`}`);
+    if (devMode) process.exit(code || 0);
+  });
+  log('INFO', `launched ECHO dev in ${source} cdp=${debugPort} inspect=${inspectPort}`);
+  watchDevMainInspector();
+  startWatch();
+  return source;
 };
 
 const jsonResponse = (response, status, value) => {
@@ -3413,6 +3494,10 @@ const run = async () => {
   }
 
   const isAttach = command === 'attach';
+  if (devMode) {
+    if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
+    resolveDevSource();
+  }
   try {
     const existing = await fetch(`http://127.0.0.1:${port}/api/status`);
     if (existing.ok) {
@@ -3421,6 +3506,7 @@ const run = async () => {
         console.log(`${c.gray}${t('listen')}${c.reset}  ${t('alreadyRunning')} ${port}`);
         if (isAttach) startWatch();
         if (command === 'run') launchEcho();
+        if (devMode) throw new Error(`a Loader already serves port ${port}; stop it or pass --port for dev mode`);
         return;
       }
     }
@@ -3435,6 +3521,7 @@ const run = async () => {
     console.log(`${c.gray}${t('inspect')}${c.reset}  ${inspectPort}`);
     console.log(`${c.gray}${t('native')}${c.reset}   ${nativeHostEnabled ? nativePort : t('off')}`);
     if (togetherRelayServer) console.log(`${c.gray}${t('together')}${c.reset} ${togetherRelayPort}`);
+    if (devMode) return;
     const runtime = syncIsolatedRuntime();
     if (runtime?.stock?.echoVersion) console.log(`${c.gray}runtime${c.reset}  ${runtime.status} ${runtime.stock.echoVersion}`);
   });
@@ -3443,7 +3530,7 @@ const run = async () => {
     void attachMainInspector();
     startWatch();
   }
-  if (command === 'run') launchEcho();
+  if (command === 'run' || devMode) launchEcho();
 };
 
 run().catch((error) => {

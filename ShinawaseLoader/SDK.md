@@ -30,7 +30,7 @@ For automated testing of packages — an offline harness that runs entries in th
 
 ## echo-steam 26.10.18 alignment
 
-Current verified host: **echo-steam 26.10.18** (26.10.16 also verified) at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.5.1**, Steam AppId **5105090** (ECHO Playtest is `5105150` and is never auto-selected), Workshop SDK `native-shell` kind. The isolated Mod runtime (`ShinawaseLoader/modded-runtime`) is fingerprinted against the live Steam `app.asar` / `ECHO.exe`; Steam updates trigger `runtime-sync.mjs` on the next launch.
+Current aligned host: **echo-steam 26.10.25** (asar patches checked against the 26.10.25 source build and the 26.10.24 Steam build; 26.10.16 and later are covered) at `...\steamapps\common\ECHO\ECHO.exe` (also recognizes `ECHO Steam.exe`). Electron **43.8.1**, Steam AppId **5105090** (ECHO Playtest is `5105150` and is never auto-selected), Workshop SDK `native-shell` kind. The isolated Mod runtime (`ShinawaseLoader/modded-runtime`) is fingerprinted against the live Steam `app.asar` / `ECHO.exe`; Steam updates trigger `runtime-sync.mjs` on the next launch.
 
 - **Retired upstream**: ECHO 26.10.8 removed its own platform streaming, platform account login, downloader, Qobuz and MV services, and the Steam build's preload `IpcChannels` table no longer carries their channels. On a Loader install, `window.echo.streaming` / `accounts` / `downloads` / `qobuz` come from the Loader's preload bridge (which carries its own channel table) and the bundled streaming bridge, not from ECHO.
 

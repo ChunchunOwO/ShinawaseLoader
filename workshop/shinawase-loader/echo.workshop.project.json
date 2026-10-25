@@ -6,7 +6,7 @@
   "previewFile": "preview.png",
   "visibility": "private",
   "description": "ShinawaseLoader for ECHO: a community external Mod loader. Subscribe, enable it and approve full system access; it installs the Loader into the ECHO folder and restarts ECHO in an isolated runtime that loads Mods (Streaming, MV, Lyrics Match and Mod Market). The stock ECHO executable and app.asar are never modified. Source: https://github.com/ChunchunOwO/ShinawaseLoader",
-  "changeNote": "ShinawaseLoader 1.8.1.2: supports ECHO 26.10.21 (the Loader was not injected after that update); streaming repeat-one keeps the song; lyrics no longer reload every few seconds.",
+  "changeNote": "ShinawaseLoader 1.8.1.3: supports ECHO 26.10.22-26.10.25 (streaming playback, repeat-one and the lyrics fixes were not applied after ECHO changed its bundler); the sidebar drawer stays an overlay under custom wallpapers; lyrics no longer reload while a song plays.",
   "tags": [
     "Sandboxed Plugin"
   ]

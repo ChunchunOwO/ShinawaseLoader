@@ -15,7 +15,7 @@
 
 </div>
 
-ShinawaseLoader 是 ECHO Steam（当前验证 echo-steam **26.10.18**，Electron 43.5.1）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `ECHO.app` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar 与可执行文件。userData 在 Windows 为 `%APPDATA%\ECHO Steam`，在 macOS 为 `~/Library/Application Support/ECHO Steam`，在 Linux 为 `~/.config/ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
+ShinawaseLoader 是 ECHO Steam（当前对齐 echo-steam **26.10.25**，Electron 43.8.1）的社区外部 ModLoader，**不使用 ECHO 内置插件 VM**。默认以本地 CDP 端口启动 ECHO，把启用的 Mod 注入主窗口渲染进程；HTML、CSS、JavaScript、WASM、侧栏页面与 `window.echo` 均可使用，且不修改 Steam 的 `ECHO.exe` / `ECHO.app` / `app.asar`。Steam 更新后会自动把隔离运行时（`modded-runtime`）同步到新的 asar 与可执行文件。userData 在 Windows 为 `%APPDATA%\ECHO Steam`，在 macOS 为 `~/Library/Application Support/ECHO Steam`，在 Linux 为 `~/.config/ECHO Steam`（可用 `ECHO_USER_DATA_PATH_OVERRIDE`）。
 
 > 当前版本对齐 echo-steam 26.10.18（新版侧边栏与歌单墙；ECHO 自 26.10.8 起移除了自带的流媒体、账号、下载与 MV 服务，Loader 安装中的这些接口由 Loader 的 preload 桥与流媒体桥提供）。Loader 生成独立的 `ECHO.modded.exe`，**不取代** Steam 原版；安装结束后会指导把 Steam 启动项设为 `"…\ECHO.modded.exe" %command%`。Shinawase 侧栏里提供 **Mod Market**，从 `echo.shiinasuki.com` 浏览并一键安装 / 更新社区插件。双击该 exe 或 `start-echo-with-mods.cmd` 时会自动检查 GitHub 上的 Loader 与预装包并更新，Steam 更新后也会自动刷新隔离运行时。发现逻辑优先 `...\common\ECHO\ECHO.exe`，可用 `ECHO_ROOT` / `selection.json` / `--echo` 覆盖；Playtest 只能显式选择。自 **v1.6.0** 起提供注入 UI（Mods 管理页、配置弹窗、Loader 状态页）与 Mod 自定义配置页：清单声明 `"configUi": "config-ui.js"` 后，配置弹窗以 `echoConfigUi` 上下文执行该脚本；未提供或加载失败时自动回退到 `config.schema.json` 表单。详见 [`ShinawaseLoader/SDK.md`](ShinawaseLoader/SDK.md)。
 
@@ -207,6 +207,8 @@ Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目�
 `node ShinawaseLoader.mjs sync-runtime [--force]` 对照 Steam 的 `app.asar` / `ECHO.exe` 指纹，刷新隔离运行时。Steam 更新后启动 `start-echo-with-mods.cmd` 或 `ECHO.modded.exe` 也会自动做这一步。
 
 `node ShinawaseLoader.mjs self-update [--force]` 从主菜单选定的下载源更新 Loader 与预装包。双击 `ECHO.modded.exe` 时默认自动执行；可在 `loader.config.json` 设 `"autoUpdate": false` 关闭。双击 `ECHO.modded.exe` 时的自动更新最多占用启动 45 秒，之后放弃并在下次继续（未完成的下载会断点续传）。
+
+`node ShinawaseLoader.mjs dev --source "<ECHOSTEAM_SOURCE>" [--full]` 在 ECHO 源码仓库里执行 `npm run dev`（electron-vite），自动附加 `--remoteDebuggingPort` / `--inspect`，并把 Mod 注入到开发版 ECHO。渲染进程来自本机 Vite 服务器；electron-vite 因主进程改动重启 Electron 后会重新执行主进程引导。dev 模式不同步隔离运行时、不修补 `app.asar`，所以没有启动卡片与 asar 桥接；ECHO 退出后 Loader 一并退出。也可设置 `ECHOSTEAM_ROOT`，或用 `dev-echo-source.bat "<ECHOSTEAM_SOURCE>"`。需要独立测试数据时设置 `ECHO_USER_DATA_PATH_OVERRIDE`。
 
 `--load-mode` 取值：`external-cdp`（默认）、`attach-only`、`disabled`。
 

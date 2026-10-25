@@ -16,8 +16,13 @@ const splashMarker = '/* shinawase-loader-startup-splash-v1 */';
 // 2: startup splash block.
 // 4: preload bridge carries its own channel table; generic topmost deferral.
 // 8: preserve equal lyrics snapshots across queue resume-pointer updates.
-const PATCH_REVISION = 8;
+// 9: 26.10.22+ rolldown output (tabs, code-split main chunks, (0,x.useMemo)).
+const PATCH_REVISION = 9;
 const MAIN_ENTRY = 'out/main/index.js';
+// The entry's code-split siblings: out/main/chunks/ up to 26.10.21, flat next
+// to index.js from 26.10.22 (rolldown).
+const mainChunksIn = (value) => filesIn(value).filter((entry) => entry.relativePath !== MAIN_ENTRY
+  && /^out\/main\/.+\.m?js$/u.test(entry.relativePath) && !entry.info.unpacked && !entry.info.link);
 const PRELOAD_ENTRY = 'out/preload/index.mjs';
 const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the Steam distribution.';
 const KNOWN_STOCK_ASAR_SHA256 = {
@@ -26,6 +31,7 @@ const KNOWN_STOCK_ASAR_SHA256 = {
   '26.9.16': '137b81875ac1f1c4735b2014b478ef27aaf7fb3fca9d6401ff0a218cc71f9271',
   '26.10.16': 'e4200ed73b003dd6631bda8e892d55ff08c8252cd7b8d90239e29620886001fc',
   '26.10.18': 'e2e4c118bc2ed3c6892d1c9013ae5788cd375df0dcda27eae9e0747930028ec9',
+  '26.10.24': '7d9f88e00f3f456ea9a2ae1ca1b1ca83bf68cd0494bed2d854565a595d437001',
 };
 const KNOWN_STOCK_HEADER_SHA256 = {
   '26.8.28': 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd',
@@ -33,6 +39,7 @@ const KNOWN_STOCK_HEADER_SHA256 = {
   '26.9.16': '5467723cc48791eac83ab03456570ad3e021847eb2d3bb8bc1ca4e00b7137bdc',
   '26.10.16': '6ccbc9f4fdc9bf2271ed501eb8958909778959b4d81ddb0d16c8e132cb787f4e',
   '26.10.18': '2c5bdf76a220b4fd60453a9e8dd2aa6922dda6b9d6c79daad29d38ae4b196d66',
+  '26.10.24': '50ced5c988918a5982fea7be0e6196e13fc620350047fa62b8cfd9a28b116924',
 };
 const knownAsarHashes = new Set(Object.values(KNOWN_STOCK_ASAR_SHA256));
 const knownHeaderHashes = new Set(Object.values(KNOWN_STOCK_HEADER_SHA256));
@@ -619,19 +626,10 @@ const patchPreload = (text) => {
   return `${next.split('\n').slice(0, 1).join('\n')}\n${preloadBridge}\n${next.split('\n').slice(1).join('\n')}`;
 };
 
-const applyStreamingQualityPassthrough = (text) => {
-  const qualityPairs = [
-    ["quality: 'standard',\n      stableKey:", "quality: input.quality || input.streamingQuality || 'standard',\n      stableKey:"],
-    ['quality: "standard",\n      stableKey:', 'quality: input.quality || input.streamingQuality || "standard",\n      stableKey:'],
-    ['quality:"standard",stableKey:', 'quality:input.quality||input.streamingQuality||"standard",stableKey:'],
-    ['quality: "standard", stableKey:', 'quality: input.quality || input.streamingQuality || "standard", stableKey:'],
-  ];
-  let next = text;
-  for (const [from, to] of qualityPairs) {
-    if (next.includes(from)) next = next.replace(from, to);
-  }
-  return next;
-};
+// The media-request validator hard-codes the streaming quality; any
+// indentation, quote style, or minified form.
+const streamingQualityRe = /quality:(\s?)(["'])standard\2,(\s*)stableKey:/u;
+const applyStreamingQualityPassthrough = (text) => text.replace(streamingQualityRe, (_whole, space, quote, gap) => `quality:${space}input.quality || input.streamingQuality || ${quote}standard${quote},${gap}stableKey:`);
 
 // Electron 37 on Windows crashed natively (0xC0000005) when always-on-top was
 // applied to a transparent+frameless window in its first moments. echo-steam
@@ -643,8 +641,9 @@ const applyStreamingQualityPassthrough = (text) => {
 // matching. Any helper still unwrapped is wrapped whole instead: a window's
 // first raise starts its 600ms window, and raises inside it are deferred.
 const deferTopmostMarker = '/* shinawase-defer-topmost */';
-const topmostHelperRe = /^const (applyPetAlwaysOnTop|applyMiniPlayerAlwaysOnTop|applyDesktopLyricsAlwaysOnTop) = (\([^\n]*\) => \{\n[\s\S]*?\n\});$/gmu;
-const wrapTopmostHelper = (name, fn) => `const ${name} = ${deferTopmostMarker} ((apply) => {
+// 26.10.22+ (rolldown) declares them with `var`; the wrapper keeps the keyword.
+const topmostHelperRe = /^(const|let|var) (applyPetAlwaysOnTop|applyMiniPlayerAlwaysOnTop|applyDesktopLyricsAlwaysOnTop) = (\([^\n]*\) => \{\n[\s\S]*?\n\});$/gmu;
+const wrapTopmostHelper = (keyword, name, fn) => `${keyword} ${name} = ${deferTopmostMarker} ((apply) => {
   const bornAt = new WeakMap();
   return (window, ...rest) => {
     if (!window || typeof window.isDestroyed !== "function") return apply(window, ...rest);
@@ -656,29 +655,23 @@ const wrapTopmostHelper = (name, fn) => `const ${name} = ${deferTopmostMarker} (
 })(${fn});`;
 const wrapTopmostHelpers = (text) => {
   topmostHelperRe.lastIndex = 0;
-  return text.replace(topmostHelperRe, (whole, name, fn) => (fn.includes('__shinawaseBornAt') ? whole : wrapTopmostHelper(name, fn)));
+  return text.replace(topmostHelperRe, (whole, keyword, name, fn) => (fn.includes('__shinawaseBornAt') ? whole : wrapTopmostHelper(keyword, name, fn)));
 };
 const countTopmostHelpers = (text) => {
   topmostHelperRe.lastIndex = 0;
   return [...text.matchAll(topmostHelperRe)].length;
 };
 
+// The transparent auxiliary windows (mini player / island, pet, desktop
+// lyrics) are constructed non-topmost; the deferred helpers raise them. Covers
+// the plain and Linux-overlay constructors, ECHO's comment above the flag (gone
+// from 26.10.22 output), and the switchable `isMiniPlayerForcedTopmost()` flag
+// ECHOSteam added after 26.10.20.
+const auxiliaryCtorRe = /(?<head>skipTaskbar: true,\s*show: false,\s*(?:\/\/[^\n]*\s*)*)alwaysOnTop: (?:true|isMiniPlayerForcedTopmost\(\)),(?=\s*(?:\.\.\.linuxOverlayBrowserWindowOptions\(\),\s*)?webPreferences: \{)/gu;
 const applyAuxiliaryWindowCrashFix = (text) => {
   if (text.includes('__shinawaseBornAt') || text.includes(deferTopmostMarker)) return text;
-  let next = text;
-  const currentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
-  const currentSafe = currentCtor.replace('alwaysOnTop: true', 'alwaysOnTop: false');
-  if (next.includes(currentCtor)) next = next.replaceAll(currentCtor, currentSafe);
-  const overlayCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    ...linuxOverlayBrowserWindowOptions(),\n    webPreferences: {';
-  const overlaySafe = overlayCtor.replace('alwaysOnTop: true', 'alwaysOnTop: false');
-  if (next.includes(overlayCtor)) next = next.replaceAll(overlayCtor, overlaySafe);
-  // ECHOSteam after 26.10.20 makes the island's topmost switchable:
-  // `alwaysOnTop: isMiniPlayerForcedTopmost(),`. The deferred helper applies it.
-  const switchableCtor = overlayCtor.replace('alwaysOnTop: true,', 'alwaysOnTop: isMiniPlayerForcedTopmost(),');
-  if (next.includes(switchableCtor)) next = next.replaceAll(switchableCtor, overlaySafe);
-  const legacyCtor = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: true,\n    webPreferences: {';
-  const legacySafe = '    skipTaskbar: true,\n    show: false,\n    alwaysOnTop: false,\n    webPreferences: {';
-  while (next.includes(legacyCtor)) next = next.replace(legacyCtor, legacySafe);
+  auxiliaryCtorRe.lastIndex = 0;
+  let next = text.replace(auxiliaryCtorRe, '$<head>alwaysOnTop: false,');
   for (const assignment of ['petWindow = window;', 'desktopLyricsWindow = window;', 'miniPlayerWindow = window;']) {
     const anchor = `  ${assignment}\n  window.setMenuBarVisibility(false);`;
     if (next.includes(anchor)) {
@@ -723,30 +716,27 @@ const applyAuxiliaryWindowCrashFix = (text) => {
   return wrapTopmostHelpers(next);
 };
 
-const steamStreamingValidation = (providerName) => `if (${providerName} !== "m3u8" || !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("${STEAM_STREAMING_REJECT}");\n    }`;
-// 26.10.21 lets m3u8 items carry a Workshop playback source reference.
-const steamStreamingValidationWorkshop = (providerName) => `if (${providerName} !== "m3u8" || !isWorkshopSourceReference(radioUrl) && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("${STEAM_STREAMING_REJECT}");\n    }`;
+// The main-process anchors below are regular expressions that only pin tokens.
+// ECHO up to 26.10.21 was bundled with two-space indentation and braced
+// single-statement branches; from 26.10.22 (Vite 8 / rolldown) the output is
+// tab-indented, drops those braces, splits object literals over lines, strips
+// comments and declares module-level helpers with `var`.
+// The Steam media-request validator rejects every provider but m3u8. 26.10.21
+// also lets m3u8 items carry a Workshop playback source reference, which the
+// `rest` of the condition keeps. Inverting the first test keeps only the URL
+// check, for m3u8 alone: `a !== m || rest` becomes `a === m && rest`.
+const streamingValidationRe = /if \((?<provider>[A-Za-z_$][\w$]*) !== "m3u8" \|\| (?<rest>[^\n]*?)\)(?<open>\s*\{\s*|\s+)throw new Error\("Music streaming playback is not available in the Steam distribution\."\);/u;
 const findStreamingValidation = (text) => {
-  for (const providerName of ['provider2', 'provider']) {
-    const workshop = steamStreamingValidationWorkshop(providerName);
-    if (text.includes(workshop)) {
-      return { stock: workshop, patched: `if (${providerName} === "m3u8" && !isWorkshopSourceReference(radioUrl) && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Streaming playback URL must be valid.");\n    }` };
-    }
-    const plain = steamStreamingValidation(providerName);
-    if (text.includes(plain)) {
-      return { stock: plain, patched: `if (${providerName} === "m3u8" && !/^https?:\\/\\/\\S+$/iu.test(radioUrl)) {\n      throw new Error("Streaming playback URL must be valid.");\n    }` };
-    }
-  }
-  return null;
+  const match = streamingValidationRe.exec(text);
+  if (!match) return null;
+  const { provider, rest, open } = match.groups;
+  return { stock: match[0], patched: `if (${provider} === "m3u8" && ${rest})${open}throw new Error("Streaming playback URL must be valid.");` };
 };
-// The streaming branch of the media resolver before and after 26.10.21, with
-// the m3u8 lines each patched resolver keeps.
-const streamingPathAnchors = [
-  ['  } else if (item.mediaType === "streaming") {\n    filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n  } else {',
-    '      filePath = decodeM3u8ProviderTrackId(item.providerTrackId).trim();'],
-  ['  } else if (item.mediaType === "streaming") {\n    const source = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n    filePath = isWorkshopSourceReference(source) ? await resolveWorkshopPlaybackSource(source) : source;\n  } else {',
-    '      const source = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n      filePath = isWorkshopSourceReference(source) ? await resolveWorkshopPlaybackSource(source) : source;'],
-];
+const streamingResolverRe = /let filePath;(?<gap>\s*)let probe = createProbeHintForMediaItem\(/u;
+// The streaming branch of the media resolver before and after 26.10.21; the
+// matched body is the m3u8 branch the patched resolver keeps.
+const streamingPathRe = /else if \(item\.mediaType === "streaming"\)\s*(?:\{\s*(?<braced>const source = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);\s*filePath = isWorkshopSourceReference\(source\) \? await resolveWorkshopPlaybackSource\(source\) : source;|filePath = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);)\s*\}|(?<bare>filePath = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);))/u;
+const streamingReturnRe = /return \{(?<a>\s*)filePath,\s*mimeType: null,(?<b>\s*)probe,(?<c>\s*)durationSeconds(?<d>\s*)\};/u;
 const streamingProbeEnrichment = 'const sourceSampleRate = Number(source?.sampleRate);';
 const upgradePatchedPlayback = (text) => {
   let next = text.replace(playbackMarkerV1, playbackMarker);
@@ -769,20 +759,21 @@ const patchPlayback = (text) => {
   let next = text;
   const validation = findStreamingValidation(next);
   if (!validation) throw new Error('asar_streaming_validation_missing');
-  next = next.replace(validation.stock, validation.patched);
-  const oldResolve = '  let filePath;\n  let probe = createProbeHintForMediaItem(';
-  if (!next.includes(oldResolve)) throw new Error('asar_streaming_resolver_missing');
-  next = next.replace(oldResolve, '  let filePath;\n  let inputHeaders;\n  let mimeType = null;\n  let probe = createProbeHintForMediaItem(');
-  const pathAnchor = streamingPathAnchors.find(([anchor]) => next.includes(anchor));
-  if (!pathAnchor) throw new Error('asar_streaming_path_missing');
-  const [oldPath, m3u8Branch] = pathAnchor;
+  next = next.replace(validation.stock, () => validation.patched);
+  if (!streamingResolverRe.test(next)) throw new Error('asar_streaming_resolver_missing');
+  next = next.replace(streamingResolverRe, (_whole, gap) => `let filePath;${gap}let inputHeaders;${gap}let mimeType = null;${gap}let probe = createProbeHintForMediaItem(`);
+  const pathMatch = streamingPathRe.exec(next);
+  if (!pathMatch) throw new Error('asar_streaming_path_missing');
+  const m3u8Branch = `      ${pathMatch.groups.braced || pathMatch.groups.bare}`;
   // Resolve non-m3u8 streaming through the Loader bridge and keep probe/mime
   // metadata so exclusive, ASIO, and native DSP can admit HTTP sources.
-  next = next.replace(oldPath, '  } else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n' + m3u8Branch + '\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;\n    }\n  } else {');
+  next = next.slice(0, pathMatch.index) + 'else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n' + m3u8Branch + '\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;\n    }\n  }' + next.slice(pathMatch.index + pathMatch[0].length);
   next = applyStreamingQualityPassthrough(next);
-  const oldReturn = '  return { filePath, mimeType: null, probe, durationSeconds };';
-  if (!next.includes(oldReturn)) throw new Error('asar_streaming_return_missing');
-  next = next.replace(oldReturn, '  return { filePath, inputHeaders, mimeType, probe, durationSeconds };');
+  if (!streamingReturnRe.test(next)) throw new Error('asar_streaming_return_missing');
+  next = next.replace(streamingReturnRe, (...args) => {
+    const { a, b, c, d } = args.at(-1);
+    return `return {${a}filePath,${a}inputHeaders,${a}mimeType,${b}probe,${c}durationSeconds${d}};`;
+  });
   return `${playbackMarker}\n${next}`;
 };
 
@@ -897,26 +888,28 @@ const patchSteamPlaylistsPage = (text) => {
 // "loaded" notice flashed and the lyrics view reset. Key the memo on the
 // fields it reads instead; the dependency array keeps a fixed length and the
 // rewritten form no longer matches.
-const streamingLyricsTargetRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<react>[A-Za-z_$][\w$]*)\.useMemo\(\(\)=>(?<isStreaming>[A-Za-z_$][\w$]*)\((?<track>[A-Za-z_$][\w$]*)\)&&!\k<track>\.isLiveStream\?\{provider:\k<track>\.provider,providerTrackId:\k<track>\.providerTrackId\}:null,\[\k<track>\]\)/gu;
-const streamingLyricsTargetReplacement = '$<binding>=$<react>.useMemo(()=>$<isStreaming>($<track>)&&!$<track>.isLiveStream?{provider:$<track>.provider,providerTrackId:$<track>.providerTrackId}:null,[$<isStreaming>($<track>)&&!$<track>.isLiveStream,$<track>?.provider,$<track>?.providerTrackId])';
+// From 26.10.22 the minifier calls hooks as `(0,c.useMemo)(...)` instead of
+// `c.useMemo(...)`; `call` captures either form.
+const streamingLyricsTargetRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<call>(?:\(0,)?[A-Za-z_$][\w$]*\.useMemo\)?)\(\(\)=>(?<isStreaming>[A-Za-z_$][\w$]*)\((?<track>[A-Za-z_$][\w$]*)\)&&!\k<track>\.isLiveStream\?\{provider:\k<track>\.provider,providerTrackId:\k<track>\.providerTrackId\}:null,\[\k<track>\]\)/gu;
+const streamingLyricsTargetReplacement = '$<binding>=$<call>(()=>$<isStreaming>($<track>)&&!$<track>.isLiveStream?{provider:$<track>.provider,providerTrackId:$<track>.providerTrackId}:null,[$<isStreaming>($<track>)&&!$<track>.isLiveStream,$<track>?.provider,$<track>?.providerTrackId])';
 // The snapshot memo also depends on the whole track. Even with a stable
 // streaming target, an equal new snapshot changes getLyrics/search/apply
 // callbacks and restarts the loading effect. Keep the original factory and
 // dependencies (including metadata changes), but reuse its previous flat
 // snapshot when all output fields are equal. The ref belongs to this mounted
 // LyricsPage, so separate windows/tracks cannot share a mutable cache.
-const lyricsSnapshotMemoRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<react>[A-Za-z_$][\w$]*)\.useMemo\(\(\)=>\{(?<before>(?:(?!\.useMemo\().){0,3000}?)return(?<snapshot>\{trackId:[^{}]*,stableKey:[^{}]*\})\},\[(?<deps>[^\]]*)\]\)/gsu;
+const lyricsSnapshotMemoRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<call>(?:\(0,)?(?<react>[A-Za-z_$][\w$]*)\.useMemo\)?)\(\(\)=>\{(?<before>(?:(?!\.useMemo\)?\().){0,3000}?)return(?<snapshot>\{trackId:[^{}]*,stableKey:[^{}]*\})\},\[(?<deps>[^\]]*)\]\)/gsu;
 const patchLyricsPage = (text) => {
   streamingLyricsTargetRe.lastIndex = 0;
   const next = text.replace(streamingLyricsTargetRe, streamingLyricsTargetReplacement);
   lyricsSnapshotMemoRe.lastIndex = 0;
   return next.replace(lyricsSnapshotMemoRe, (...args) => {
-    const { binding, react, before, snapshot, deps } = args.at(-1);
+    const { binding, call, react, before, snapshot, deps } = args.at(-1);
     if (!['title:', 'artist:', 'album:', 'albumArtist:', 'durationSeconds:', 'mediaType:', 'sourceId:'].every((key) => snapshot.includes(key))) return args[0];
     const ref = binding + '__shinawaseLyricsSnapshot';
     if (next.includes(ref)) return args[0];
     const value = ref + 'Next', previous = ref + 'Previous';
-    return `${ref}=${react}.useRef(null),${binding}=${react}.useMemo(()=>{${before}const ${value}=${snapshot},${previous}=${ref}.current;return ${previous}&&Object.keys(${previous}).length===Object.keys(${value}).length&&Object.keys(${value}).every(key=>Object.is(${previous}[key],${value}[key]))?${previous}:(${ref}.current=${value})},[${deps}])`;
+    return `${ref}=${react}.useRef(null),${binding}=${call}(()=>{${before}const ${value}=${snapshot},${previous}=${ref}.current;return ${previous}&&Object.keys(${previous}).length===Object.keys(${value}).length&&Object.keys(${value}).every(key=>Object.is(${previous}[key],${value}[key]))?${previous}:(${ref}.current=${value})},[${deps}])`;
   });
 };
 
@@ -928,8 +921,9 @@ const patchLyricsPage = (text) => {
 // knows the song, so the player bar, lyrics and Mods lose it. An advance that
 // can only be the current item keeps the current identity.
 const repeatOneIdentityMarker = '/* shinawase-repeat-one-identity-v1 */';
-const queueAdvanceAnchor = '  handleQueueAdvance(params) {\n    this.emit("track-advance", {';
-const queueAdvanceReplacement = `  handleQueueAdvance(params) {\n    ${repeatOneIdentityMarker}\n    if (params && (typeof params.nextTrackId !== "string" || !params.nextTrackId) && this.currentTrackId && (this.queueSnapshot?.repeatMode === "one" || typeof params.nextItemId === "string" && params.nextItemId === this.currentQueueItemId)) {\n      params = {\n        ...params,\n        nextTrackId: this.currentTrackId,\n        nextItemId: typeof params.nextItemId === "string" && params.nextItemId ? params.nextItemId : this.currentQueueItemId,\n        nextMetadata: params.nextMetadata && typeof params.nextMetadata === "object" && !Array.isArray(params.nextMetadata) && Object.keys(params.nextMetadata).length ? params.nextMetadata : this.currentTrackMetadata\n      };\n    }\n    this.emit("track-advance", {`;
+// Only the method head: 26.10.25 counts native advances before the emit.
+const queueAdvanceRe = /handleQueueAdvance\(params\) \{(?<gap>\s*)/u;
+const queueAdvanceIdentityGuard = `if (params && (typeof params.nextTrackId !== "string" || !params.nextTrackId) && this.currentTrackId && (this.queueSnapshot?.repeatMode === "one" || typeof params.nextItemId === "string" && params.nextItemId === this.currentQueueItemId)) {\n      params = {\n        ...params,\n        nextTrackId: this.currentTrackId,\n        nextItemId: typeof params.nextItemId === "string" && params.nextItemId ? params.nextItemId : this.currentQueueItemId,\n        nextMetadata: params.nextMetadata && typeof params.nextMetadata === "object" && !Array.isArray(params.nextMetadata) && Object.keys(params.nextMetadata).length ? params.nextMetadata : this.currentTrackMetadata\n      };\n    }`;
 // The root of that: Core's native supply gives a streaming item its
 // `streaming:` pseudo path, which the daemon cannot open ("Protocol not
 // found"). On repeat-one the daemon's auto-advance then fails, playback "ends
@@ -939,12 +933,12 @@ const queueAdvanceReplacement = `  handleQueueAdvance(params) {\n    ${repeatOne
 // daemon queue does for remote tracks, and end the daemon queue before any
 // other unresolved streaming item so the renderer queue advances as usual.
 const streamingDaemonQueueMarker = '/* shinawase-streaming-daemon-queue-v1 */';
-const prepareDaemonQueueAnchor = 'const prepareDaemonQueue = async (snapshot, resolveRemote, isCurrent, currentSource) => {\n  const needsPreparation = ';
-const prepareDaemonQueueReplacement = `const prepareDaemonQueue = async (snapshot, resolveRemote, isCurrent, currentSource) => {\n  ${streamingDaemonQueueMarker}\n  const unresolvedStreaming = (item) => !item.source && /^streaming:/u.test(String(item.filePath || ""));\n  if (snapshot.items.some(unresolvedStreaming)) {\n    const at = snapshot.items.findIndex((item) => item.itemId === snapshot.currentItemId);\n    if (at < 0) return { ...snapshot, items: [], repeatMode: "off" };\n    const ordered = snapshot.repeatMode === "one" ? [snapshot.items[at]] : snapshot.repeatMode === "all" ? [...snapshot.items.slice(at), ...snapshot.items.slice(0, at)] : snapshot.items.slice(at);\n    const kept = [];\n    for (const item of ordered) {\n      if (!unresolvedStreaming(item)) kept.push(item);\n      else if (!kept.length && currentSource) kept.push({ ...item, source: currentSource });\n      else break;\n    }\n    if (!kept.length) return { ...snapshot, items: [], repeatMode: "off" };\n    snapshot = { ...snapshot, items: kept, repeatMode: snapshot.repeatMode === "one" || kept.length === ordered.length ? snapshot.repeatMode : "off" };\n  }\n  const needsPreparation = `;
+const prepareDaemonQueueRe = /(?:const|let|var) prepareDaemonQueue = async \(snapshot, resolveRemote, isCurrent, currentSource\) => \{/u;
+const prepareDaemonQueueGuard = `const unresolvedStreaming = (item) => !item.source && /^streaming:/u.test(String(item.filePath || ""));\n  if (snapshot.items.some(unresolvedStreaming)) {\n    const at = snapshot.items.findIndex((item) => item.itemId === snapshot.currentItemId);\n    if (at < 0) return { ...snapshot, items: [], repeatMode: "off" };\n    const ordered = snapshot.repeatMode === "one" ? [snapshot.items[at]] : snapshot.repeatMode === "all" ? [...snapshot.items.slice(at), ...snapshot.items.slice(0, at)] : snapshot.items.slice(at);\n    const kept = [];\n    for (const item of ordered) {\n      if (!unresolvedStreaming(item)) kept.push(item);\n      else if (!kept.length && currentSource) kept.push({ ...item, source: currentSource });\n      else break;\n    }\n    if (!kept.length) return { ...snapshot, items: [], repeatMode: "off" };\n    snapshot = { ...snapshot, items: kept, repeatMode: snapshot.repeatMode === "one" || kept.length === ordered.length ? snapshot.repeatMode : "off" };\n  }`;
 const applyRepeatOneIdentityFix = (text) => {
   let next = text;
-  if (!next.includes(repeatOneIdentityMarker) && next.includes(queueAdvanceAnchor)) next = next.replace(queueAdvanceAnchor, queueAdvanceReplacement);
-  if (!next.includes(streamingDaemonQueueMarker) && next.includes(prepareDaemonQueueAnchor)) next = next.replace(prepareDaemonQueueAnchor, prepareDaemonQueueReplacement);
+  if (!next.includes(repeatOneIdentityMarker)) next = next.replace(queueAdvanceRe, (_whole, gap) => `handleQueueAdvance(params) {${gap}${repeatOneIdentityMarker}${gap}${queueAdvanceIdentityGuard}${gap}`);
+  if (!next.includes(streamingDaemonQueueMarker)) next = next.replace(prepareDaemonQueueRe, (head) => `${head}\n  ${streamingDaemonQueueMarker}\n  ${prepareDaemonQueueGuard}`);
   return next;
 };
 
@@ -975,19 +969,31 @@ const patch = (root) => {
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
   const mainWithSplash = injectSplashBridge(mainWithNative);
+  // From 26.10.22 the main process is code-split: the media resolver stays in
+  // the entry, while AudioSession and the auxiliary windows live in their own
+  // chunks. Each fix is applied to the chunk that carries its anchor.
+  const mainEntries = new Map([[MAIN_ENTRY, main], ...mainChunksIn(current.value).map((entry) => [entry.relativePath, entry])]);
+  const originals = new Map([...mainEntries].map(([relativePath, entry]) => [relativePath, relativePath === MAIN_ENTRY ? currentText : entryBytes(current, entry).toString('utf8')]));
+  const chunkTexts = new Map(originals).set(MAIN_ENTRY, mainWithSplash);
   // A streaming anchor that a new ECHO build moved must not cost the whole
   // runtime its Loader bridge: keep the other patches and report the miss.
   let playbackWarning = null;
-  let mainWithPlayback = mainWithSplash;
+  const playbackPath = [...chunkTexts].find(([, text]) => text.includes(STEAM_STREAMING_REJECT) || text.includes(playbackMarker) || text.includes(playbackMarkerV1))?.[0] || MAIN_ENTRY;
   try {
-    mainWithPlayback = patchPlayback(mainWithSplash);
+    chunkTexts.set(playbackPath, patchPlayback(chunkTexts.get(playbackPath)));
   } catch (error) {
     playbackWarning = error instanceof Error ? error.message : String(error);
   }
-  const mainText = applyRepeatOneIdentityFix(applyAuxiliaryWindowCrashFix(mainWithPlayback));
+  const mainPatches = [];
+  for (const [relativePath, text] of chunkTexts) {
+    const patched = applyRepeatOneIdentityFix(applyAuxiliaryWindowCrashFix(text));
+    if (patched !== originals.get(relativePath)) mainPatches.push({ relativePath, entry: mainEntries.get(relativePath), text: patched });
+  }
+  const mainText = mainPatches.find((item) => item.relativePath === MAIN_ENTRY)?.text ?? currentText;
+  const chunkPatches = mainPatches.filter((item) => item.relativePath !== MAIN_ENTRY);
   const preloadText = patchPreload(currentPreloadText);
-  const missingIntegrity = [main, preload, ...playlistPatches.map((item) => item.entry)].filter(Boolean).some((entry) => !entry.info.integrity);
-  if (mainText === currentText && preloadText === currentPreloadText && !playlistPatches.length && !missingIntegrity) {
+  const missingIntegrity = [main, preload, ...chunkPatches.map((item) => item.entry), ...playlistPatches.map((item) => item.entry)].filter(Boolean).some((entry) => !entry.info.integrity);
+  if (mainText === currentText && preloadText === currentPreloadText && !chunkPatches.length && !playlistPatches.length && !missingIntegrity) {
     return { status: 'already-patched', integrity: syncIntegrity(root, archive), ...(playbackWarning ? { playbackWarning } : {}) };
   }
   const backup = backupFor(root);
@@ -1000,6 +1006,7 @@ const patch = (root) => {
     [MAIN_ENTRY, mainText],
     [PRELOAD_ENTRY, preloadText],
   ]);
+  for (const item of chunkPatches) replacements.set(item.relativePath, item.text);
   for (const item of playlistPatches) replacements.set(item.entry.relativePath, item.playlistsText);
   writeArchive(archive, replacements);
   writeFileSync(stateFor(root), `${JSON.stringify({ originalSha256: sha256(readFileSync(backup)), patchedSha256: sha256(readFileSync(archive)), patchedAt: new Date().toISOString() }, null, 2)}\n`);
@@ -1044,7 +1051,8 @@ const verifyAnchors = (root) => {
   const preload = files.find((entry) => entry.relativePath === PRELOAD_ENTRY);
   if (!main) throw new Error('asar_main_entry_missing');
   if (!preload) throw new Error('asar_preload_entry_missing');
-  const mainText = entryBytes(parsed, main).toString('utf8');
+  // Main-process anchors are looked up across the entry and its chunks.
+  const mainText = [main, ...mainChunksIn(parsed.value)].map((entry) => entryBytes(parsed, entry).toString('utf8')).join('\n');
   const preloadText = entryBytes(parsed, preload).toString('utf8');
   const playlistHits = [];
   let lyricsStreamingTargets = 0;
@@ -1061,10 +1069,6 @@ const verifyAnchors = (root) => {
       filterMatches: [...text.matchAll(playlistProviderFilterRe)].map((match) => match[0]),
     });
   }
-  const aotCurrentCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    webPreferences: {';
-  const aotOverlayCtor = '    skipTaskbar: true,\n    show: false,\n    // Ordinary topmost from the first frame (same floating level the runtime\n    // applyMiniPlayerAlwaysOnTop uses); some Linux window managers only honor\n    // the above-state reliably when it is set before the window is mapped.\n    alwaysOnTop: true,\n    ...linuxOverlayBrowserWindowOptions(),\n    webPreferences: {';
-  const aotCurrentPet = 'const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "darwin") {\n    window.setAlwaysOnTop(true, "floating");\n    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });\n    return;\n  }\n  window.setAlwaysOnTop(true);\n};';
-  const aotWin32Pet = 'const applyPetAlwaysOnTop = (window, platform = process.platform) => {\n  if (platform === "win32") {\n    window.setAlwaysOnTop(true);\n    return;\n  }\n  applyOverlayAlwaysOnTop(window, platform);\n};';
   const asarSha = sha256(readFileSync(archive));
   const headerSha = headerJsonHash(archive);
   const exePath = echoExeFor(root);
@@ -1079,23 +1083,19 @@ const verifyAnchors = (root) => {
     preloadEntry: Boolean(preload),
     steamStreamingReject: mainText.includes(STEAM_STREAMING_REJECT),
     steamStreamingValidation: Boolean(findStreamingValidation(mainText)),
-    streamingResolver: mainText.includes('  let filePath;\n  let probe = createProbeHintForMediaItem('),
-    streamingPath: streamingPathAnchors.some(([anchor]) => mainText.includes(anchor)),
-    streamingReturn: mainText.includes('  return { filePath, mimeType: null, probe, durationSeconds };'),
-    qualityPassthrough: mainText.includes('quality: "standard",\n      stableKey:'),
+    streamingResolver: streamingResolverRe.test(mainText),
+    streamingPath: streamingPathRe.test(mainText),
+    streamingReturn: streamingReturnRe.test(mainText),
+    qualityPassthrough: streamingQualityRe.test(mainText),
     preloadApiAnchor: preloadStubTriple(preloadText) || Boolean(findEchoApiOpen(preloadText)),
     playlistFilter: playlistHits.some((item) => item.filterMatches.length),
     lyricsStreamingTarget: lyricsStreamingTargets > 0,
-    repeatOneIdentity: mainText.includes(queueAdvanceAnchor) || mainText.includes(repeatOneIdentityMarker),
-    streamingDaemonQueue: mainText.includes(prepareDaemonQueueAnchor) || mainText.includes(streamingDaemonQueueMarker),
-    aotMiniPlayerCtor: mainText.includes(aotCurrentCtor) || mainText.includes(aotOverlayCtor)
-      || mainText.includes(aotOverlayCtor.replace('alwaysOnTop: true,', 'alwaysOnTop: isMiniPlayerForcedTopmost(),')),
-    // Exact helper bodies with a birth stamp at window creation (<= 26.9.x), or
-    // all three helpers in the shape the generic wrapper takes (26.10.x).
-    aotPetHelper: mainText.includes(aotCurrentPet) || mainText.includes(aotWin32Pet) || countTopmostHelpers(mainText) === 3,
-    aotBirthStamp: ['petWindow = window;', 'miniPlayerWindow = window;']
-      .every((assignment) => mainText.includes(`  ${assignment}\n  window.setMenuBarVisibility(false);`))
-      || countTopmostHelpers(mainText) === 3,
+    repeatOneIdentity: queueAdvanceRe.test(mainText) || mainText.includes(repeatOneIdentityMarker),
+    streamingDaemonQueue: prepareDaemonQueueRe.test(mainText) || mainText.includes(streamingDaemonQueueMarker),
+    aotMiniPlayerCtor: new RegExp(auxiliaryCtorRe.source, 'u').test(mainText),
+    // All three helpers in the shape the generic wrapper takes (26.10.x and
+    // later), or an archive patched by an older Loader's exact rewrites.
+    aotPetHelper: countTopmostHelpers(mainText) === 3 || mainText.includes('window.__shinawaseBornAt'),
     playbackChannels: ['playback:play-media-item', 'playback:resolve-media-item', 'playback:prepare-media-item']
       .every((channel) => mainText.includes(channel)),
     mainIntegrity: Boolean(main.info.integrity),

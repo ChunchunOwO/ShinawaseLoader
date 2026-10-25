@@ -219,6 +219,12 @@ This flow requires a Loader already installed at the explicit target. It packs, 
 
 `-NoLaunch` skips quitting and launching ECHO but still changes installed packages and enablement state. `-Watch` repeats package import and can request reinjection from a running Loader. Without `-NoLaunch`, the relaunch path stops only processes whose executable path is under the selected `-EchoRoot`; pass `-KillEchoByProcessName` to widen that to every `ECHO`/`ECHO.modded` process on the machine, which is off by default. `-KeepRunning` can still enter that relaunch path if no Loader API responds. Use these flows only when their process and installation side effects are part of the intended check.
 
+To inject into an ECHO source checkout running in development mode instead of an installation, use the Loader's `dev` command (or `dev-echo-source.bat "<ECHOSTEAM_SOURCE>"`). It runs the checkout's own `npm run dev` with `--remoteDebuggingPort <debugPort> --inspect <inspectPort>` appended for electron-vite, serves the Loader API, injects into the loopback Vite renderer, and re-runs the main bootstrap whenever electron-vite restarts Electron. It never syncs an isolated runtime or patches `app.asar`, so the startup card and asar bridge are absent, and the Loader exits with the dev process. Mods and Plugins resolve from `ECHO_GAME_ROOT` (default: the parent of the Loader directory, i.e. this repository root) and ECHO uses its normal user data unless `ECHO_USER_DATA_PATH_OVERRIDE` is set:
+
+```powershell
+node .\ShinawaseLoader\ShinawaseLoader.mjs dev --source "<ECHOSTEAM_SOURCE>"
+```
+
 Runtime synchronization also writes files. Select both the source installation and the Loader directory explicitly and disable its automatic updater:
 
 ```powershell
