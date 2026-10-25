@@ -11,11 +11,12 @@ const preloadMarker = '/* shinawase-loader-preload-bridge-v1 */';
 const playbackMarker = '/* shinawase-loader-streaming-playback-v2 */';
 const playbackMarkerV1 = '/* shinawase-loader-streaming-playback-v1 */';
 const splashMarker = '/* shinawase-loader-startup-splash-v1 */';
-// Bump when the blocks injected into the main entry change, so runtime-sync
+// Bump when main/preload/renderer patches change, so runtime-sync
 // rebuilds isolated runtimes that were patched by an older Loader.
 // 2: startup splash block.
 // 4: preload bridge carries its own channel table; generic topmost deferral.
-const PATCH_REVISION = 7;
+// 8: preserve equal lyrics snapshots across queue resume-pointer updates.
+const PATCH_REVISION = 8;
 const MAIN_ENTRY = 'out/main/index.js';
 const PRELOAD_ENTRY = 'out/preload/index.mjs';
 const STEAM_STREAMING_REJECT = 'Music streaming playback is not available in the Steam distribution.';
@@ -898,9 +899,25 @@ const patchSteamPlaylistsPage = (text) => {
 // rewritten form no longer matches.
 const streamingLyricsTargetRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<react>[A-Za-z_$][\w$]*)\.useMemo\(\(\)=>(?<isStreaming>[A-Za-z_$][\w$]*)\((?<track>[A-Za-z_$][\w$]*)\)&&!\k<track>\.isLiveStream\?\{provider:\k<track>\.provider,providerTrackId:\k<track>\.providerTrackId\}:null,\[\k<track>\]\)/gu;
 const streamingLyricsTargetReplacement = '$<binding>=$<react>.useMemo(()=>$<isStreaming>($<track>)&&!$<track>.isLiveStream?{provider:$<track>.provider,providerTrackId:$<track>.providerTrackId}:null,[$<isStreaming>($<track>)&&!$<track>.isLiveStream,$<track>?.provider,$<track>?.providerTrackId])';
+// The snapshot memo also depends on the whole track. Even with a stable
+// streaming target, an equal new snapshot changes getLyrics/search/apply
+// callbacks and restarts the loading effect. Keep the original factory and
+// dependencies (including metadata changes), but reuse its previous flat
+// snapshot when all output fields are equal. The ref belongs to this mounted
+// LyricsPage, so separate windows/tracks cannot share a mutable cache.
+const lyricsSnapshotMemoRe = /(?<binding>[A-Za-z_$][\w$]*)=(?<react>[A-Za-z_$][\w$]*)\.useMemo\(\(\)=>\{(?<before>(?:(?!\.useMemo\().){0,3000}?)return(?<snapshot>\{trackId:[^{}]*,stableKey:[^{}]*\})\},\[(?<deps>[^\]]*)\]\)/gsu;
 const patchLyricsPage = (text) => {
   streamingLyricsTargetRe.lastIndex = 0;
-  return text.replace(streamingLyricsTargetRe, streamingLyricsTargetReplacement);
+  const next = text.replace(streamingLyricsTargetRe, streamingLyricsTargetReplacement);
+  lyricsSnapshotMemoRe.lastIndex = 0;
+  return next.replace(lyricsSnapshotMemoRe, (...args) => {
+    const { binding, react, before, snapshot, deps } = args.at(-1);
+    if (!['title:', 'artist:', 'album:', 'albumArtist:', 'durationSeconds:', 'mediaType:', 'sourceId:'].every((key) => snapshot.includes(key))) return args[0];
+    const ref = binding + '__shinawaseLyricsSnapshot';
+    if (next.includes(ref)) return args[0];
+    const value = ref + 'Next', previous = ref + 'Previous';
+    return `${ref}=${react}.useRef(null),${binding}=${react}.useMemo(()=>{${before}const ${value}=${snapshot},${previous}=${ref}.current;return ${previous}&&Object.keys(${previous}).length===Object.keys(${value}).length&&Object.keys(${value}).every(key=>Object.is(${previous}[key],${value}[key]))?${previous}:(${ref}.current=${value})},[${deps}])`;
+  });
 };
 
 // Repeat-one on a streaming track: the Core queue hands the native daemon the
