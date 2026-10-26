@@ -97,7 +97,7 @@ const DEFAULT_MARKET_CATALOG_URL = 'https://echo.shiinasuki.com/mod-market/index
 // Last verified Steam host. Do not treat FileVersion as an Electron ABI.
 // Isolated runtime tracks the installed asar/exe via runtime-sync.mjs.
 const alignedEchoProduct = 'echo-steam';
-const alignedEchoVersion = '26.10.25';
+const alignedEchoVersion = '26.10.26';
 const alignedElectronVersion = '43.8.1';
 // 5105150 is ECHO Playtest.
 const echoSteamAppId = '5105090';

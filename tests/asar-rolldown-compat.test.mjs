@@ -11,7 +11,10 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyAuxiliaryWindowCrashFix, applyRepeatOneIdentityFix, patch, patchLyricsPage, patchPlayback, verifyAnchors } from '../ShinawaseLoader/echo-asar.mjs';
+import { createRequire } from 'node:module';
+import { applyAuxiliaryWindowCrashFix, applyRepeatOneIdentityFix, ensureElectronImport, injectSplashBridge, patch, patchLyricsPage, patchPlayback, verifyAnchors } from '../ShinawaseLoader/echo-asar.mjs';
+
+const require = createRequire(import.meta.url);
 
 const tabs = (lines) => lines.join('\n');
 
@@ -88,6 +91,75 @@ test('a brace-less single-statement streaming branch is patched too', async () =
   assert.equal((await context.resolve({ mediaType: 'streaming', provider: 'qq', providerTrackId: '1' }, 1)).filePath, 'https://cdn.example/x.flac');
   assert.equal((await context.resolve({ mediaType: 'streaming', provider: 'm3u8', providerTrackId: 'https://r.example/a.m3u8' }, 1)).filePath, 'https://r.example/a.m3u8');
   assert.equal((await context.resolve({ mediaType: 'local', trackId: 'local:1', path: 'D:/a.flac' }, 1)).filePath, 'D:/a.flac');
+});
+
+// 26.10.26: the Workshop branch also hands its metadata to the Core queue.
+const workshopMetadataBranch = [
+  '\telse if (item.mediaType === "streaming") {',
+  '\t\tconst source = decodeM3u8ProviderTrackId(item.providerTrackId).trim();',
+  '\t\tif (isWorkshopSourceReference(source)) {',
+  '\t\t\tconst resolved = await resolveWorkshopPlaybackMedia(source);',
+  '\t\t\tfilePath = resolved.url;',
+  '\t\t\tif (resolved.metadata) {',
+  '\t\t\t\tdurationSeconds = resolved.metadata.durationSeconds ?? durationSeconds;',
+  '\t\t\t\titem.coverThumb = resolved.metadata.coverUrl ?? item.coverThumb;',
+  '\t\t\t}',
+  '\t\t} else filePath = source;',
+  '\t} else',
+].join('\n');
+const mediaModule2610 = mediaModule
+  .replace('var resolveWorkshopPlaybackSource = async (value) => `https://workshop.example/${value}`;', 'var resolveWorkshopPlaybackMedia = async (value) => ({ url: `https://workshop.example/${value}`, metadata: { durationSeconds: 42, coverUrl: "cover:{x}" } });')
+  .replace('\telse if (item.mediaType === "streaming") {\n\t\tconst source = decodeM3u8ProviderTrackId(item.providerTrackId).trim();\n\t\tfilePath = isWorkshopSourceReference(source) ? await resolveWorkshopPlaybackSource(source) : source;\n\t} else', workshopMetadataBranch);
+
+test('the 26.10.26 multi-statement Workshop branch is kept whole for m3u8', async () => {
+  assert.notEqual(mediaModule2610, mediaModule);
+  const patched = patchPlayback(mediaModule2610);
+  assert.equal(patchPlayback(patched), patched, 'idempotent');
+  const context = { __shinawaseResolveStreamingPlayback: async () => ({ url: 'https://cdn.example/n.flac' }) };
+  vm.runInNewContext(patched, context);
+  const workshop = await context.resolve({ mediaType: 'streaming', provider: 'm3u8', providerTrackId: 'echo-workshop-source:abc' }, null);
+  assert.equal(workshop.filePath, 'https://workshop.example/echo-workshop-source:abc');
+  assert.equal(workshop.durationSeconds, 42, 'Workshop metadata still flows into the result');
+  assert.equal((await context.resolve({ mediaType: 'streaming', provider: 'm3u8', providerTrackId: 'https://r.example/a.m3u8' }, 1)).filePath, 'https://r.example/a.m3u8');
+  assert.equal((await context.resolve({ mediaType: 'streaming', provider: 'netease', providerTrackId: '1' }, 1)).filePath, 'https://cdn.example/n.flac');
+  assert.equal((await context.resolve({ mediaType: 'local', trackId: 'local:1', path: 'D:/a.flac' }, 1)).filePath, 'D:/a.flac');
+});
+
+// 26.10.26 main entry: no module-scope `app`, only a dynamic import.
+const stubEntry = 'if (process.argv.includes("--echo-link-bridge")) {\n\tconst { startBridgeRuntime } = await import("./bridgeRuntime-a.js");\n\tstartBridgeRuntime();\n} else await import("./desktopBootstrap-b.js");\nexport {};\n';
+
+test('a stub ES module entry gets its own Electron import; CommonJS entries do not', () => {
+  const once = ensureElectronImport(stubEntry);
+  assert.match(once, /^\/\* shinawase-loader-electron-import-v1 \*\/\nimport __shinawaseElectron from "electron";\n/u);
+  assert.equal(ensureElectronImport(once), once, 'idempotent');
+  const cjs = '"use strict";\nconst { app } = require("electron");\n';
+  assert.equal(ensureElectronImport(cjs), cjs);
+});
+
+test('the injected blocks find Electron\'s app without a module-scope binding and skip the Echo Link bridge', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shinawase-stub-entry-'));
+  try {
+    const loaderRoot = join(root, 'ShinawaseLoader');
+    mkdirSync(loaderRoot);
+    writeFileSync(join(loaderRoot, 'startup-splash.cjs'), 'exports.installShinawaseStartupSplash = (options) => { globalThis.__stubSplashProbe = options; };');
+    const block = injectSplashBridge('').trimEnd();
+    const processStub = (argv) => ({
+      argv,
+      env: { ECHO_MOD_ROOT: root, ECHO_MOD_HOME: loaderRoot },
+      platform: process.platform,
+      resourcesPath: join(root, 'resources'),
+      getBuiltinModule: (name) => require(name),
+    });
+    // What the import provides in the stub entry; no `app` in scope.
+    vm.runInNewContext(block, { console, __shinawaseElectron: { app: {} }, process: processStub(['ECHO.exe']) });
+    assert.equal(globalThis.__stubSplashProbe?.loaderRoot, loaderRoot, 'the splash is installed in ECHO\'s own process');
+    delete globalThis.__stubSplashProbe;
+    vm.runInNewContext(block, { console, __shinawaseElectron: { app: {} }, process: processStub(['ECHO.exe', '--echo-link-bridge', '--echo-link-bridge-profile=x']) });
+    assert.equal(globalThis.__stubSplashProbe, undefined, 'nothing runs in the Echo Link bridge process');
+  } finally {
+    delete globalThis.__stubSplashProbe;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 const audioSessionModule = tabs([
@@ -293,6 +365,38 @@ test('a code-split main process gets each fix in the chunk that carries its anch
     for (const path of ['out/main/index.js', 'out/main/AudioSession-b2.js', 'out/main/createMainWindow-c3.js']) {
       assert.equal(files[path].integrity.hash, sha256(Buffer.from(files[path].text, 'utf8')), `${path} integrity follows its new content`);
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the 26.10.26 layout: stub entry, resolver in desktopBootstrap', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shinawase-stub-layout-'));
+  try {
+    mkdirSync(join(root, 'resources'));
+    const archive = join(root, 'resources', 'app.asar');
+    writeAsar(archive, {
+      'package.json': '{"main":"out/main/index.js"}',
+      'out/main/index.js': stubEntry,
+      'out/main/desktopBootstrap-b.js': mediaModule2610,
+      'out/main/bridgeRuntime-a.js': 'export var startBridgeRuntime = () => {};',
+      'out/main/ipcChannels-c.js': 'export var IpcChannels = { A: "playback:play-media-item", B: "playback:resolve-media-item", C: "playback:prepare-media-item" };',
+      'out/main/AudioSession-d.js': audioSessionModule,
+      'out/main/createMainWindow-e.js': windowModule,
+      'out/preload/index.mjs': 'var expose = () => {\n\tconst echoApi = {\n\t\tlisten: () => 1\n\t};\n\treturn echoApi;\n};',
+      'out/renderer/assets/LyricsPage-f.js': 'const he=(0,c.useMemo)(()=>di(j)&&!j.isLiveStream?{provider:j.provider,providerTrackId:j.providerTrackId}:null,[j]);',
+      'out/renderer/assets/Playlists-g.js': 'const x=y.filter(i=>i.sourceProvider==="local");',
+    });
+    assert.deepEqual(Object.entries(verifyAnchors(root).hits).filter(([, ok]) => !ok).map(([name]) => name), []);
+    const result = patch(root);
+    assert.equal(result.status, 'patched');
+    assert.equal(result.playbackWarning, undefined);
+    const files = readAsar(archive);
+    const entry = files['out/main/index.js'].text;
+    assert.match(entry, /^\/\* shinawase-loader-electron-import-v1 \*\/\nimport __shinawaseElectron from "electron";/u);
+    assert.ok(entry.endsWith(stubEntry), 'ECHO\'s own entry runs after the blocks');
+    assert.match(files['out/main/desktopBootstrap-b.js'].text, /shinawase-loader-streaming-playback-v2/u);
+    assert.equal(files['out/main/bridgeRuntime-a.js'].text, 'export var startBridgeRuntime = () => {};');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

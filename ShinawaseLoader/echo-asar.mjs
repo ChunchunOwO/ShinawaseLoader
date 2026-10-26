@@ -17,7 +17,9 @@ const splashMarker = '/* shinawase-loader-startup-splash-v1 */';
 // 4: preload bridge carries its own channel table; generic topmost deferral.
 // 8: preserve equal lyrics snapshots across queue resume-pointer updates.
 // 9: 26.10.22+ rolldown output (tabs, code-split main chunks, (0,x.useMemo)).
-const PATCH_REVISION = 9;
+// 10: 26.10.26 stub entry (blocks import Electron themselves, stay out of the
+//     Echo Link bridge process); multi-statement streaming branch.
+const PATCH_REVISION = 10;
 const MAIN_ENTRY = 'out/main/index.js';
 // The entry's code-split siblings: out/main/chunks/ up to 26.10.21, flat next
 // to index.js from 26.10.22 (rolldown).
@@ -32,6 +34,7 @@ const KNOWN_STOCK_ASAR_SHA256 = {
   '26.10.16': 'e4200ed73b003dd6631bda8e892d55ff08c8252cd7b8d90239e29620886001fc',
   '26.10.18': 'e2e4c118bc2ed3c6892d1c9013ae5788cd375df0dcda27eae9e0747930028ec9',
   '26.10.24': '7d9f88e00f3f456ea9a2ae1ca1b1ca83bf68cd0494bed2d854565a595d437001',
+  '26.10.26': '680e65ef3db96e70f00735081cf199751c85eaad4bffb0ecb474d25d6d5c2ca7',
 };
 const KNOWN_STOCK_HEADER_SHA256 = {
   '26.8.28': 'b525231cec180d1ab15334ab8c2063400f222606eb43b9dc0c903b0d568cbfdd',
@@ -40,6 +43,7 @@ const KNOWN_STOCK_HEADER_SHA256 = {
   '26.10.16': '6ccbc9f4fdc9bf2271ed501eb8958909778959b4d81ddb0d16c8e132cb787f4e',
   '26.10.18': '2c5bdf76a220b4fd60453a9e8dd2aa6922dda6b9d6c79daad29d38ae4b196d66',
   '26.10.24': '50ced5c988918a5982fea7be0e6196e13fc620350047fa62b8cfd9a28b116924',
+  '26.10.26': '3136cdb81f922cc7d3b843169c1972af5266cc95b0277a5b7c6cd7aeb64a565a',
 };
 const knownAsarHashes = new Set(Object.values(KNOWN_STOCK_ASAR_SHA256));
 const knownHeaderHashes = new Set(Object.values(KNOWN_STOCK_HEADER_SHA256));
@@ -212,14 +216,22 @@ const syncIntegrity = (root, archive = archiveFor(root)) => {
   return exe;
 };
 
+// Electron's app for the blocks below. Up to 26.10.25 the main entry imported
+// it at module scope; from 26.10.26 the entry is a stub that only awaits
+// import("./desktopBootstrap-*.js") (or the Echo Link bridge runtime), so
+// ensureElectronImport() adds an import of its own. The blocks also stay out
+// of the --echo-link-bridge process, a windowless tray instance of ECHO.
+const electronImportMarker = '/* shinawase-loader-electron-import-v1 */';
+const electronImport = `${electronImportMarker}\nimport __shinawaseElectron from "electron";`;
+const blockElectronApp = 'typeof app !== "undefined" ? app : typeof __shinawaseElectron !== "undefined" ? __shinawaseElectron?.app : typeof require === "function" ? require("electron").app : undefined';
 const bridge = `${marker}
-(() => {
+((app) => {
   const builtin = (name) => process.getBuiltinModule?.(name);
   const fs = builtin('node:fs');
   const path = builtin('node:path');
   const url = builtin('node:url');
   const childProcess = builtin('node:child_process');
-  if (!fs || !path || !url || !childProcess || typeof app === 'undefined') return;
+  if (!fs || !path || !url || !childProcess || !app || process.argv?.includes('--echo-link-bridge')) return;
   // Without the launcher's ECHO_MOD_ROOT (a runtime started directly), walk up
   // from <root>/ShinawaseLoader/modded-runtime the same way on every platform.
   const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
@@ -360,16 +372,16 @@ const bridge = `${marker}
     if (process.platform === 'win32' && child.pid) childProcess.spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'taskkill', '/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
     else child.kill();
   });
-})();
+})(${blockElectronApp});
 `;
 
 const nativeHostBridge = `${nativeHostMarker}
-(() => {
+((app) => {
   const builtin = (name) => process.getBuiltinModule?.(name);
   const fs = builtin('node:fs');
   const path = builtin('node:path');
   const url = builtin('node:url');
-  if (!fs || !path || !url || typeof app === 'undefined') return;
+  if (!fs || !path || !url || !app || process.argv?.includes('--echo-link-bridge')) return;
   // Without the launcher's ECHO_MOD_ROOT (a runtime started directly), walk up
   // from <root>/ShinawaseLoader/modded-runtime the same way on every platform.
   const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
@@ -401,20 +413,20 @@ const nativeHostBridge = `${nativeHostMarker}
         console.warn('[ShinawaseLoader] native host unavailable', error);
       });
   }).catch(() => {});
-})();
+})(${blockElectronApp});
 `;
 
 // Runs first in the main entry, so startup-splash.cjs can watch for ECHO's
 // main window and be ready before ECHO's own app-ready work. The splash itself
 // lives in the Loader folder and updates with the Loader.
 const splashBridge = `${splashMarker}
-(() => {
+((app) => {
   try {
     const builtin = (name) => process.getBuiltinModule?.(name);
     const fs = builtin('node:fs');
     const path = builtin('node:path');
     const nodeModule = builtin('node:module');
-    if (!fs || !path || !nodeModule || typeof app === 'undefined') return;
+    if (!fs || !path || !nodeModule || !app || process.argv?.includes('--echo-link-bridge')) return;
     // Without the launcher's ECHO_MOD_ROOT (a runtime started directly), walk up
     // from <root>/ShinawaseLoader/modded-runtime the same way on every platform.
     const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
@@ -434,7 +446,7 @@ const splashBridge = `${splashMarker}
   } catch (error) {
     try { console.warn('[ShinawaseLoader] startup splash unavailable', error); } catch {}
   }
-})();
+})(${blockElectronApp});
 `;
 
 // Channel names the streaming bridge registers in the main process. The
@@ -733,9 +745,54 @@ const findStreamingValidation = (text) => {
   return { stock: match[0], patched: `if (${provider} === "m3u8" && ${rest})${open}throw new Error("Streaming playback URL must be valid.");` };
 };
 const streamingResolverRe = /let filePath;(?<gap>\s*)let probe = createProbeHintForMediaItem\(/u;
-// The streaming branch of the media resolver before and after 26.10.21; the
-// matched body is the m3u8 branch the patched resolver keeps.
-const streamingPathRe = /else if \(item\.mediaType === "streaming"\)\s*(?:\{\s*(?<braced>const source = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);\s*filePath = isWorkshopSourceReference\(source\) \? await resolveWorkshopPlaybackSource\(source\) : source;|filePath = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);)\s*\}|(?<bare>filePath = decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);))/u;
+// The streaming branch of the media resolver. Its body is the m3u8 branch the
+// patched resolver keeps, whatever ECHO puts there: one statement up to
+// 26.10.20, a Workshop source lookup from 26.10.21, and Workshop metadata
+// handling over several nested blocks from 26.10.26. Only its first statement
+// is pinned; the rest is taken up to the matching brace.
+const streamingBranchHeadRe = /else if \(item\.mediaType === "streaming"\)\s*/gu;
+const streamingBranchBodyRe = /^(?:const source = |filePath = )decodeM3u8ProviderTrackId\(item\.providerTrackId\)\.trim\(\);/u;
+// Index of the brace closing the one at `open`, skipping string, template and
+// comment text; -1 when unbalanced.
+const matchingBrace = (text, open) => {
+  let depth = 0;
+  for (let at = open; at < text.length; at += 1) {
+    const char = text[at];
+    if (char === '"' || char === "'" || char === '`') {
+      for (at += 1; at < text.length && text[at] !== char; at += 1) if (text[at] === '\\') at += 1;
+    } else if (char === '/' && text[at + 1] === '/') {
+      at = text.indexOf('\n', at);
+      if (at < 0) return -1;
+    } else if (char === '/' && text[at + 1] === '*') {
+      at = text.indexOf('*/', at + 2) + 1;
+      if (at <= 0) return -1;
+    } else if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return at;
+    }
+  }
+  return -1;
+};
+const findStreamingBranch = (text) => {
+  for (const head of text.matchAll(streamingBranchHeadRe)) {
+    const start = head.index + head[0].length;
+    let body;
+    let end;
+    if (text[start] === '{') {
+      const close = matchingBrace(text, start);
+      if (close < 0) continue;
+      body = text.slice(start + 1, close).trim();
+      end = close + 1;
+    } else {
+      end = text.indexOf(';', start) + 1;
+      body = text.slice(start, end);
+    }
+    if (streamingBranchBodyRe.test(body)) return { index: head.index, end, body };
+  }
+  return null;
+};
 const streamingReturnRe = /return \{(?<a>\s*)filePath,\s*mimeType: null,(?<b>\s*)probe,(?<c>\s*)durationSeconds(?<d>\s*)\};/u;
 const streamingProbeEnrichment = 'const sourceSampleRate = Number(source?.sampleRate);';
 const upgradePatchedPlayback = (text) => {
@@ -762,12 +819,12 @@ const patchPlayback = (text) => {
   next = next.replace(validation.stock, () => validation.patched);
   if (!streamingResolverRe.test(next)) throw new Error('asar_streaming_resolver_missing');
   next = next.replace(streamingResolverRe, (_whole, gap) => `let filePath;${gap}let inputHeaders;${gap}let mimeType = null;${gap}let probe = createProbeHintForMediaItem(`);
-  const pathMatch = streamingPathRe.exec(next);
+  const pathMatch = findStreamingBranch(next);
   if (!pathMatch) throw new Error('asar_streaming_path_missing');
-  const m3u8Branch = `      ${pathMatch.groups.braced || pathMatch.groups.bare}`;
+  const m3u8Branch = `      ${pathMatch.body}`;
   // Resolve non-m3u8 streaming through the Loader bridge and keep probe/mime
   // metadata so exclusive, ASIO, and native DSP can admit HTTP sources.
-  next = next.slice(0, pathMatch.index) + 'else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n' + m3u8Branch + '\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;\n    }\n  }' + next.slice(pathMatch.index + pathMatch[0].length);
+  next = next.slice(0, pathMatch.index) + 'else if (item.mediaType === "streaming") {\n    if (item.provider === "m3u8") {\n' + m3u8Branch + '\n    } else {\n      const resolver = globalThis.__shinawaseResolveStreamingPlayback;\n      if (typeof resolver !== "function") throw new Error("Streaming playback bridge is unavailable.");\n      const source = await resolver({ provider: item.provider, providerTrackId: item.providerTrackId, quality: item.quality || item.streamingQuality });\n      filePath = source?.url;\n      inputHeaders = source?.headers;\n      if (typeof filePath !== "string" || !/^https?:\\/\\/\\S+$/iu.test(filePath)) throw new Error("Streaming provider did not return a playable URL.");\n      const sourceSampleRate = Number(source?.sampleRate);\n      const sourceBitDepth = Number(source?.bitDepth);\n      const sourceBitrate = Number(source?.bitrate);\n      const sourceChannels = Number(source?.channels);\n      probe = {\n        ...(probe || {}),\n        durationSeconds: durationSeconds || probe?.durationSeconds || undefined,\n        fileSampleRate: Number.isFinite(sourceSampleRate) && sourceSampleRate > 0 ? sourceSampleRate : probe?.fileSampleRate,\n        channels: Number.isFinite(sourceChannels) && sourceChannels > 0 ? sourceChannels : (probe?.channels || 2),\n        codec: typeof source?.codec === "string" && source.codec.trim() ? source.codec : probe?.codec,\n        bitDepth: Number.isFinite(sourceBitDepth) && sourceBitDepth > 0 ? sourceBitDepth : probe?.bitDepth,\n        bitrate: Number.isFinite(sourceBitrate) && sourceBitrate > 0 ? sourceBitrate : probe?.bitrate,\n      };\n      if (typeof source?.mimeType === "string" && source.mimeType.trim()) mimeType = source.mimeType;\n    }\n  }' + next.slice(pathMatch.end);
   next = applyStreamingQualityPassthrough(next);
   if (!streamingReturnRe.test(next)) throw new Error('asar_streaming_return_missing');
   next = next.replace(streamingReturnRe, (...args) => {
@@ -943,6 +1000,8 @@ const applyRepeatOneIdentityFix = (text) => {
 };
 
 const injectSplashBridge = (text) => (text.includes(splashMarker) ? text : `${splashBridge}\n${text}`);
+// Only an ES module entry can take the import; a CommonJS one uses require().
+const ensureElectronImport = (text) => (text.includes(electronImportMarker) || !/^\s*(?:import|export)\b/mu.test(text) ? text : `${electronImport}\n${text}`);
 
 const patch = (root) => {
   const archive = archiveFor(root);
@@ -968,7 +1027,7 @@ const patch = (root) => {
   }
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
-  const mainWithSplash = injectSplashBridge(mainWithNative);
+  const mainWithSplash = ensureElectronImport(injectSplashBridge(mainWithNative));
   // From 26.10.22 the main process is code-split: the media resolver stays in
   // the entry, while AudioSession and the auxiliary windows live in their own
   // chunks. Each fix is applied to the chunk that carries its anchor.
@@ -1084,7 +1143,7 @@ const verifyAnchors = (root) => {
     steamStreamingReject: mainText.includes(STEAM_STREAMING_REJECT),
     steamStreamingValidation: Boolean(findStreamingValidation(mainText)),
     streamingResolver: streamingResolverRe.test(mainText),
-    streamingPath: streamingPathRe.test(mainText),
+    streamingPath: Boolean(findStreamingBranch(mainText)),
     streamingReturn: streamingReturnRe.test(mainText),
     qualityPassthrough: streamingQualityRe.test(mainText),
     preloadApiAnchor: preloadStubTriple(preloadText) || Boolean(findEchoApiOpen(preloadText)),
@@ -1117,7 +1176,7 @@ const verifyAnchors = (root) => {
   };
 };
 
-export { patch, restore, syncIntegrity, verifyAnchors, patchSteamPlaylistsPage, patchLyricsPage, patchPlayback, applyRepeatOneIdentityFix, patchPreload, injectSplashBridge, applyAuxiliaryWindowCrashFix, PATCH_REVISION, bridge as mainBridgeSource };
+export { patch, restore, syncIntegrity, verifyAnchors, ensureElectronImport, splashBridge as splashBridgeSource, patchSteamPlaylistsPage, patchLyricsPage, patchPlayback, applyRepeatOneIdentityFix, patchPreload, injectSplashBridge, applyAuxiliaryWindowCrashFix, PATCH_REVISION, bridge as mainBridgeSource };
 
 const isMain = process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
 if (isMain) {
