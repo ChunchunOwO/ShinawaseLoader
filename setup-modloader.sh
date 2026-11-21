@@ -62,6 +62,10 @@ if [[ -z "$NODE" ]]; then
   echo "没有找到可用的 Node 22+。请安装 Node 22，或设置 ECHO_NODE_PATH。" >&2
   exit 1
 fi
+if [[ "${1:-}" == "--gpui" ]]; then
+  shift
+  exec "$NODE" "$ROOT/ShinawaseLoader/ShinawaseLoader.mjs" gpui "$@"
+fi
 case "$(uname -s)" in
   Linux) SCRIPT="setup-modloader-linux.mjs" ;;
   *) SCRIPT="setup-modloader-macos.mjs" ;;

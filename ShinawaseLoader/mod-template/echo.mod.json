@@ -8,5 +8,9 @@
   "entry": "mod.js",
   "config": "config.json",
   "configSchema": "config.schema.json",
-  "configUi": "config-ui.js"
+  "configUi": "config-ui.js",
+  "gpui": {
+    "protocol": 1,
+    "entry": "gpui/plugin.mjs"
+  }
 }

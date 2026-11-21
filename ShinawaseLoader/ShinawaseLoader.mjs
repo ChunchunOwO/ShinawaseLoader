@@ -278,6 +278,7 @@ const persistAutoUpdate = (enabled) => {
 const autoUpdateEnabled = () => readJson(loaderConfigPath, loaderConfig).autoUpdate !== false;
 
 const args = process.argv.slice(2);
+if (args[0]?.toLowerCase() === '--gpui') args[0] = 'gpui';
 const command = args[0] && !args[0].startsWith('-') ? args.shift() : 'serve';
 const devMode = command === 'dev';
 const option = (name, fallback = null) => {
@@ -316,7 +317,7 @@ const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.p
 // the apiAuthShim page patch that lets existing mods call /api/* unchanged).
 // Non-browser clients (testing SDK, PowerShell, curl) send no Origin and pass.
 const apiTokenPath = join(root, '.api-token');
-const apiToken = (() => {
+const apiToken = command === 'gpui' ? null : (() => {
   try {
     const saved = readFileSync(apiTokenPath, 'utf8').trim();
     if (/^[0-9a-f]{48}$/u.test(saved)) return saved;
@@ -426,14 +427,6 @@ const importLoaderSettings = (payload) => {
   log('INFO', `settings imported applied=[${applied.join(',')}] restart=[${requiresRestart.join(',')}]`);
   return { ok: true, applied, requiresRestart, locale: locale || 'zh', ui: uiSettings };
 };
-
-mkdirSync(installedRoot, { recursive: true });
-mkdirSync(installedPluginsRoot, { recursive: true });
-mkdirSync(dropRoot, { recursive: true });
-mkdirSync(processedRoot, { recursive: true });
-mkdirSync(pluginsRoot, { recursive: true });
-mkdirSync(processedPluginsRoot, { recursive: true });
-mkdirSync(logsRoot, { recursive: true });
 
 const readState = () => {
   const state = readJson(statePath, { version: 2, mods: {} });
@@ -3422,6 +3415,17 @@ const applySelfUpdate = async (options = {}) => {
 };
 
 const run = async () => {
+  if (command === 'gpui') {
+    const { runGpui } = await import('./gpui-host.mjs');
+    return runGpui(args, readPackagePayload);
+  }
+  mkdirSync(installedRoot, { recursive: true });
+  mkdirSync(installedPluginsRoot, { recursive: true });
+  mkdirSync(dropRoot, { recursive: true });
+  mkdirSync(processedRoot, { recursive: true });
+  mkdirSync(pluginsRoot, { recursive: true });
+  mkdirSync(processedPluginsRoot, { recursive: true });
+  mkdirSync(logsRoot, { recursive: true });
   if (command === 'self-update') {
     const result = await applySelfUpdate({
       quiet: hasFlag('--quiet'),
