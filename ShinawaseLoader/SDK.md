@@ -2,6 +2,12 @@
 
 ShinawaseLoader uses external Chrome DevTools Protocol injection. It does not require an `app.asar` patch for normal operation.
 
+## Native ECHO GPUI target
+
+A dual-target Mod keeps its renderer `entry` and adds `"gpui": {"protocol": 1, "entry": "gpui/plugin.mjs"}` to the same manifest. Keep all GPUI code and assets under `gpui/`. Export `activate(context)` and use the native Workshop context for pages, commands, storage and playback. See `mod-template/gpui/plugin.mjs`. The host receives the original Mod ID, title, version and GPUI descriptor, including any required capabilities. The ZIP contains the GPUI subtree. To share an existing implementation with the Electron target, list its package-root module filenames in the optional top-level `gpuiAssets` array. ECHO MV uses this for its matching engine.
+
+Use `ShinawaseLoader.mjs gpui test <directory-or-echomod> [command-id] --echo "<GPUI>"` to activate it in the host's temporary library. Use `gpui install` with the same package to register it in the desktop profile; approve it in the application's installed plugins view. For distribution, `gpui pack <directory-or-echomod> <new.zip>` writes a standalone file for GPUI's normal import flow.
+
 ## Runtime object
 
 Each external Mod or Plugin receives `echoExternalMod`:

@@ -53,6 +53,36 @@ ShinawaseLoader 是 ECHO Steam（当前对齐 echo-steam **26.10.26**，Electron
 
 Windows 安装程序会扫描 Steam 库定位 `ECHO.exe` / `ECHO Steam.exe`（优先 `D:\SteamLibrary\steamapps\common\ECHO\ECHO.exe`，不会因路径排序默默选中 Playtest），把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。可用 `ECHO_ROOT`、`--echo` 或 `%LOCALAPPDATA%\ShinawaseLoader\selection.json` 覆盖目标。macOS 与 Linux 用下方的 shell 安装器，不走这套 PowerShell 菜单。
 
+### ECHO GPUI 原生版
+
+在 GPUI 的「插件 → 已安装 → 导入」中分别选择 [ECHO MV 安装包](examples/packages/ECHO-MV-GPUI.zip) 和 [ECHO Streaming 安装包](examples/packages/ECHO-Streaming-GPUI.zip)，然后打开对应插件的开关并授权。重启后如果侧栏没有 ECHO Streaming，可回到「已安装」重新启用。
+
+在 Loader 仓库目录执行以下命令。Windows 将 `./setup-modloader.sh` 换成 `.\setup-modloader.bat`。将 `<GPUI>` 换成可执行文件、macOS 应用包或已有构建的 GPUI 源码目录。也可设置 `ECHO_GPUI_PATH`。
+
+```sh
+./setup-modloader.sh --gpui install ShinawaseLoader/mod-template --echo "<GPUI>"
+./setup-modloader.sh --gpui list --echo "<GPUI>"
+./setup-modloader.sh --gpui launch --echo "<GPUI>"
+```
+
+在 GPUI 的「插件 → 已安装」启用对应的 Mod。每个 Mod 独立安装、授权和停用。安装命令接受 Mod 源目录、JSON 或 ZIP 格式的 `.echomod`。新版 GPUI 宿主提供 `--workshop install/list`；已有协议 1 的旧构建可用下面的命令生成 ZIP，再到「插件 → 已安装 → 安装 / 导入文件」选择它。
+
+```sh
+./setup-modloader.sh --gpui pack ShinawaseLoader/mod-template example-gpui.zip
+```
+
+仓库附带两份可直接安装的双端 Mod：
+
+```sh
+./setup-modloader.sh --gpui install examples/packages/ECHO-MV.echomod --echo "<GPUI>"
+./setup-modloader.sh --gpui install examples/packages/ECHO-Streaming.echomod --echo "<GPUI>"
+```
+
+- **ECHO MV**：启用后，在「设置 → 歌词设置 → 显示与字体 → MV 来源」选择「ECHO MV · 哔哩哔哩」。歌词页支持自动匹配和手动选片。在插件页设置最高画质，可选填自己的 SESSDATA。
+- **ECHO Streaming**：启用后，可从原生插件页或 F4 全局搜索中选择网易云音乐，搜索歌曲、浏览歌单、播放或加入队列。插件按歌曲 ID 提供歌词。连接个人账号后可查看自己的歌单和每日推荐，音质与可播放范围由服务端和账号权益决定。个人 MUSIC_U 通过插件设置保存到宿主凭据存储。
+
+其他 Mod 可以沿用模板的 `gpui.entry` 声明。歌词白盒仍使用 Electron 入口。
+
 ### 一键安装器（推荐）
 
 下载 `ShinawaseSetup-<版本>.exe`（约 4 MB，内含管理器、Loader 与预装包）双击 →「一键安装」即可。安装器使用简洁表单，可更改安装目录、选择安装后打开；默认装到 `%LOCALAPPDATA%\Programs\Shinawase Manager`（仅当前用户，无需管理员权限），并加入开始菜单和「设置 → 应用 → 已安装的应用」。安装完成后打开管理器，进入 ECHO 的安装流程。再次运行安装器会显示「更新到 vX」或「重新安装」，并提供卸载入口；卸载只移除管理器本身，ECHO 内的 Loader、Mods 与 Steam 启动项可在管理器设置中单独卸载。安装器拒绝覆盖没有安装标记的非空目录。

@@ -1,7 +1,7 @@
 {
   "id": "echo.community-streaming",
   "name": "ECHO Streaming",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "minEchoVersion": "26.8.15",
   "description": "Community streaming browser powered by ECHO's public streaming and playback bridge. Similar-track autoplay, phone login, grey-track unblock, daily playlists, and artist streaming albums.",
   "icon": "icon.svg",
@@ -9,5 +9,14 @@
   "main": "main.cjs",
   "config": "config.json",
   "configSchema": "config.schema.json",
-  "configUi": "config-ui.js"
+  "configUi": "config-ui.js",
+  "gpui": {
+    "protocol": 1,
+    "entry": "gpui/netease.mjs",
+    "requires": {
+      "features": [
+        "sources.catalog"
+      ]
+    }
+  }
 }

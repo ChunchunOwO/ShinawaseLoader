@@ -29,6 +29,12 @@ node --test "tests/*.test.mjs"                                # repository self-
 node .\ShinawaseLoader\testing\cli.mjs accept <PACKAGE_DIR> --json
 ```
 
+The repository suite includes offline GPUI launcher and packaging regressions,
+checks that the distributed MV and Streaming archives match their sources,
+and exercises provider pagination, cancellation, exact lyrics and playback
+rights with mocked network responses. These checks do not verify live service
+availability, account entitlements or native desktop layout.
+
 Exit codes everywhere: `0` pass, `1` failure, `2` usage error, `3` live
 environment unavailable. `--json` prints exactly one `reportVersion: 1`
 document to stdout (progress goes to stderr). `accept` without `--allow-skip`
