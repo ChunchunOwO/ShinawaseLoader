@@ -2,9 +2,10 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createZip } from './echomod-archive.mjs';
+import { DARWIN_APP_NAMES } from './platform.mjs';
 
 const help = `ShinawaseLoader.mjs gpui pack <mod-directory-or-echomod> <new.zip>
 ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] install <mod-directory-or-echomod>
@@ -13,15 +14,23 @@ ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] list
 ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] launch
 Use ECHO_GPUI_PATH to select the host, or put echo-gpui on PATH.`;
 
-function executable(target) {
-  const binary = process.platform === 'win32' ? 'echo-gpui.exe' : 'echo-gpui';
+export function gpuiExecutable(target, platform = process.platform) {
+  const binary = platform === 'win32' ? 'echo-gpui.exe' : 'echo-gpui';
   if (!target) return binary;
   const path = resolve(target);
-  if (statSync(path).isFile()) return path;
-  const candidates = [binary];
-  if (process.platform === 'win32') candidates.push('EchoZankyo.exe');
-  if (process.platform === 'darwin') {
-    candidates.push(join('Contents', 'MacOS', binary), join('ECHO GPUI.app', 'Contents', 'MacOS', binary));
+  if (statSync(path).isFile()) {
+    const payload = join(dirname(path), 'EchoZankyo.exe');
+    if (platform === 'win32' && basename(path).toLowerCase() === 'echo.exe'
+        && statSync(payload, { throwIfNoEntry: false })?.isFile()) return payload;
+    return path;
+  }
+  const candidates = platform === 'win32' ? ['EchoZankyo.exe', binary, 'ECHO.exe'] : [binary, 'EchoZankyo', 'ECHO'];
+  if (platform === 'darwin') {
+    for (const bundle of ['', ...DARWIN_APP_NAMES, 'ECHO GPUI.app']) {
+      for (const name of ['ECHO', binary, 'EchoZankyo']) {
+        candidates.push(join(bundle, 'Contents', 'MacOS', name));
+      }
+    }
   }
   candidates.push(join('target', 'release', binary), join('target', 'debug', binary));
   for (const candidate of candidates) {
@@ -69,7 +78,7 @@ function workshopZip({ manifest, files }) {
   return createZip([{ path: 'echo.workshop.json', data: JSON.stringify(workshop, null, 2) }, ...assets]);
 }
 
-export function runGpui(args, readPackage) {
+export function runGpui(args, readPackage, spawn = spawnSync) {
   const {values, positionals: [command, ...inputs]} = parseArgs({
     args, allowPositionals: true, options: { echo: {type: 'string'}, help: {type: 'boolean', short: 'h'} },
   });
@@ -83,7 +92,7 @@ export function runGpui(args, readPackage) {
   }
   if (!(['list', 'launch'].includes(command) && !inputs.length || command === 'install' && inputs.length === 1 ||
       command === 'test' && [1, 2].includes(inputs.length))) throw new Error(help);
-  const host = executable(values.echo || process.env.ECHO_GPUI_PATH);
+  const host = gpuiExecutable(values.echo || process.env.ECHO_GPUI_PATH);
   let directory;
   try {
     const argv = command === 'launch' ? [] : ['--workshop', command];
@@ -94,7 +103,7 @@ export function runGpui(args, readPackage) {
       writeFileSync(archive, zip);
       argv.push(archive, ...inputs.slice(1));
     }
-    const result = spawnSync(host, argv, {stdio: 'inherit', windowsHide: true});
+    const result = spawn(host, argv, {stdio: 'inherit', windowsHide: command !== 'launch'});
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error(`ECHO GPUI ${command} 失败（${result.signal ?? result.status}）。`);
   } finally {
