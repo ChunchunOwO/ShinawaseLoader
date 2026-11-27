@@ -23,6 +23,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PATCH_REVISION, patch, syncIntegrity } from './echo-asar.mjs';
 import { DARWIN_APP_NAMES, LINUX_EXE_NAMES, installRootFromTarget, pathsEqual } from './platform.mjs';
+import { detectEchoRuntime, executableIn } from './echo-runtime.mjs';
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
 const isLinux = process.platform === 'linux';
@@ -353,6 +354,14 @@ export const syncModdedRuntime = (options = {}) => {
   const loaderRoot = resolve(options.loaderRoot || loaderDir);
   const echoRoot = resolve(options.echoRoot || join(loaderRoot, '..'));
   const runtimeRoot = resolve(options.runtimeRoot || join(loaderRoot, 'modded-runtime'));
+  const executable = executableIn(echoRoot);
+  if (executable) {
+    const detected = detectEchoRuntime(executable);
+    if (detected.runtime === 'gpui') return {
+      ok: true, status: 'native', reason: null, runtimeRoot: echoRoot,
+      stock: { runtime: 'gpui', exe: detected.executable, echoVersion: detected.version || null },
+    };
+  }
   const force = options.force === true;
   const stock = fingerprintStock(echoRoot);
   const previous = readRuntimeFingerprint(loaderRoot);

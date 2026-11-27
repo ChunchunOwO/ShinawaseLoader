@@ -5,6 +5,33 @@ tooling and AI agents as well as humans. It layers offline simulation, static
 validation, and live attach-only acceptance so a Mod can be developed and
 accepted without guessing at loader internals.
 
+Zankyo entries are syntax-checked by `check` and archive validation checks their
+declared file. `node --test tests/zankyo.test.mjs` covers encrypted transport,
+runtime selection, package hot reload and cleanup. Its Node host fixture only
+tests the wire protocol. CDP screenshots, DOM checks and the Electron harness
+do not constitute native GPUI acceptance. Native acceptance must launch a
+compatible ECHO GPUI build through Shinawase, observe the experimental notice,
+modify a native view, disable/re-enable the package and confirm restoration.
+Use isolated `ECHO_GPUI_DB` data. Deep native modules must also be tested against
+the exact reported `nativeBuild`.
+
+`node --test tests/zankyo-examples.test.mjs` executes Streaming, MV and Lyrics
+Match Whitebox's actual external modules offline, including stable queue
+references, range relays, full lyric previews, captured-instance writes,
+provider re-entry, CJS dependency reload and resource disposal. Platform replies
+are fixtures; native decoding and authenticated account behavior require a
+matching host and a real authorized session. Rebuild provider bundles with
+`scripts/build-zankyo-backends.mjs "<ECHO_SOURCE>"` as described in
+`examples/ZANKYO-PORTS.md`.
+
+`node --test tests/zankyo-compat.test.mjs` executes legacy API entry source
+through the real `ZankyoMods` executor: playback units, SDK dispatch, persistent
+settings across executors, dual native pages, audio command forwarding, shared
+subscriptions, timer cleanup and incompatible renderer dependencies. It uses a
+recorded command endpoint and is not native audio, provider or visual acceptance.
+`tests/startup-splash.test.mjs` checks the inert legacy module, removal of older
+injected blocks and patch-revision migration; old saved opt-ins cannot show a card.
+
 Everything is dependency-free (Node >= 22, the loader's own runtime floor) and
 lives in `ShinawaseLoader/testing/`. Editor types are in
 `testing/shinawase-testing.d.ts`. The SDK never imports `ShinawaseLoader.mjs`
@@ -28,6 +55,12 @@ node .\ShinawaseLoader\testing\cli.mjs check <PACKAGE_DIR> --json
 node --test "tests/*.test.mjs"                                # repository self-tests
 node .\ShinawaseLoader\testing\cli.mjs accept <PACKAGE_DIR> --json
 ```
+
+The repository suite includes offline GPUI launcher and packaging regressions,
+checks that the distributed MV and Streaming archives match their sources,
+and exercises provider pagination, cancellation, exact lyrics and playback
+rights with mocked network responses. These checks do not verify live service
+availability, account entitlements or native desktop layout.
 
 Exit codes everywhere: `0` pass, `1` failure, `2` usage error, `3` live
 environment unavailable. `--json` prints exactly one `reportVersion: 1`

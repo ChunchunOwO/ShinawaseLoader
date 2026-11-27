@@ -9,6 +9,10 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { isZip, readZip } from './echomod-archive.mjs';
 import { copy as i18nCopy, normalizeLocale } from './i18n.mjs';
 import { PATCH_REVISION } from './echo-asar.mjs';
+import { detectEchoRuntime, nativeExecutableNames } from './echo-runtime.mjs';
+import { launchZankyo } from './zankyo-session.mjs';
+import { ZankyoMods } from './zankyo-mods.mjs';
+import { ZankyoUi } from './zankyo-ui.mjs';
 import { fingerprintStock, readRuntimeFingerprint, syncModdedRuntime } from './runtime-sync.mjs';
 import { DEFAULT_UPDATE_MIRRORS, UPDATE_PACKAGES, UPDATE_REPO, acquireLock, createDeadline, createSourceHealth, dropStaleCache, fetchBuffer, fetchFirstValid, fetchSmallFromSources, isNetworkFailure, normalizeMirrorBases, parseMirrorManifest } from './update-net.mjs';
 import {
@@ -209,11 +213,10 @@ const defaultUiSettings = Object.freeze({
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  lastShinawasePage: 'mods',
   // Default off: the Steam launch reminder popup is opt-in.
   steamLaunchReminder: false,
   showTitlebarBrand: true,
-  // Read by startup-splash.cjs inside ECHO at the next launch.
-  startupSplash: true,
 });
 const sanitizeUiSettings = (value) => {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -230,9 +233,10 @@ const sanitizeUiSettings = (value) => {
     rememberFilters: bool('rememberFilters'),
     modSort: pick('modSort', ['name', 'recent', 'enabled']),
     modFilter: pick('modFilter', ['all', 'active', 'inactive']),
+    lastShinawasePage: typeof input.lastShinawasePage === 'string' && /^[a-z0-9._/-]{1,160}$/iu.test(input.lastShinawasePage)
+      ? input.lastShinawasePage : defaultUiSettings.lastShinawasePage,
     steamLaunchReminder: bool('steamLaunchReminder'),
     showTitlebarBrand: bool('showTitlebarBrand'),
-    startupSplash: bool('startupSplash'),
   };
 };
 
@@ -268,6 +272,7 @@ let uiSettings = sanitizeUiSettings(loaderConfig.ui);
 const persistUiSettings = (patch) => {
   uiSettings = sanitizeUiSettings({ ...uiSettings, ...(patch && typeof patch === 'object' ? patch : {}) });
   writeJson(loaderConfigPath, { ...readJson(loaderConfigPath, loaderConfig), ui: uiSettings });
+  zankyoMods?.uiSettingsChanged(uiSettings);
   return uiSettings;
 };
 const persistAutoUpdate = (enabled) => {
@@ -278,6 +283,7 @@ const persistAutoUpdate = (enabled) => {
 const autoUpdateEnabled = () => readJson(loaderConfigPath, loaderConfig).autoUpdate !== false;
 
 const args = process.argv.slice(2);
+if (args[0]?.toLowerCase() === '--gpui') args[0] = 'gpui';
 const command = args[0] && !args[0].startsWith('-') ? args.shift() : 'serve';
 const devMode = command === 'dev';
 const option = (name, fallback = null) => {
@@ -316,7 +322,7 @@ const port = Number(option('--port', process.env.ECHO_MOD_PORT || loaderConfig.p
 // the apiAuthShim page patch that lets existing mods call /api/* unchanged).
 // Non-browser clients (testing SDK, PowerShell, curl) send no Origin and pass.
 const apiTokenPath = join(root, '.api-token');
-const apiToken = (() => {
+const apiToken = command === 'gpui' ? null : (() => {
   try {
     const saved = readFileSync(apiTokenPath, 'utf8').trim();
     if (/^[0-9a-f]{48}$/u.test(saved)) return saved;
@@ -427,14 +433,6 @@ const importLoaderSettings = (payload) => {
   return { ok: true, applied, requiresRestart, locale: locale || 'zh', ui: uiSettings };
 };
 
-mkdirSync(installedRoot, { recursive: true });
-mkdirSync(installedPluginsRoot, { recursive: true });
-mkdirSync(dropRoot, { recursive: true });
-mkdirSync(processedRoot, { recursive: true });
-mkdirSync(pluginsRoot, { recursive: true });
-mkdirSync(processedPluginsRoot, { recursive: true });
-mkdirSync(logsRoot, { recursive: true });
-
 const readState = () => {
   const state = readJson(statePath, { version: 2, mods: {} });
   return { version: 2, mods: {}, ...state, mods: state?.mods && typeof state.mods === 'object' ? state.mods : {} };
@@ -478,7 +476,7 @@ const readManifest = (id, kind = null) => findPackage(id, kind)?.manifest || nul
 const hasPackageEntry = (record) => {
   const manifest = record.manifest || {};
   try {
-    const entry = safeRelative(manifest.entry || manifest.main || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js'));
+    const entry = safeRelative(manifest.entry || manifest.main || manifest.zankyo?.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js'));
     return existsSync(join(record.directory, entry));
   } catch { return false; }
 };
@@ -573,6 +571,9 @@ const modSummaries = () => {
       main: Boolean(manifest.main || manifest.native?.main || manifest.nativeShell),
       native: Boolean(manifest.native || manifest.main || manifest.nativeShell),
       nativeMemory: manifest.native?.memory === true,
+      gpui: Boolean(manifest.gpui?.entry),
+      zankyo: Boolean(manifest.zankyo?.entry),
+      electron: Boolean(manifest.entry || manifest.main || manifest.native?.main || manifest.nativeShell),
     }];
   });
 };
@@ -701,7 +702,8 @@ const importPackage = (source) => {
   const payload = readPackagePayload(source);
   if (!payload || !packageTypes.has(payload.type) || !payload.manifest || !safeId(payload.manifest.id)) throw new Error('invalid_echomod_package');
   const kind = packageKind(payload.type);
-  const manifest = { ...payload.manifest, entry: payload.manifest.entry || payload.manifest.main || (kind === 'plugin' ? 'plugin.js' : 'mod.js') };
+  const nativeOnly = !payload.manifest.entry && !payload.manifest.main && payload.manifest.zankyo?.entry;
+  const manifest = { ...payload.manifest, ...(!nativeOnly ? { entry: payload.manifest.entry || payload.manifest.main || (kind === 'plugin' ? 'plugin.js' : 'mod.js') } : {}) };
   const files = Array.isArray(payload.files) ? payload.files : [];
   const target = installedDirectory(manifest.id, kind);
   // Seed the duplicate check with the manifest file names this import writes
@@ -719,9 +721,14 @@ const importPackage = (source) => {
     if (relative(target, targetFile).startsWith('..')) throw new Error('invalid_mod_file');
     return { path, data };
   });
-  const entryPath = safeRelative(manifest.entry);
+  const entryPath = safeRelative(manifest.entry || manifest.zankyo.entry);
   const samePath = (left, right) => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
   if (!validatedFiles.some((file) => samePath(file.path, entryPath))) throw new Error('mod_entry_missing');
+  if (manifest.zankyo !== undefined) {
+    if (!manifest.zankyo || typeof manifest.zankyo.entry !== 'string') throw new Error('invalid_zankyo_entry');
+    const zankyoEntry = safeRelative(manifest.zankyo.entry);
+    if (!validatedFiles.some((file) => samePath(file.path, zankyoEntry))) throw new Error('zankyo_entry_missing');
+  }
   rmSync(installedDirectory(manifest.id, 'mod'), { recursive: true, force: true });
   rmSync(installedDirectory(manifest.id, 'plugin'), { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
@@ -853,6 +860,10 @@ const startDropWatcher = () => {
 };
 
 let echoProcess = null;
+let zankyoSession = null;
+let zankyoMods = null;
+let zankyoUi = null;
+let launchPromise = null;
 let watchTimer = null;
 let watchActive = false;
 let lastInjectedTargetCount = -1;
@@ -1501,6 +1512,7 @@ const extendRuntimeExpression = `(() => {
 const injectExtendRuntime = (session) => session.evaluate(extendRuntimeExpression);
 
 const removeInjected = async (id) => {
+  if (zankyoMods) return zankyoMods.dispose(id);
   // Mods are only ever injected into ECHO's main renderer, so only those
   // targets need the dispose round trip.
   let targets = [];
@@ -1760,6 +1772,8 @@ const injectionPlan = (id, stateEntry) => {
   if (record.kind === 'plugin' && Number(manifest.apiVersion) >= 1 && Array.isArray(manifest.permissions)) {
     const message = `"${manifest.name || id}" is an official ECHO sandboxed plugin (apiVersion ${Number(manifest.apiVersion)}); ShinawaseLoader does not execute it. Import the .echo package from ECHO's native Plugins page instead.`;
     source = `echoExternalMod.log(${JSON.stringify(message)}); echoExternalMod.toast(${JSON.stringify(message)});`;
+  } else if (manifest.zankyo?.entry && !manifest.entry && !manifest.main) {
+    source = `echoExternalMod.log("This package requires Zankyo / GPUI.");`;
   } else {
     const entry = join(record.directory, safeRelative(manifest.entry || (record.kind === 'plugin' ? 'plugin.js' : 'mod.js')));
     tokens.push([entry, fileToken(entry)]);
@@ -1861,6 +1875,20 @@ const injectEnabled = async () => {
   if (safeMode || loadMode === 'disabled') return 0;
   lastCycleTargetCount = 0;
   lastCycleReadyCount = 0;
+  if (zankyoMods) {
+    await zankyoSession.ready;
+    if (!zankyoSession.connected) throw new Error('gpui_session_disconnected');
+    const packages = Object.entries(readState().mods).map(([id, value]) => {
+      const record = findPackage(id, value?.kind);
+      return record && { id, ...record, config: readModConfig(id), enabled: value?.enabled === true };
+    }).filter(Boolean);
+    await zankyoMods.sync(packages);
+    lastCycleTargetCount = 1;
+    lastCycleReadyCount = 1;
+    loaderStats.injects += 1;
+    loaderStats.lastInjectAt = Date.now();
+    return 1;
+  }
   const targets = await cdpMainTargets();
   lastCycleTargetCount = targets.length;
   const state = readState();
@@ -1949,10 +1977,15 @@ const rendererSdkInfo = async () => rendererValue(`(() => {
   }));
 })()`);
 const sdkStatus = async () => {
+  if (zankyoSession) {
+    try { return { connected: zankyoSession.connected, runtime: 'gpui', ...(await zankyoSession.call('session.describe')) }; }
+    catch (error) { return { connected: false, runtime: 'gpui', error: error.message }; }
+  }
   try { return { connected: true, namespaces: await rendererSdkInfo() }; }
   catch (error) { return { connected: false, error: error instanceof Error ? error.message : String(error) }; }
 };
 const playbackStatus = async () => {
+  if (zankyoSession) return zankyoSession.call('core.call', { method: 'playback.get' });
   const status = await rendererValue('(async()=>await window.echo?.playback?.getStatus?.())()');
   const positionSeconds = Number.isFinite(Number(status?.positionSeconds)) ? Number(status.positionSeconds) : Number(status?.positionMs || 0) / 1000;
   const durationSeconds = Number.isFinite(Number(status?.durationSeconds)) ? Number(status.durationSeconds) : Number(status?.durationMs || 0) / 1000;
@@ -1970,6 +2003,15 @@ const playbackStatus = async () => {
   };
 };
 const playbackControl = async (payload) => {
+  if (zankyoSession) {
+    const action = payload?.action || 'status';
+    if (!['status', 'play', 'pause', 'stop', 'next', 'previous', 'seek'].includes(action)) throw new Error(`gpui_player_action_unsupported: ${action}`);
+    return { ok: true, result: await zankyoSession.call('core.call', {
+      method: action === 'status' ? 'playback.get' : 'playback.control',
+      input: { ...payload, action: action === 'play' ? 'resume' : action,
+        ...(action === 'seek' ? { seconds: Number(payload.seconds ?? payload.positionSeconds) } : {}) },
+    }) };
+  }
   const input = JSON.stringify(payload && typeof payload === 'object' ? payload : {});
   const value = await rendererValue(`(async()=>{
     if (!window.__echoExternalPlayer) throw new Error('echo_player_runtime_unavailable');
@@ -2091,7 +2133,9 @@ const describeIntervalFailure = (error) => {
     : '';
   return `${name}: ${message}${cause}`;
 };
-const intervalFailureHint = () => `check that ECHO was started with --remote-debugging-port=${debugPort} (ECHO.modded.exe and start-echo-with-mods.cmd add it; the stock Steam entry does not)`;
+const intervalFailureHint = () => zankyoSession
+  ? 'restart ECHO through Shinawase to create a new encrypted Zankyo session'
+  : `check that ECHO was started with --remote-debugging-port=${debugPort} (ECHO.modded.exe and start-echo-with-mods.cmd add it; the stock Steam entry does not)`;
 const noteIntervalInjectionFailure = (error) => {
   const signature = describeIntervalFailure(error);
   const now = Date.now();
@@ -2137,9 +2181,10 @@ const startWatch = () => {
     watchTimer = setTimeout(tick, startupPending ? fastPollMs : injectIntervalMs);
   };
   watchTimer = setTimeout(tick, startupDelayMs);
-  log('INFO', `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
+  log('INFO', zankyoSession ? `watching Zankyo packages every ${injectIntervalMs}ms`
+    : `watching ECHO CDP on ${debugPort} every ${injectIntervalMs}ms`);
 };
-const echoExeNames = process.platform === 'linux' ? LINUX_EXE_NAMES : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe'];
+const echoExeNames = [...(process.platform === 'linux' ? LINUX_EXE_NAMES : ['ECHO.exe', 'ECHO Steam.exe', 'ECHO NEXT.exe', 'ECHO Playtest.exe']), ...nativeExecutableNames];
 const isPlaytestInstall = (exePath) => isPlaytestPath(exePath);
 const addSteamCommonRoots = (roots, libraryRoot) => {
   if (!libraryRoot) return;
@@ -2224,6 +2269,13 @@ const readAsarJson = (archive, relativePath) => {
 // asar header every time.
 const echoProductCache = new Map();
 const readEchoProduct = (exePath) => {
+  let runtime;
+  try { runtime = detectEchoRuntime(exePath); } catch {}
+  if (runtime?.runtime === 'gpui') return {
+    path: exePath, executable: runtime.executable, runtime: 'gpui', product: 'echo-gpui',
+    edition: 'zankyo', version: runtime.version || null, electronVersion: null,
+    source: 'shinawase-probe',
+  };
   const dir = dirname(exePath);
   const asar = join(resourcesDirForExecutable(exePath), 'app.asar');
   const versionFile = join(dir, 'version');
@@ -2353,6 +2405,8 @@ const echoRootFromExe = (exePath) => {
 };
 const describeRuntimeSync = () => {
   try {
+    const runtime = detectEchoRuntime(findEcho());
+    if (runtime.runtime === 'gpui') return { ok: true, current: true, runtime: 'gpui', executable: runtime.executable };
     const echoRoot = echoRootFromExe(findEcho());
     const stock = fingerprintStock(echoRoot);
     const previous = readRuntimeFingerprint(root);
@@ -2415,11 +2469,88 @@ const attachMainInspector = async () => {
   return null;
 };
 const launchEcho = () => {
+  if (!launchPromise) launchPromise = launchEchoNow().finally(() => { launchPromise = null; });
+  return launchPromise;
+};
+const launchEchoNow = async () => {
   if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
   if (devMode) return launchEchoDev();
-  syncIsolatedRuntime();
   const executable = findEcho();
   if (echoProcess && !echoProcess.killed) return executable;
+  const runtime = detectEchoRuntime(executable);
+  if (runtime.runtime === 'gpui') {
+    const nativeRequest = async (path, method = 'GET', body) => {
+      if (!/^\/api\/(?:status|disclaimer|ui-settings|mods|mod\/[^/?]+(?:\/(?:config|enable|disable))?|market(?:\/(?:install|upload|login|logout|me|unlist|delete|page|mod\/[^/?]+))?|settings\/(?:export|import|auto-update)|logs|console|locale|debug|perf|update|import|reinject|proxy|upload)(?:\?[^#]*)?$/u.test(path)) {
+        throw new Error('native_ui_route_not_allowed');
+      }
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method, headers: { 'content-type': 'application/json', 'x-shinawase-token': apiToken },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const result = await response.json();
+      if (!response.ok || result.ok === false) throw new Error(result.error || `Loader HTTP ${response.status}`);
+      return result;
+    };
+    const launchArgs = JSON.parse(process.env.ECHO_SHINAWASE_ARGS || '[]');
+    if (!Array.isArray(launchArgs) || launchArgs.some((arg) => typeof arg !== 'string')) throw new Error('invalid_native_launch_args');
+    zankyoSession = await launchZankyo(runtime.executable, launchArgs, {
+      cwd: echoRootFromExe(executable),
+      log: (message) => log('DEBUG', 'Zankyo', message.trim()),
+    });
+    echoProcess = zankyoSession.child;
+    zankyoMods = new ZankyoMods(zankyoSession, {
+      log,
+      request: nativeRequest,
+      settingsDirectory: join(root, 'zankyo-settings'),
+      baseUrl: `http://127.0.0.1:${port}`,
+      onToast: message => {
+        zankyoUi?.message(message, 'info');
+        void zankyoUi?.publish().catch(error => log('WARN', 'native notification failed', error));
+      },
+      onUiEvent: (event) => { void zankyoUi?.event(event).catch((error) => log('WARN', 'native UI action failed', error)); },
+      onPage: (owner, page, onAction) => zankyoUi?.registerPage(owner, page, onAction),
+      onToggle: async (id) => {
+        const entry = readState().mods[id];
+        if (!entry) throw new Error('mod_not_found');
+        setEnabled(id, entry.enabled !== true);
+        await requestInjection('native-toggle');
+      },
+    });
+    const active = zankyoSession;
+    echoProcess.once('exit', () => {
+      if (zankyoSession !== active) return;
+      zankyoUi?.close();
+      zankyoUi = null;
+      void zankyoMods.close();
+      zankyoSession = null;
+      zankyoMods = null;
+      echoProcess = null;
+      if (process.env.ECHO_MOD_HOST_OWNS_LIFETIME === '1') process.exit(0);
+    });
+    await active.ready;
+    await active.call('session.describe');
+    zankyoUi = new ZankyoUi(active, {
+      version: loaderVersion,
+      packages: () => zankyoMods?.status || [],
+      request: nativeRequest,
+    });
+    await zankyoUi.start();
+    // The warning also appears with safe mode or all Mods disabled.
+    if (safeMode || loadMode === 'disabled') {
+      const packages = Object.entries(readState().mods).map(([id, value]) => {
+        const record = findPackage(id, value?.kind);
+        return record && { id, ...record, config: readModConfig(id), enabled: value?.enabled === true };
+      }).filter(Boolean);
+      await zankyoMods.sync(packages, { safeMode: true });
+    } else {
+      await requestInjection('zankyo-start');
+      startWatch();
+    }
+    log('INFO', 'Zankyo 版本适配正在进行中，不保证完全可用性。');
+    return runtime.executable;
+  }
+  syncIsolatedRuntime();
   echoProcess = spawn(executable, [`--remote-debugging-port=${debugPort}`, `--inspect=${inspectPort}`], {
     cwd: process.platform === 'darwin' ? echoRootFromExe(executable) : dirname(executable),
     env: {
@@ -2829,6 +2960,23 @@ const server = createServer(async (request, response) => {
     if (request.headers.origin !== undefined && !hasApiToken(request)) {
       return jsonResponse(response, 403, { error: 'api_token_required' });
     }
+    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/status' && !hasApiToken(request)) {
+      let nativeTarget = Boolean(zankyoSession);
+      if (!nativeTarget) {
+        try { nativeTarget = detectEchoRuntime(findEcho()).runtime === 'gpui'; } catch {}
+      }
+      if (nativeTarget) return jsonResponse(response, 403, { error: 'api_token_required' });
+    }
+    if (url.pathname.startsWith('/api/zankyo')) {
+      if (!hasApiToken(request)) return jsonResponse(response, 403, { error: 'api_token_required' });
+      if (!zankyoSession) return jsonResponse(response, 409, { error: 'gpui_session_unavailable' });
+      if (request.method === 'GET' && url.pathname === '/api/zankyo/status') {
+        return jsonResponse(response, 200, { ...(await sdkStatus()), packages: zankyoMods.status });
+      }
+      // No generic/native RPC proxy: privileged commands stay in the owning
+      // Loader process and enabled package contexts.
+      return jsonResponse(response, 404, { error: 'not_found' });
+    }
     if (request.method === 'GET' && url.pathname === '/') {
       return jsonResponse(response, 200, { ok: true, service: 'ShinawaseLoader', version: loaderVersion });
     }
@@ -2841,7 +2989,9 @@ const server = createServer(async (request, response) => {
       const echoes = discoverEchoes(echoExe || null);
       return jsonResponse(response, 200, {
         ok: true, loaderVersion, root, gameRoot, port, debugPort,
-        loadMode, autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
+        loadMode, runtime: zankyoSession ? 'gpui' : 'electron',
+        zankyo: zankyoSession ? { connected: zankyoSession.connected, experimental: true } : null,
+        autoStart, autoStartMode, safeMode, debugMode, injectIntervalMs, startupDelayMs, logLevel: configuredLogLevel,
         nativeHost: nativeHostEnabled, nativePort, nativeMemoryApi, inspectPort, locale: locale || 'zh',
         debugMode, stats: loaderStats,
         dropRoot, pluginDropRoot: pluginsRoot,
@@ -3119,7 +3269,7 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, { ok: true });
     }
     if (request.method === 'POST' && url.pathname === '/api/launch') {
-      return jsonResponse(response, 200, { executable: launchEcho() });
+      return jsonResponse(response, 200, { executable: await launchEcho() });
     }
     if (request.method === 'POST' && url.pathname === '/api/reinject') {
       return jsonResponse(response, 200, { targets: await requestInjection('api') });
@@ -3422,6 +3572,17 @@ const applySelfUpdate = async (options = {}) => {
 };
 
 const run = async () => {
+  if (command === 'gpui') {
+    const { runGpui } = await import('./gpui-host.mjs');
+    return runGpui(args, readPackagePayload);
+  }
+  mkdirSync(installedRoot, { recursive: true });
+  mkdirSync(installedPluginsRoot, { recursive: true });
+  mkdirSync(dropRoot, { recursive: true });
+  mkdirSync(processedRoot, { recursive: true });
+  mkdirSync(pluginsRoot, { recursive: true });
+  mkdirSync(processedPluginsRoot, { recursive: true });
+  mkdirSync(logsRoot, { recursive: true });
   if (command === 'self-update') {
     const result = await applySelfUpdate({
       quiet: hasFlag('--quiet'),
@@ -3477,7 +3638,7 @@ const run = async () => {
     return;
   }
   if (command === 'launch') {
-    console.log(`${c.gray}${t('launched')}${c.reset}  ${launchEcho()}`);
+    console.log(`${c.gray}${t('launched')}${c.reset}  ${await launchEcho()}`);
     return;
   }
   if (command === 'sync-runtime') {
@@ -3494,6 +3655,11 @@ const run = async () => {
   }
 
   const isAttach = command === 'attach';
+  let attachRuntime;
+  if (isAttach) { try { attachRuntime = detectEchoRuntime(findEcho()).runtime; } catch {} }
+  if (attachRuntime === 'gpui') {
+    throw new Error('gpui_attach_requires_shinawase_launch: quit ECHO and use run or ECHO.modded');
+  }
   if (devMode) {
     if (loadMode === 'attach-only') throw new Error('load_mode_attach_only');
     resolveDevSource();
@@ -3505,7 +3671,10 @@ const run = async () => {
       if (status?.ok) {
         console.log(`${c.gray}${t('listen')}${c.reset}  ${t('alreadyRunning')} ${port}`);
         if (isAttach) startWatch();
-        if (command === 'run') launchEcho();
+        if (command === 'run') {
+          const response = await fetch(`http://127.0.0.1:${port}/api/launch`, { method: 'POST', headers: { 'x-shinawase-token': apiToken } });
+          if (!response.ok) throw new Error(`existing_loader_launch_failed: ${response.status}`);
+        }
         if (devMode) throw new Error(`a Loader already serves port ${port}; stop it or pass --port for dev mode`);
         return;
       }
@@ -3530,7 +3699,7 @@ const run = async () => {
     void attachMainInspector();
     startWatch();
   }
-  if (command === 'run' || devMode) launchEcho();
+  if (command === 'run' || devMode) await launchEcho();
 };
 
 run().catch((error) => {

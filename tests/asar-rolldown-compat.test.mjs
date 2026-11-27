@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { applyAuxiliaryWindowCrashFix, applyRepeatOneIdentityFix, ensureElectronImport, injectSplashBridge, patch, patchLyricsPage, patchPlayback, verifyAnchors } from '../ShinawaseLoader/echo-asar.mjs';
+import { applyAuxiliaryWindowCrashFix, applyRepeatOneIdentityFix, ensureElectronImport, patch, patchLyricsPage, patchPlayback, verifyAnchors } from '../ShinawaseLoader/echo-asar.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -134,32 +134,6 @@ test('a stub ES module entry gets its own Electron import; CommonJS entries do n
   assert.equal(ensureElectronImport(once), once, 'idempotent');
   const cjs = '"use strict";\nconst { app } = require("electron");\n';
   assert.equal(ensureElectronImport(cjs), cjs);
-});
-
-test('the injected blocks find Electron\'s app without a module-scope binding and skip the Echo Link bridge', () => {
-  const root = mkdtempSync(join(tmpdir(), 'shinawase-stub-entry-'));
-  try {
-    const loaderRoot = join(root, 'ShinawaseLoader');
-    mkdirSync(loaderRoot);
-    writeFileSync(join(loaderRoot, 'startup-splash.cjs'), 'exports.installShinawaseStartupSplash = (options) => { globalThis.__stubSplashProbe = options; };');
-    const block = injectSplashBridge('').trimEnd();
-    const processStub = (argv) => ({
-      argv,
-      env: { ECHO_MOD_ROOT: root, ECHO_MOD_HOME: loaderRoot },
-      platform: process.platform,
-      resourcesPath: join(root, 'resources'),
-      getBuiltinModule: (name) => require(name),
-    });
-    // What the import provides in the stub entry; no `app` in scope.
-    vm.runInNewContext(block, { console, __shinawaseElectron: { app: {} }, process: processStub(['ECHO.exe']) });
-    assert.equal(globalThis.__stubSplashProbe?.loaderRoot, loaderRoot, 'the splash is installed in ECHO\'s own process');
-    delete globalThis.__stubSplashProbe;
-    vm.runInNewContext(block, { console, __shinawaseElectron: { app: {} }, process: processStub(['ECHO.exe', '--echo-link-bridge', '--echo-link-bridge-profile=x']) });
-    assert.equal(globalThis.__stubSplashProbe, undefined, 'nothing runs in the Echo Link bridge process');
-  } finally {
-    delete globalThis.__stubSplashProbe;
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 
 const audioSessionModule = tabs([
@@ -337,7 +311,7 @@ test('a code-split main process gets each fix in the chunk that carries its anch
     const ipc = 'export var IpcChannels = { PlaybackPlayMediaItem: "playback:play-media-item", PlaybackResolveMediaItem: "playback:resolve-media-item", PlaybackPrepareMediaItem: "playback:prepare-media-item" };';
     const stock = {
       'package.json': '{"main":"out/main/index.js"}',
-      'out/main/index.js': `import { IpcChannels } from "./ipcChannels-a1.js";\n${mediaModule}`,
+      'out/main/index.js': `/* shinawase-loader-startup-splash-v1 */\n((app) => {\n  throw new Error("obsolete startup block");\n})(app);\nimport { IpcChannels } from "./ipcChannels-a1.js";\n${mediaModule}`,
       'out/main/ipcChannels-a1.js': ipc,
       'out/main/AudioSession-b2.js': audioSessionModule,
       'out/main/createMainWindow-c3.js': windowModule,
@@ -355,6 +329,7 @@ test('a code-split main process gets each fix in the chunk that carries its anch
     assert.equal(patch(root).status, 'already-patched', 'idempotent');
     const files = readAsar(archive);
     assert.match(files['out/main/index.js'].text, /shinawase-loader-bridge-v1/u);
+    assert.doesNotMatch(files['out/main/index.js'].text, /shinawase-loader-startup-splash|obsolete startup block/u);
     assert.match(files['out/main/index.js'].text, /shinawase-loader-streaming-playback-v2/u);
     assert.match(files['out/main/AudioSession-b2.js'].text, /shinawase-repeat-one-identity-v1/u);
     assert.match(files['out/main/AudioSession-b2.js'].text, /shinawase-streaming-daemon-queue-v1/u);

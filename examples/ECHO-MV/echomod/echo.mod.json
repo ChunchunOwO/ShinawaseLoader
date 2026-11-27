@@ -1,7 +1,7 @@
 {
   "id": "echo.mv",
   "name": "ECHO MV",
-  "version": "1.0.24",
+  "version": "1.0.26",
   "minEchoVersion": "26.8.15",
   "description": "恢复 ECHO 隐藏的 MV 功能：自动搜索并尽量自动应用匹配 MV，播放条入口 + 歌词页面板/设置。",
   "icon": "icon.svg",
@@ -9,5 +9,14 @@
   "main": "main.cjs",
   "config": "config.json",
   "configSchema": "config.schema.json",
-  "configUi": "config-ui.js"
+  "configUi": "config-ui.js",
+  "zankyo": { "entry": "zankyo.js" },
+  "gpui": {
+    "protocol": 1,
+    "entry": "gpui/bilibili.mjs"
+  },
+  "gpuiAssets": [
+    "main.cjs",
+    "audio-onset.cjs"
+  ]
 }

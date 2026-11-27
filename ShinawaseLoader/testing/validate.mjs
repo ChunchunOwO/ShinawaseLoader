@@ -80,7 +80,7 @@ export const validateManifest = (input) => {
     issue(notices, 'official_sandboxed_plugin', 'this manifest looks like an official ECHO sandboxed plugin; ShinawaseLoader will not execute its entry. Import the .echo package through ECHO\'s native Plugins page instead.');
   }
 
-  const entryDeclared = manifest.entry || (kind === 'plugin' ? 'plugin.js' : 'mod.js');
+  const entryDeclared = manifest.entry || manifest.zankyo?.entry || (kind === 'plugin' ? 'plugin.js' : 'mod.js');
   const entryCheck = trySafeRelative(entryDeclared);
   let entryPath = null;
   let entryExists = false;
@@ -122,6 +122,19 @@ export const validateManifest = (input) => {
     for (const module of Array.isArray(manifest.native.modules) ? manifest.native.modules : []) {
       if (!module || !['node-addon', 'host-dll'].includes(module.kind) || trySafeRelative(module.entry).error) {
         issue(errors, 'native_module_invalid', `native.modules entries need kind node-addon|host-dll and a package-relative entry: ${JSON.stringify(module)}`);
+      }
+    }
+  }
+  if (manifest.zankyo !== undefined) {
+    const entry = manifest.zankyo?.entry;
+    const check = trySafeRelative(entry);
+    if (typeof entry !== 'string' || check.error) issue(errors, 'zankyo_entry_invalid', 'zankyo.entry must be a package-relative JavaScript file');
+    else if (directory) {
+      const file = join(directory, check.value);
+      if (!existsSync(file)) issue(errors, 'zankyo_entry_missing', `missing Zankyo entry: ${entry}`);
+      else {
+        const syntax = checkEntrySyntax(readFileSync(file, 'utf8'));
+        if (!syntax.ok) issue(errors, 'zankyo_entry_syntax', syntax.error.message);
       }
     }
   }
@@ -248,7 +261,7 @@ export const validatePackageArchive = (file) => {
 
   if (manifest && summary.type !== 'echo-workshop-item') {
     const kind = packageKind(summary.type);
-    const entryName = manifest.entry || manifest.main || (kind === 'plugin' ? 'plugin.js' : 'mod.js');
+    const entryName = manifest.entry || manifest.main || manifest.zankyo?.entry || (kind === 'plugin' ? 'plugin.js' : 'mod.js');
     const entryCheck = trySafeRelative(entryName);
     if (entryCheck.error) issue(errors, 'entry_path_invalid', entryCheck.error);
     else {
@@ -257,6 +270,13 @@ export const validatePackageArchive = (file) => {
         return !check.error && check.value.toLowerCase() === entryCheck.value.toLowerCase();
       });
       if (!present) issue(errors, 'entry_missing', `manifest entry is missing from the archive: ${entryCheck.value}`);
+    }
+    if (manifest.zankyo !== undefined) {
+      const check = trySafeRelative(manifest.zankyo?.entry);
+      if (typeof manifest.zankyo?.entry !== 'string' || check.error) issue(errors, 'zankyo_entry_invalid', 'invalid zankyo.entry');
+      else if (!files.some((file) => file.path?.toLowerCase() === check.value.toLowerCase())) {
+        issue(errors, 'zankyo_entry_missing', `missing Zankyo entry: ${check.value}`);
+      }
     }
   }
 

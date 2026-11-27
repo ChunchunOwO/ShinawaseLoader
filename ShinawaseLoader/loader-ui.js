@@ -16,9 +16,9 @@ const defaultUiSettings = {
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  lastShinawasePage: 'mods',
   steamLaunchReminder: false,
   showTitlebarBrand: true,
-  startupSplash: true,
 };
 let uiSettings = {
   ...defaultUiSettings,
@@ -3360,7 +3360,6 @@ const buildAppearance = (grid) => {
     row(T.cardLayout, segControl('cardLayout', [['list', T.layoutList, iconRows], ['grid', T.layoutGrid, iconGrid]])),
     row(T.accentColor, accentControl()),
     row(T.animations, switchControl('animations')),
-    row(T.startupSplash || 'Startup animation', switchControl('startupSplash', T.startupSplash)),
     row(T.showDescriptions, switchControl('showModDescriptions')),
     row(T.showVersions, switchControl('showModVersions')),
     row(T.showIds, switchControl('showModIds')),

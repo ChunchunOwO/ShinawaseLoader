@@ -1,0 +1,278 @@
+ECHO Source-Available License
+
+Copyright (c) 2026 Moekotori. All rights reserved.
+
+English is the controlling language of this license. The Chinese section below
+is provided to help Chinese readers understand the same terms. If there is any
+conflict, ambiguity, or difference between the English and Chinese text, the
+English text controls.
+
+This license applies to the ECHO project source code, documentation,
+configuration, scripts, project-owned assets, and official project materials,
+except where a file, directory, dependency, bundled third-party component, or
+accompanying notice states a different license. Third-party components,
+dependencies, fonts, media tools, SDKs, and other separately licensed materials
+remain governed by their own license terms.
+
+ECHO source code is made available for transparency, review, personal
+learning, security inspection, and personal local builds. This is a
+source-available license. It is not an open-source license, and it does not
+grant the broad rights provided by permissive licenses such as Apache License
+2.0, MIT, or BSD.
+
+1. Definitions
+
+For this license:
+
+- "ECHO" means the project, source code, official builds, documentation,
+  project-owned assets, and related materials covered by this license.
+- "You" means any individual, company, organization, or other entity that
+  accesses, copies, builds, modifies, or uses ECHO.
+- "Maintainer" means the copyright holder or an authorized representative of
+  the official ECHO project.
+- "Derivative work" means any modification, fork, patch set, repackaging,
+  rebranding, translated build, compiled build, plugin bundle, service,
+  distribution, or other work based on ECHO or containing a substantial
+  portion of ECHO.
+- "Official release" means a build, package, website, account, update channel,
+  or distribution channel explicitly controlled or approved by the Maintainer.
+- "Protection mechanism" means any license check, entitlement check, donation
+  or Pro feature gate, account or machine binding, integrity check,
+  anti-tamper check, update verification, signature check, local data
+  protection boundary, or similar mechanism used by ECHO.
+
+Workshop SDK and independent-item exception: the files under
+`docs/workshop-sdk/` are governed by the MIT License included in that directory,
+not by this ECHO Source-Available License. A Workshop item or other extension
+that only uses the published Workshop schemas, type declarations, documented
+sandbox API, or unmodified MIT-licensed SDK templates, and does not copy a
+substantial portion of ECHO code or project-owned assets, is not a "Derivative
+work" under this license. Its author retains ownership and may choose its
+license and distribution terms, subject to applicable Steam terms, Workshop
+submission policy, third-party rights, and law. This exception grants no right
+to use ECHO trademarks, logos, proprietary assets, protection mechanisms, or
+non-SDK source code.
+
+2. Permitted Use
+
+Subject to the restrictions below, You may:
+
+- read, inspect, and study the source code;
+- use the source code for personal learning, review, and security inspection;
+- build and run ECHO locally for personal, non-commercial use;
+- make private modifications for Your own personal, non-commercial use;
+- keep private copies or private forks for personal development;
+- submit issues, patches, or pull requests to the upstream project;
+- create a public fork only for the purpose of proposing upstream
+  contributions, provided that the fork preserves this license, clearly points
+  back to the official project, and does not publish unofficial builds, bypass
+  instructions, or modified protection logic.
+
+3. Restrictions
+
+Without prior written permission from the Maintainer, You may not:
+
+- sell, sublicense, rent, lease, host as a paid service, bundle for paid access,
+  or commercially exploit ECHO or any derivative work;
+- publish, distribute, mirror, repackage, provide, or make available modified
+  builds of ECHO, whether in source or binary form, except for
+  contribution-only forks allowed above;
+- publish or distribute unofficial installers, portable packages, archives,
+  app-store packages, container images, update packages, patched binaries, or
+  other redistributed builds based on ECHO;
+- use the ECHO name, logo, icons, screenshots, release notes, website
+  materials, or project identity to imply that an unofficial build, fork,
+  service, or derivative work is official or endorsed;
+- remove, bypass, disable, tamper with, weaken, hide, replace, or otherwise
+  circumvent any protection mechanism;
+- modify ECHO to unlock restricted features, Pro features, donation
+  benefits, account-bound features, or other entitlement-gated behavior without
+  authorization;
+- create, distribute, advertise, document, or assist with cracks, patches,
+  loaders, keygens, fake license files, fake entitlement servers, modified
+  clients, modified plugins, activation bypasses, scripts, instructions, or
+  services whose purpose is to unlock restricted features or bypass project
+  protection logic;
+- remove, suppress, forge, or alter license, entitlement, integrity,
+  anti-tamper, diagnostic, update, or attribution notices shown by ECHO;
+- use ECHO or derivative works to bypass memberships, copyright
+  restrictions, DRM, platform restrictions, account restrictions, region
+  restrictions, payment requirements, or any similar access-control or
+  rights-management boundary;
+- use ECHO to download, extract, copy, decrypt, scrape, or redistribute
+  media or metadata in a way that violates copyright, platform terms, DRM, or
+  access-control restrictions;
+- use ECHO or derivative works for malware, phishing, credential theft,
+  unauthorized access, surveillance, data exfiltration, or other abusive or
+  unlawful activity;
+- remove, obscure, or misrepresent copyright, trademark, attribution, license,
+  anti-crack, anti-bypass, or official-channel notices from the project;
+- misrepresent modified versions, forks, unofficial builds, or derivative works
+  as official ECHO releases;
+- claim compatibility, endorsement, sponsorship, or approval by the official
+  project unless the Maintainer has granted written permission.
+
+4. Contributions
+
+By submitting a contribution to the upstream ECHO project, including code,
+documentation, translations, assets, tests, issue reproductions, or other
+materials, You grant the Maintainer a perpetual, worldwide, non-exclusive,
+royalty-free, irrevocable license to use, reproduce, modify, prepare derivative
+works of, publicly display, publicly perform, distribute, sublicense, and
+relicense Your contribution as part of ECHO.
+
+You represent that You have the right to submit the contribution and to grant
+the rights above. If You are not able to grant these rights, do not submit the
+contribution.
+
+5. Official Releases and Updates
+
+Only builds, packages, websites, accounts, update channels, download links, and
+release channels explicitly controlled or approved by the Maintainer are
+official. Unofficial builds must not claim to be official, trusted, verified, or
+endorsed.
+
+The Maintainer may change ECHO features, entitlement behavior, release
+channels, update mechanisms, branding, documentation, or licensing for future
+versions at any time.
+
+6. Third-Party Materials
+
+This license does not change the license terms of third-party dependencies,
+SDKs, tools, fonts, libraries, binaries, media codecs, or other separately
+licensed materials included with or used by ECHO. You are responsible for
+complying with those third-party licenses.
+
+7. Prior Releases
+
+Versions of ECHO that were previously released under another license remain
+available under the license terms that accompanied those specific versions. This
+license applies to versions and source snapshots that include this license text.
+
+8. Termination
+
+Any rights granted by this license terminate automatically if You violate its
+terms. Upon termination, You must immediately stop using, building, copying,
+modifying, publishing, distributing, hosting, or otherwise making available ECHO
+NEXT and any derivative work, and You must delete or destroy any copies that
+violate this license.
+
+Termination does not limit any other rights or remedies available to the
+Maintainer under copyright, contract, trademark, unfair competition,
+anti-circumvention, computer misuse, or other applicable law.
+
+9. No Warranty
+
+ECHO is provided "as is", without warranty of any kind, express or implied,
+including but not limited to warranties of merchantability, fitness for a
+particular purpose, non-infringement, availability, security, compatibility,
+accuracy, or correctness. You use ECHO at Your own risk.
+
+10. Limitation of Liability
+
+To the maximum extent permitted by law, in no event shall the copyright holder,
+Maintainer, or contributors be liable for any direct, indirect, incidental,
+special, consequential, exemplary, punitive, or other damages, including loss of
+data, loss of profits, business interruption, device damage, account loss, media
+library loss, or other losses arising from ECHO or Your use of it.
+
+For commercial licensing, redistribution permission, or other exceptions,
+contact the ECHO Maintainer through the official project channels.
+
+---
+
+ECHO 源码可见许可协议（中文说明）
+
+版权所有 (c) 2026 Moekotori。保留所有权利。
+
+本协议以英文版本为准。以下中文内容用于帮助中文读者理解同一组条款；如果中英文之间存在冲突、歧义或差异，以英文版本为准。
+
+本协议适用于 ECHO 项目的源代码、文档、配置、脚本、项目自有资产以及官方项目材料，但文件、目录、依赖项、捆绑的第三方组件或随附声明另有许可证的除外。第三方组件、依赖项、字体、媒体工具、SDK 以及其他单独授权的材料，继续适用它们自己的许可证。
+
+ECHO 公开源码是为了透明、审阅、个人学习、安全检查和个人本地构建。本协议是“源码可见”协议，不是开源协议，也不授予 Apache License 2.0、MIT、BSD 等宽松开源协议提供的广泛权利。
+
+1. 定义
+
+在本协议中：
+
+- “ECHO”指受本协议约束的项目、源代码、官方构建、文档、项目自有资产及相关材料。
+- “你”指访问、复制、构建、修改或使用 ECHO 的任何个人、公司、组织或其他实体。
+- “维护者”指版权持有人或 ECHO 官方项目的授权代表。
+- “衍生作品”指基于 ECHO 或包含 ECHO 实质性部分的任何修改、分叉、补丁集、重新打包、重新命名、翻译构建、编译构建、插件包、服务、分发物或其他作品。
+- “官方发布”指由维护者明确控制或批准的构建、安装包、网站、账号、更新通道或分发通道。
+- “保护机制”指 ECHO 使用的任何许可证校验、权益校验、捐赠者或 Pro 功能门槛、账号或机器绑定、完整性校验、反篡改校验、更新验证、签名校验、本地数据保护边界或类似机制。
+
+创意工坊 SDK 与独立作品例外：`docs/workshop-sdk/` 目录中的文件适用该目录内
+附带的 MIT License，不适用本 ECHO 源码可见许可。仅使用公开的 Workshop
+Schema、类型声明、已记录的沙箱 API 或未经修改的 MIT SDK 模板，且未复制
+ECHO 源码或项目自有素材实质性部分的 Workshop 项目或其他扩展，不属于本协议
+所称的“衍生作品”。作者保留所有权，并可自行选择许可和分发方式，但仍须遵守
+适用的 Steam 条款、Workshop 投稿政策、第三方权利和法律。本例外不授予使用
+ECHO 商标、Logo、专有素材、保护机制或 SDK 目录之外源码的权利。
+
+2. 允许的使用
+
+在遵守下列限制的前提下，你可以：
+
+- 阅读、检查和学习源代码；
+- 将源代码用于个人学习、审阅和安全检查；
+- 为个人、非商业用途在本地构建并运行 ECHO；
+- 为个人、非商业用途进行私有修改；
+- 保留私人副本或私人分叉用于个人开发；
+- 向上游项目提交 issue、补丁或 pull request；
+- 仅为向上游贡献代码而创建公开 fork，但该 fork 必须保留本协议，清楚指向官方项目，并且不得发布非官方构建、绕过说明或修改后的保护逻辑。
+
+3. 禁止事项
+
+未经维护者事先书面许可，你不得：
+
+- 销售、再授权、出租、租赁、作为付费服务托管、捆绑为付费访问内容，或以其他方式商业利用 ECHO 或任何衍生作品；
+- 发布、分发、镜像、重新打包、提供或以其他方式公开修改版 ECHO，无论是源码形式还是二进制形式，但上文允许的仅用于贡献的 fork 除外；
+- 发布或分发基于 ECHO 的非官方安装包、便携包、压缩包、应用商店包、容器镜像、更新包、补丁二进制文件或其他重新分发构建；
+- 使用 ECHO 的名称、Logo、图标、截图、发布说明、网站材料或项目身份，让非官方构建、fork、服务或衍生作品看起来像官方发布或获得官方认可；
+- 移除、绕过、禁用、篡改、削弱、隐藏、替换或以其他方式规避任何保护机制；
+- 未经授权修改 ECHO，以解锁受限制功能、Pro 功能、捐赠者权益、账号绑定功能或其他受权益控制的行为；
+- 创建、分发、宣传、记录或协助提供破解、补丁、加载器、注册机、伪造许可证文件、伪造权益服务器、修改版客户端、修改版插件、激活绕过、脚本、教程、说明或服务，只要其目的在于解锁受限制功能或绕过项目保护逻辑；
+- 移除、压制、伪造或更改 ECHO 显示的许可证、权益、完整性、反篡改、诊断、更新或署名声明；
+- 使用 ECHO 或衍生作品绕过会员、版权限制、DRM、平台限制、账号限制、地区限制、付费要求或任何类似的访问控制、权利管理边界；
+- 使用 ECHO 以违反版权、平台条款、DRM 或访问控制限制的方式下载、提取、复制、解密、抓取或再分发媒体或元数据；
+- 将 ECHO 或衍生作品用于恶意软件、钓鱼、凭据窃取、未授权访问、监控、数据外传或其他滥用、违法活动；
+- 移除、隐藏或歪曲项目中的版权、商标、署名、许可证、反破解、反绕过或官方渠道声明；
+- 将修改版、fork、非官方构建或衍生作品冒充为 ECHO 官方发布；
+- 在未获得维护者书面许可的情况下，声称与官方项目兼容、得到官方背书、赞助或批准。
+
+4. 贡献
+
+当你向 ECHO 上游项目提交贡献，包括代码、文档、翻译、资产、测试、issue 复现材料或其他内容时，你授予维护者一项永久、全球、非独占、免版税、不可撤销的许可，允许维护者将你的贡献作为 ECHO 的一部分使用、复制、修改、制作衍生作品、公开展示、公开表演、分发、再授权和重新许可。
+
+你声明你有权提交该贡献，并有权授予上述权利。如果你不能授予这些权利，请不要提交贡献。
+
+5. 官方发布与更新
+
+只有维护者明确控制或批准的构建、安装包、网站、账号、更新通道、下载链接和发布通道才是官方的。非官方构建不得声称自己是官方、可信、已验证或获得认可。
+
+维护者可以随时针对未来版本变更 ECHO 的功能、权益行为、发布通道、更新机制、品牌、文档或许可证。
+
+6. 第三方材料
+
+本协议不改变 ECHO 包含或使用的第三方依赖、SDK、工具、字体、库、二进制文件、媒体编解码器或其他单独授权材料的许可证条款。你有责任遵守这些第三方许可证。
+
+7. 旧版本
+
+此前已经按其他许可证发布的 ECHO 版本，仍按那些具体版本随附的许可证条款提供。本协议适用于包含本协议文本的版本和源码快照。
+
+8. 终止
+
+如果你违反本协议，本协议授予你的任何权利将自动终止。终止后，你必须立即停止使用、构建、复制、修改、发布、分发、托管或以其他方式提供 ECHO 及任何衍生作品，并删除或销毁任何违反本协议的副本。
+
+终止不限制维护者依据版权、合同、商标、不正当竞争、反规避、计算机滥用或其他适用法律享有的其他权利或救济。
+
+9. 无担保
+
+ECHO 按“现状”提供，不作任何明示或默示担保，包括但不限于适销性、特定用途适用性、不侵权、可用性、安全性、兼容性、准确性或正确性的担保。你自行承担使用 ECHO 的风险。
+
+10. 责任限制
+
+在法律允许的最大范围内，版权持有人、维护者或贡献者不对任何直接、间接、偶然、特殊、后果性、惩戒性、惩罚性或其他损害承担责任，包括数据丢失、利润损失、业务中断、设备损坏、账号损失、媒体库损失，或因 ECHO 或你使用 ECHO 而产生的其他损失。
+
+如需商业授权、重新分发许可或其他例外，请通过官方项目渠道联系 ECHO 维护者。

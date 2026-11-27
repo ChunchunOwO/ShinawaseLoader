@@ -305,6 +305,84 @@ test('ShinawaseSetup installs the app layout without node_modules or local state
   }
 });
 
+test('Zankyo installers keep npm deps enabled and handle native executables', () => {
+  assert.ok(!engineCs.includes('target.IsZankyo ? Task.FromResult(StepState.Skipped) : InstallDeps'), 'Engine.cs must not skip InstallDeps for Zankyo');
+  assert.ok(engineCs.includes('"EchoZankyo", "echo-gpui"'), 'Lifecycle.EchoProcesses must track EchoZankyo and echo-gpui');
+  assert.ok(!setupPs1.includes("if ($runtime.runtime -ne 'gpui') { Install-StreamingBridgeDeps"), 'setup-modloader.ps1 must not skip streaming deps for Zankyo');
+  assert.ok(setupPs1.includes("'EchoZankyo.exe'") && setupPs1.includes("'echo-gpui.exe'"), 'Stop-EchoInRoot must include Zankyo binaries');
+  assert.ok(!read('scripts/setup-modloader-macos.mjs').includes("deps && runtime.runtime !== 'gpui'"), 'macOS setup must not skip deps for Zankyo');
+  assert.ok(!read('scripts/setup-modloader-linux.mjs').includes("streamingDeps && runtime.runtime !== 'gpui'"), 'Linux setup must not skip deps for Zankyo');
+});
+
+test('headless manager installs and uninstalls cleanly on a Zankyo (GPUI) target', { skip: !canBuild && 'needs Windows and the .NET Framework compiler', timeout: 180000 }, async () => {
+  const { exe, dir } = buildOnce();
+  const root = tmp();
+  const { createHash } = await import('node:crypto');
+  try {
+    const echo = join(root, 'echo-zankyo');
+    const localAppData = join(root, 'appdata');
+    const steam = join(root, 'steam');
+    mkdirSync(echo, { recursive: true });
+    mkdirSync(localAppData, { recursive: true });
+    mkdirSync(steam, { recursive: true });
+    const markerFile = join(root, 'marker.txt');
+    const stubCs = join(root, 'EchoZankyo.cs');
+    const stubExe = join(echo, 'EchoZankyo.exe');
+    writeFileSync(markerFile, 'ECHO_GPUI_SHINAWASE_API_V1', 'ascii');
+    writeFileSync(stubCs, [
+      'using System;',
+      'class Program {',
+      '  static int Main(string[] args) {',
+      '    foreach (var a in args) {',
+      '      if (a == "--shinawase-probe") { Console.WriteLine("{\\"runtime\\":\\"gpui\\",\\"protocol\\":1,\\"version\\":\\"0.2.0\\"}"); return 0; }',
+      '    }',
+      '    return 0;',
+      '  }',
+      '}',
+    ].join('\n'));
+    const stubBuild = spawnSync(csc, ['/nologo', '/target:exe', `/resource:${markerFile}`, `/out:${stubExe}`, stubCs], { encoding: 'utf8' });
+    assert.equal(stubBuild.status, 0, stubBuild.stderr || stubBuild.stdout);
+
+    // Pre-seed the @neteasecloudmusicapienhanced/api lock stamp so InstallDeps completes offline as Done (not Skipped).
+    const loaderDest = join(echo, 'ShinawaseLoader');
+    const lockPath = join(repo, 'ShinawaseLoader', 'package-lock.json');
+    const lockHash = createHash('sha256').update(readFileSync(lockPath)).digest('hex').toUpperCase();
+    mkdirSync(join(loaderDest, 'node_modules', '@neteasecloudmusicapienhanced', 'api'), { recursive: true });
+    writeFileSync(join(loaderDest, 'node_modules', '@neteasecloudmusicapienhanced', 'api', 'package.json'), '{"name":"@neteasecloudmusicapienhanced/api","version":"0.0.0-test"}\n');
+    writeFileSync(join(loaderDest, 'node_modules', '.shinawase-deps-lock.sha256'), lockHash);
+
+    const env = { LOCALAPPDATA: localAppData, SHINAWASE_STEAM_ROOT: steam };
+    const installed = headless(exe, ['install', '--echo', echo, '--source', join(repo, 'ShinawaseLoader'), '--no-probe', '--packages', 'echo.community-streaming,echo.mv,echo.lyrics-match-whitebox'], env);
+    assert.equal(installed.status, 0, JSON.stringify(installed.lines));
+    const depsStep = installed.lines.filter((line) => line.event === 'step' && line.step === 'deps').at(-1);
+    assert.equal(depsStep?.state, 'Done', 'Zankyo install must run deps instead of skipping it');
+    const result = installed.lines.find((line) => line.event === 'result');
+    assert.equal(result?.ok, true, JSON.stringify(result));
+    assert.equal(result?.packages, 3, JSON.stringify(result));
+    for (const id of ['echo.community-streaming', 'echo.mv', 'echo.lyrics-match-whitebox']) {
+      assert.ok(existsSync(join(echo, 'Mods', 'installed', id, 'echo.mod.json')), `${id} must be installed`);
+    }
+    assert.ok(existsSync(join(echo, 'ECHO.modded.exe')), 'ECHO.modded.exe must be generated');
+    assert.ok(existsSync(join(loaderDest, 'start-echo-with-mods.cmd')), 'start-echo-with-mods.cmd must be generated');
+    const cfg = JSON.parse(readFileSync(join(loaderDest, 'loader.config.json'), 'utf8'));
+    assert.equal(cfg.autoStart, false);
+    assert.equal(cfg.autoStartMode, 'manual');
+
+    const workshop = headless(exe, ['install', '--echo', echo, '--source', join(repo, 'ShinawaseLoader'), '--edition', 'workshop', '--zip', join(repo, 'ShinawaseLoader', 'loader-version.json'), '--no-probe'], env);
+    assert.notEqual(workshop.status, 0);
+    const wsResult = workshop.lines.find((line) => line.event === 'result');
+    assert.match(String(wsResult?.error || ''), /Zankyo|GPUI/u);
+
+    const removed = headless(exe, ['uninstall', '--echo', echo], env);
+    assert.equal(removed.status, 0, JSON.stringify(removed.lines));
+    const rmResult = removed.lines.find((line) => line.event === 'result');
+    assert.equal(rmResult?.loaderExists, false);
+    assert.equal(rmResult?.hostExists, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test.after(() => {
   if (built) rmSync(built.dir, { recursive: true, force: true });
 });

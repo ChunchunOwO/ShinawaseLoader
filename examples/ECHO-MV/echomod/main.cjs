@@ -15,7 +15,7 @@ const { basename, dirname, extname, join, resolve, normalize } = require('node:p
 const { Readable } = require('node:stream');
 const { detectAudioOnset } = require('./audio-onset.cjs');
 
-const MOD_VERSION = '1.0.24';
+const MOD_VERSION = '1.0.25';
 const MV_MATCH_ALGORITHM_VERSION = 6;
 const MV_AUTO_MATCH_THRESHOLD = 0.7;
 const MV_AUTO_MATCH_MIN_MARGIN = 0.08;
@@ -2390,7 +2390,26 @@ function createEngine(options = {}) {
 
   const fetchUpstream = async (url, init = {}) => doFetch(url, init);
 
+  // The native Workshop host owns selection, timing and stream relay. Reuse the
+  // same search plan, scoring gates and quality negotiation as the renderer.
+  const nativeSearch = async (snapshot, query) => {
+    const track = snapshotToTrack(normalizeSnapshot(snapshot));
+    const settings = getSettings();
+    return searchProviderWithFallback('bilibili', track, settings, networkSearchPlan(track, settings, query));
+  };
   const api = {
+    nativeSearch,
+    nativeMatch: async (snapshot) => {
+      const ranked = rankAutoCandidates(await nativeSearch(snapshot), getSettings());
+      return hasConfidentAutoMatchLead(ranked) ? ranked[0] : null;
+    },
+    nativeResolve: async (snapshot, candidate) => {
+      const track = snapshotToTrack(normalizeSnapshot(snapshot));
+      const settings = getSettings();
+      const video = temporaryVideoFromCandidate(track, candidate, null, null);
+      const variants = await providerResolve.bilibili(video, settings);
+      return chooseResolvedStreamVariant('bilibili', variants, settings);
+    },
     getSettings: () => getSettings(),
     setSettings: (payload) => setSettingsFromPatch(payloadObj(payload).patch),
     getSelected: (payload) => getSelectedVideo(requireText(payloadObj(payload).trackId, 'trackId')),

@@ -138,6 +138,27 @@ internal static class EchoModdedHost
     {
         var root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var loaderRoot = Path.Combine(root, "ShinawaseLoader");
+        if (File.Exists(Path.Combine(root, "EchoZankyo.exe"))
+            || File.Exists(Path.Combine(root, "echo-gpui.exe"))
+            || !File.Exists(Path.Combine(root, "resources", "app.asar")))
+        {
+            var host = new ProcessStartInfo
+            {
+                FileName = FindNode(loaderRoot),
+                Arguments = Quote(Path.Combine(loaderRoot, "echo-modded-host.mjs")) + " " + String.Join(" ", args.Select(Quote)),
+                WorkingDirectory = root,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            host.EnvironmentVariables["ECHO_GAME_ROOT"] = root;
+            host.EnvironmentVariables["ECHO_MOD_HOME"] = loaderRoot;
+            using (var process = Process.Start(host))
+            {
+                if (process == null) return 3;
+                process.WaitForExit();
+                return process.ExitCode;
+            }
+        }
         RunNodeScript(root, loaderRoot, "ShinawaseLoader.mjs", "self-update --auto --quiet", 60000);
         RunNodeScript(root, loaderRoot, "runtime-sync.mjs", "--echo " + Quote(root) + " --skip-update", 120000);
         var moddedExe = Path.Combine(loaderRoot, "modded-runtime", "ECHO.exe");

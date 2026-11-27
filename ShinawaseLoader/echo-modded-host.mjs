@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DARWIN_APP_NAMES, planModdedLaunchArgs, rankEchoInstall } from './platform.mjs';
+import { detectEchoRuntime, executableIn } from './echo-runtime.mjs';
+import { filterSteamCommandArgs } from './platform.mjs';
 
 const loaderDir = dirname(fileURLToPath(import.meta.url));
 // ECHO's Steam AppId; 5105150 is ECHO Playtest.
@@ -127,6 +129,16 @@ export const launchIsolated = ({
   const root = resolve(echoRoot);
   const loader = resolve(loaderRoot);
   const node = resolveHostNode(loader, env);
+  const stock = executableIn(root);
+  if (stock && detectEchoRuntime(stock).runtime === 'gpui') {
+    return spawnChild(node, [join(loader, 'ShinawaseLoader.mjs'), 'run', '--echo', stock,
+      ...filterSteamCommandArgs(args).filter((arg) => !/^--(?:remote-debugging-port|inspect)(?:=|$)/u.test(arg))], {
+      cwd: root, stdio: 'inherit', windowsHide: true,
+      env: { ...env, ECHO_GAME_ROOT: root, ECHO_MOD_HOME: loader,
+        ECHO_SHINAWASE_ARGS: JSON.stringify(filterSteamCommandArgs(args)),
+        ECHO_MOD_HOST_OWNS_LIFETIME: '1', ELECTRON_RUN_AS_NODE: '', ELECTRON_NO_ASAR: '' },
+    });
+  }
   const childEnv = {
     ...env,
     ECHO_MOD_ROOT: root,

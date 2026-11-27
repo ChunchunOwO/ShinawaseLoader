@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DARWIN_APP_NAMES, installRootFromTarget, isPlaytestPath, rankEchoInstall } from '../ShinawaseLoader/platform.mjs';
 import { DEFAULT_UPDATE_MIRRORS, normalizeMirrorBases, sha256Hex } from '../ShinawaseLoader/update-net.mjs';
+import { detectEchoRuntime } from '../ShinawaseLoader/echo-runtime.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const copySkip = new Set([
@@ -243,6 +244,7 @@ export const installMacLoader = ({
   const root = resolve(echoRoot);
   const executable = findDarwinExecutable(root);
   if (!executable) throw new Error(`echo_app_not_found:${root}`);
+  const runtime = detectEchoRuntime(executable, { platform: 'darwin' });
   const contentRoot = installRootFromTarget(executable, 'darwin');
   if (!contentRoot) throw new Error(`echo_content_root_missing:${executable}`);
   const loaderRoot = join(contentRoot, 'ShinawaseLoader');
@@ -264,8 +266,8 @@ export const installMacLoader = ({
     try { config = JSON.parse(readFileSync(join(source, 'loader.config.json'), 'utf8')); } catch { config = {}; }
   }
   config.runtimePath = nodePath;
-  config.autoStart = true;
-  config.autoStartMode = 'app-asar-bridge';
+  config.autoStart = runtime.runtime !== 'gpui';
+  config.autoStartMode = runtime.runtime === 'gpui' ? 'manual' : 'app-asar-bridge';
   config.loadMode = 'external-cdp';
   config.locale = config.locale || locale;
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
@@ -449,7 +451,8 @@ export const runMacSetup = async ({
   const select = (input) => {
     const path = normalizeMacInputPath(input);
     const executable = path && findDarwinExecutable(path);
-    if (!executable || !existsSync(join(dirname(dirname(executable)), 'Resources', 'app.asar'))) {
+    if (!executable || (!existsSync(join(dirname(dirname(executable)), 'Resources', 'app.asar'))
+      && detectEchoRuntime(executable, { platform: 'darwin' }).runtime !== 'gpui')) {
       throw new Error('该路径没有完整的 ECHO.app（需要 Contents/MacOS/ECHO 和 Resources/app.asar）。');
     }
     target = installRootFromTarget(executable, 'darwin');

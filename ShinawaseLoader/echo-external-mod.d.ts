@@ -1,9 +1,12 @@
+/// <reference path="./native-ui.d.ts" />
 type EchoExternalSidebarPage = {
   id?: string;
   label: string;
   icon?: string;
   order?: number;
   html?: string;
+  /** GPUI compatibility descriptor; Electron continues to use html/render. */
+  native?: ShinawasePageNode;
   render?: (root: HTMLElement, context: EchoExternalModPageContext) => void | (() => void);
 };
 
@@ -38,6 +41,8 @@ type EchoLoaderUiSettings = {
   modSort: 'name' | 'recent' | 'enabled';
   /** Mods page filter chip. */
   modFilter: 'all' | 'active' | 'inactive';
+  /** Last native Shinawase page; missing pages fall back to Mods. */
+  lastShinawasePage?: string;
 };
 
 type EchoExternalConfigUiFormHandle = {

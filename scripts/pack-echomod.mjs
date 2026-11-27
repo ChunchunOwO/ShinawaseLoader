@@ -75,7 +75,7 @@ const main = () => {
   const manifest = JSON.parse(readFileSync(manifestInfo.path, 'utf8'));
   if (!/^[a-z0-9][a-z0-9._-]{1,63}$/iu.test(String(manifest.id || ''))) throw new Error('manifest.id must contain 2-64 letters, numbers, dots, underscores, or hyphens');
   const files = collectFiles(root, manifestInfo.name);
-  const entry = safePackagePath(manifest.entry || (manifestInfo.name === 'echo.plugin.json' ? 'plugin.js' : 'mod.js'));
+  const entry = safePackagePath(manifest.entry || manifest.zankyo?.entry || (manifestInfo.name === 'echo.plugin.json' ? 'plugin.js' : 'mod.js'));
   if (!files.some((file) => file.path === entry)) throw new Error(`manifest entry is missing: ${entry}`);
   const totalBytes = files.reduce((total, file) => total + file.data.length, 0);
   if (totalBytes > maxBytes) throw new Error(`package is too large (limit ${formatBytes(maxBytes)})`);
