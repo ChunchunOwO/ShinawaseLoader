@@ -6,7 +6,7 @@
   "previewFile": "preview.png",
   "visibility": "private",
   "description": "ShinawaseLoader for ECHO: a community external Mod loader. Subscribe, enable it and approve full system access; it installs the Loader into the ECHO folder and restarts ECHO in an isolated runtime that loads Mods (Streaming, MV, Lyrics Match and Mod Market). The stock ECHO executable and app.asar are never modified. Source: https://github.com/ChunchunOwO/ShinawaseLoader",
-  "changeNote": "ShinawaseLoader 1.8.1.4: supports ECHO 26.10.26 (the Loader, native host and startup card did not start after ECHO changed its startup entry; streaming playback failed on 26.10.25-26.10.26).",
+  "changeNote": "ShinawaseLoader 1.9.0.0: adds ECHO Zankyo (GPUI) runtime support, updated Streaming/MV/Lyrics Match mods, and installer fixes.",
   "tags": [
     "Sandboxed Plugin"
   ]
