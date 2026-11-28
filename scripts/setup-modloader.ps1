@@ -651,7 +651,7 @@ function Get-SteamLibraryRoots {
 
 # Current Steam ships ECHO.exe. NEXT / Playtest / Steam suffixes are leftover
 # names from older builds; still accepted so a previous install folder resolves.
-$script:EchoGameExePattern = '^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$'
+$script:EchoGameExePattern = '^(?:ECHO(?:\s+(?:NEXT|Playtest|Steam))?|EchoZankyo|echo-gpui)\.exe$'
 
 function Test-EchoPlaytest([string]$ExePath) {
   $normalized = ([string]$ExePath).Replace('/', '\')
@@ -1068,9 +1068,11 @@ function Copy-Loader([string]$source, [string]$echoExe, $versionInfo, [bool]$Ena
   # netease provider falls back to raw HTTP endpoints that now return 404.
   # Use npm shipped inside the portable Node zip — PATH often has neither npm
   # nor a global Node after the installer only copies node.exe.
+  $runtime = (& $node (Join-Path $loaderRoot 'echo-runtime.mjs') $echoExe | Out-String) | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0) { throw 'Could not identify the ECHO runtime.' }
   Install-StreamingBridgeDeps $loaderRoot $node
-  $config | Add-Member -NotePropertyName autoStart -NotePropertyValue $true -Force
-  $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue 'app-asar-bridge' -Force
+  $config | Add-Member -NotePropertyName autoStart -NotePropertyValue ($runtime.runtime -ne 'gpui') -Force
+  $config | Add-Member -NotePropertyName autoStartMode -NotePropertyValue $(if ($runtime.runtime -eq 'gpui') { 'manual' } else { 'app-asar-bridge' }) -Force
   Write-Json $configPath $config
   Write-SetupProgress 70 (T 'progressRuntime')
   Prepare-ModdedRuntime $echoRoot $echoExe $loaderRoot $node | Out-Null
@@ -1232,6 +1234,8 @@ function Stop-EchoInRoot([string]$root) {
   # one from this folder would make the new launcher exit without any effect.
   $patterns = @(
     (Join-Path $root 'ECHO.exe'),
+    (Join-Path $root 'EchoZankyo.exe'),
+    (Join-Path $root 'echo-gpui.exe'),
     (Join-Path $root 'ECHO.modded.exe'),
     (Join-Path $root 'ShinawaseLoader\modded-runtime\ECHO.exe')
   )
@@ -1294,6 +1298,26 @@ function Start-EchoWithProgress($selectedExe) {
   Write-SetupProgress 72 (T 'openingEcho')
   Start-Process -FilePath $modded -WorkingDirectory $root
   $port = Get-LoaderDebugPort (Join-Path $root 'ShinawaseLoader')
+  if ((Test-Path -LiteralPath (Join-Path $root 'EchoZankyo.exe')) -or
+      (Test-Path -LiteralPath (Join-Path $root 'echo-gpui.exe')) -or
+      -not (Test-Path -LiteralPath (Join-Path $root 'resources\app.asar'))) {
+    $config = Read-Json (Join-Path $root 'ShinawaseLoader\loader.config.json') @{}
+    $apiPort = if ($config.port) { [int]$config.port } else { 17862 }
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    Write-SetupProgress 88 '正在确认 Shinawase Zankyo 加密会话 / Checking GPUI session...'
+    while ([DateTime]::UtcNow -lt $deadline) {
+      try {
+        $status = Invoke-RestMethod -Uri "http://127.0.0.1:$apiPort/api/status" -TimeoutSec 2
+        if ($status.runtime -eq 'gpui' -and $status.zankyo.connected) {
+          Write-SetupProgress 100 'Shinawase Zankyo session ready'
+          return $true
+        }
+      } catch {}
+      Start-Sleep -Milliseconds 400
+    }
+    Write-SetupLine 'Shinawase Zankyo session did not become ready.' 'Red'
+    return $false
+  }
   Write-SetupProgress 88 ((T 'launchCdpWaiting') + "  127.0.0.1:$port")
   if (Wait-EchoCdpTarget $port $CdpWaitSeconds) {
     Write-SetupProgress 100 (T 'progressDone')

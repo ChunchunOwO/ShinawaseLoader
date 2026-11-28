@@ -9,7 +9,7 @@ import { DARWIN_APP_NAMES } from './platform.mjs';
 
 const help = `ShinawaseLoader.mjs gpui pack <mod-directory-or-echomod> <new.zip>
 ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] install <mod-directory-or-echomod>
-ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] test <mod-directory-or-echomod> [command-id]
+ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] test <mod-directory-or-echomod> [command-id] [input-json]
 ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] list
 ShinawaseLoader.mjs gpui [--echo <binary-or-folder>] launch
 Use ECHO_GPUI_PATH to select the host, or put echo-gpui on PATH.`;
@@ -91,7 +91,7 @@ export function runGpui(args, readPackage, spawn = spawnSync) {
     return;
   }
   if (!(['list', 'launch'].includes(command) && !inputs.length || command === 'install' && inputs.length === 1 ||
-      command === 'test' && [1, 2].includes(inputs.length))) throw new Error(help);
+      command === 'test' && [1, 2, 3].includes(inputs.length))) throw new Error(help);
   const host = gpuiExecutable(values.echo || process.env.ECHO_GPUI_PATH);
   let directory;
   try {

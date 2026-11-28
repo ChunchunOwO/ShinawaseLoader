@@ -60,6 +60,15 @@ test('GPUI launch stays visible and installation retires its temporary archive',
       return { status: 1 };
     }), /失败/);
     assert.equal(existsSync(archive), false);
+    runGpui(['test', 'pkg', 'cmd.run', '{"ok":true}', '--echo', host], payload, (_, argv, options) => {
+      assert.deepEqual(argv.slice(0, 2), ['--workshop', 'test']);
+      archive = argv[2];
+      assert.ok(existsSync(archive));
+      assert.deepEqual(argv.slice(3), ['cmd.run', '{"ok":true}']);
+      assert.equal(options.windowsHide, true);
+      return { status: 0 };
+    });
+    assert.equal(existsSync(archive), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -2,7 +2,229 @@
 
 ShinawaseLoader uses external Chrome DevTools Protocol injection. It does not require an `app.asar` patch for normal operation.
 
+## Zankyo / native GPUI (experimental)
+
+The launcher automatically detects Electron or a compatible Zankyo binary.
+Electron keeps the CDP runtime described below. Zankyo uses a separate encrypted
+session and native GPUI views; it displays **“Zankyo 版本适配正在进行中，不保证完全可用性。”**
+on each launch. The native **Shinawase** dock is fixed above Settings, with a
+separate caret for its animated drawer. It opens Loader, Mod Market, Mods and
+registered native Mod pages.
+
+The Loader page uses the existing settings, Steam launch options, update,
+locale, performance report and debug-console operations. Mods retains search,
+runtime/enabled filters, sort, list/grid layout, file import, reload, schema or
+JSON configuration and removal confirmation. Market uses the existing catalog,
+recommendations, shuffle, filters, detail/README, login, upload and management
+API. These controls are rendered by GPUI; no browser or WebView is embedded.
+An Electron `configUi` script still requires a native implementation; its
+schema/JSON configuration remains editable.
+
+A dual-runtime package keeps its Electron entry and declares:
+
+```json
+{
+  "id": "author.example",
+  "name": "Example",
+  "version": "1.0.0",
+  "entry": "mod.js",
+  "zankyo": { "entry": "zankyo.js" }
+}
+```
+
+`zankyo.js` is an async function body receiving `echoExternalMod`, with
+top-level `await` and a returned cleanup function. It runs as trusted code in
+the Loader's Node process. It receives `id`, `manifest`, `config`, `log`,
+`runtime: 'gpui'`, `zankyo` and the supported compatibility context below.
+Entry selection is `zankyo.entry`, then `gpui.entry`, then the legacy renderer
+JavaScript entry (`entry` or the usual `mod.js` / `plugin.js`). A `gpui-plugin`
+is installed and enabled through ECHO's plugin interface; this state does not
+mean the external Loader has loaded it. Native and compatibility entries report
+`loaded` with `runtime: 'zankyo'` or `'electron-compat'`; unsupported Electron
+surfaces report `incompatible` with a migration reason. See `zankyo-template` and use
+`zankyo-external-mod.d.ts` for editor declarations.
+
+```js
+const { core, ui, settings, native } = echoExternalMod.zankyo;
+const capabilities = await core('host.describe');
+const views = await ui.views();
+await ui.patch(views.find(name => name.endsWith('::player_view::Player')), {
+  type: 'column',
+  children: [
+    { type: 'original' },
+    { type: 'button', text: 'Next', onClick: 'next', padding: 8 }
+  ]
+});
+return ui.onAction(async action => {
+  if (action === 'next') await core('playback.control', { action: 'next' });
+});
+```
+
+`ui.patch(view, tree)` replaces any registered view in the next native render.
+An `original` node can embed its original subtree once. Native node types are
+`row`, `column`, `text`, `button`, and `original`; style fields are documented
+in the types. `ui.remove(view?)` restores the original. `ui.action(command)`
+uses ECHO's existing shortcut names; `settings.get/set` reads/updates the native
+preferences through ECHO's normal persistence path. `core(method,input)` uses
+the host command registry, retaining ECHO's domain permissions and validation.
+`zankyo.call('session.describe')` reports the native protocol and build ID.
+
+External providers use `zankyo.providers.register(kind, id, {title}, handlers)`,
+where `kind` is `sources`, `lyrics`, or `mv`. They execute in the Loader and
+register with the existing native router as `shinawase.<package-id>`.
+Source callbacks receive `search`, `browse`, and `resolve` inputs; lyrics use
+`lookup({track, automatic, exact, signal})`. MV uses managed session operations
+(`observe`, `status`, `search`, `select`, `retry`, `clear`, `deactivate`, with
+optional quality/load/failure operations). Every callback receives an
+`AbortSignal`. Registration is limited to 64 capabilities per package, requests
+to 32 outstanding callbacks, and every callback has an 18-second deadline.
+The independent encrypted polling loop permits nested Core calls.
+
+`zankyo.media.createRelay()` creates a package-owned loopback media relay with
+`publish(url, headers)`, `publishFile(absolutePath)`, `clear()` and `close()`.
+Each relay retains at most eight streams and serves bounded concurrent range
+requests. Four relays are allowed per package. Disable, failed startup and
+reload close them automatically. Credentials remain in the Loader; native
+queues contain stable provider references and tokenized media addresses.
+
+`dataRoot` is a package-owned persistent directory; `timers` retire with the
+package. `importModule(relativePath)` loads package-local CJS or MJS after real
+path validation. CJS dependencies and directly imported MJS files participate
+in reload fingerprints. Bundle transitive MJS dependencies into that module
+when they must reload together. `importDependency(name)` accesses installed
+Loader dependencies or Node built-ins in the same full-trust process.
+
+`ui.createPage({id,label,render,action})` serializes page actions, displays
+action errors and suppresses unchanged screen updates. Its result exposes
+`refresh()`, `error(message)` and `close()`. `ui.choosePath({directory,multiple})`
+uses the native picker; `ui.openUrl(url)` accepts HTTP(S). The generic
+`ui.lyricsProvider` call selects the existing native automatic lyrics source,
+and `ui.openMv` opens the existing native MV controls.
+
+Core additions for external media tools are `media.current`, `lyrics.search`,
+`lyrics.applyProvider` and `lyrics.editCurrent`. Current-track writes require
+`expectedSequence` from `media.current`; they reject a changed track instance.
+`lyrics.applyProvider` preserves original, timed, word-timed, translated and
+romanized lyric fields. `lyrics.editCurrent` accepts `offset`, `clear`, and
+`instrumental`. Explicit local-library writes can still use `trackId`.
+See the three [active external ports](../examples/ZANKYO-PORTS.md).
+
+`ui.page(id, { label, body })` registers or replaces a native Mod page in the
+same drawer and returns its remover. Page IDs belong to their package. All
+pages and action handlers retire on disable, reload, startup failure or session
+loss. With at least eight Mod pages the drawer provides a page filter.
+
+```js
+const { ui } = echoExternalMod.zankyo;
+const removePage = ui.page('tools', {
+  label: 'My tools',
+  body: { kind: 'section', children: [
+    { kind: 'heading', text: 'My tools' },
+    { kind: 'field', id: 'message', text: 'Message', value: 'Hello' },
+    { kind: 'button', text: 'Apply', action: 'apply', tone: 'primary' }
+  ] }
+});
+const stop = ui.onAction(async (action, fields) => {
+  if (action === 'apply') echoExternalMod.log(fields.message);
+});
+return () => { stop(); removePage(); };
+```
+
+Use `ShinawasePageNode` in `zankyo-external-mod.d.ts` for supported controls.
+Page actions and field values travel over the owning encrypted session. Native
+file pickers send only chosen paths back to the Loader; file reads and API work
+stay off ECHO's UI thread. Native package imports share the API's 32 MiB upload
+limit; settings import is limited to 1 MiB. Settings export refuses to overwrite
+an existing file. Use a new destination when exporting.
+
+For deeper changes, `native.load('relative/module.dll')` (or `.dylib`/`.so`)
+loads a full-trust in-process extension. It exports
+`Shinawase_HostBuild_v1` and `Shinawase_Entry_v1` as documented in ECHO GPUI's
+`docs/shinawase.md` and `examples/shinawase/shinawase.h`. Native extensions can
+mutate live native objects and replace the rendered `AnyElement` at each view
+boundary. They must target the exact `nativeBuild`, compiler and GPUI build;
+this is not a stable Rust object ABI. `native.invoke(input)` calls event 2.
+Retirement disables hooks but keeps code mapped until exit; restart after
+32 library loads.
+
+Disable, changed entry/config, failed initialization and disconnection remove
+the package's transient overrides and retire native hooks. Explicit Core and
+settings writes persist. File paths must stay inside the package, including
+symlink resolution. Enabled entries are trusted Node code, not a sandbox.
+
+The session uses per-launch AES-256-GCM keys and sequence-checked frames. ECHO
+connects only to the owning Loader and removes inherited key variables before
+starting workers. Keys are never persisted or exposed by HTTP; there is no
+generic HTTP/native RPC proxy. `/api/zankyo/status` requires the installation's
+`x-shinawase-token`, including non-browser requests. During a GPUI session,
+mutating Loader HTTP requests also require that token. This protects the launch
+capability; it does not isolate either process from an administrator/debugger
+or already enabled full-trust code.
+
+`attach` cannot retrofit this capability into an ordinary running GPUI process:
+restart it through Shinawase. The Shinawase startup card has been removed on
+both runtimes; saved `startupSplash` values are ignored and the setting is no
+longer offered. The Loader also sends a false compatibility flag to suppress
+the card in older matching GPUI hosts. The Zankyo experimental notice still appears.
+
+## Electron API compatibility on Zankyo
+
+The compatibility layer lives in `zankyo-compat.mjs` in the Loader. GPUI does
+not run an Electron renderer, a browser or a simulated DOM. API-only async
+renderer entries can run unchanged. A legacy dependency on `main`, `native`,
+`nativeShell`, the sandboxed Plugin VM, HTML or CSS requires a native port.
+Use `sdk.list()` and feature detection: this is an implemented subset, not the
+complete Electron preload contract.
+`extend` is `null`; DOM replacement/CSS hooks require the native view interfaces.
+
+- `echo` and the scoped `window.echo` expose `app.getSettings/setSettings` for
+  GPUI preference keys and playback `getStatus`, `play`, `pause`, `stop`, `seek`,
+  `setRepeatMode`, `playMediaItem`, `playLocalFile` and `onStatus`. Status uses
+  Electron's `positionMs` / `durationMs`; calls retain Core validation. The
+  native preference key set may differ from Electron's. Unknown keys fail.
+- `player` provides the same basic controls, next/previous, `status()` in
+  seconds, `playback()` returning the playback API, queue submission/append,
+  replacement, clearing and supported `command()` actions. `queue()` is a
+  bounded native snapshot, not a mutable renderer queue VM; it exposes the
+  first 256 items and pagination metadata. The native status does not disclose
+  file paths; `filePath` is `null`. Indexed local track IDs and already
+  resolved stream URLs work. Provider resolution and local file-path-only
+  playback need a source integration; unsupported options fail explicitly.
+- `sdk.getEcho/list/get/call/status`, `toast`, package-owned `settings`,
+  `assetUrl/loadAsset`, `fetchJson/uploadFile`, and `loaderSettings.get/set/onChange`
+  reuse Loader services. Settings are stored per package under
+  `zankyo-settings/`, capped at 64 KiB and saved by rename. They are separate
+  from Electron's old renderer localStorage. Package assets keep the realpath
+  boundary and an 8 MiB read limit.
+- `sidebar.register({ id, label, native })` renders a `ShinawasePageNode`.
+  The external `plugin-template` demonstrates this using one entry script.
+  A dual UI descriptor may keep `html` / `render` beside `native`; Electron
+  uses its existing UI while GPUI selects the native descriptor. Native page
+  actions use `zankyo.ui.onAction(action, fields)`.
+
+Playback listeners share one host snapshot per polling cycle and read only
+when subscribed. Disabling/reloading or failed initialization retires page
+registrations, listeners and scoped timers; late calls through that Mod's
+context reject after retirement. These entries are full-trust Node code and
+can deliberately bypass scoped helpers. This is not process isolation.
+
+For audio integration, call the generic registry via `zankyo.core`:
+`audio.output.listDevices/getStatus/setOutput`, `audio.dsp.getGraph/applyGraph`,
+`audio.dsp.getRackOrder/setRackOrder` and `audio.getAnalysis`. Host checks,
+including Pro DSP availability, still apply. `queue.submit` accepts catalog,
+source and resolved stream references. The `zankyo-template` includes an audio
+tools page using these interfaces, with no platform/provider logic in GPUI.
+Changing a decoder, device driver/backend or realtime PCM processing requires
+an implementation in the separate Audio Host. The UI-process native ABI does
+not automatically make Electron `.node` addons or audio backends compatible.
+
+
 ## Native ECHO GPUI target
+
+This is ECHO's standard plugin route. It is separate from the encrypted
+external `zankyo.entry` session above and does not provide arbitrary native
+view replacement. A package can declare both entries; the external Loader
+uses `zankyo.entry`, while the `gpui` commands select `gpui.entry`.
 
 A dual-target Mod keeps its renderer `entry` and adds `"gpui": {"protocol": 1, "entry": "gpui/plugin.mjs"}` to the same manifest. Keep all GPUI code and assets under `gpui/`. Export `activate(context)` and use the native Workshop context for pages, commands, storage and playback. See `mod-template/gpui/plugin.mjs`. The host receives the original Mod ID, title, version and GPUI descriptor, including any required capabilities. The ZIP contains the GPUI subtree. To share an existing implementation with the Electron target, list its package-root module filenames in the optional top-level `gpuiAssets` array. ECHO MV uses this for its matching engine.
 
@@ -76,7 +298,6 @@ The Loader page has an Appearance section. Every option persists in `loader.conf
 | `accentColor` | `''` (default) or `#rrggbb` | Overrides `--theme-accent` on loader-owned surfaces only; empty follows the ECHO theme. |
 | `animations` | `true` (default), `false` | Loader UI animations and transitions. |
 | `showTitlebarBrand` | `true` (default), `false` | Show or hide the injected Shiawase label in ECHO's title bar. |
-| `startupSplash` | `true` (default), `false` | Shinawase startup animation shown while ECHO boots. Read by the modded runtime at the next launch, so it is the one key that does not apply immediately. |
 | `cardLayout` | `list` (default), `grid` | Mods page card arrangement. |
 | `showModDescriptions` | `true` (default), `false` | Description line on mod cards. |
 | `showModVersions` | `true` (default), `false` | Version badge on mod cards. |

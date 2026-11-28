@@ -34,11 +34,13 @@ ShinawaseLoader 是 ECHO Steam（当前对齐 echo-steam **26.10.26**，Electron
 
 ## ✨ 特性
 
+**Zankyo / Rust + GPUI（实验适配）**：新版启动器会自动区分 Electron 与支持 Shinawase 接口的 Zankyo。Zankyo 每次启动都会显示“Zankyo 版本适配正在进行中，不保证完全可用性。”。Shinawase 固定在侧栏「设置」上方，原生抽屉提供 Loader、Mod Market、Mods 和模组页面；支持包管理、设置、配置抽屉与市场操作。界面仍待完整实机对照验收。Mod 在清单中声明 `zankyo.entry` 后可实时修改原生视图、调用宿主命令，或加载匹配当前构建的受信任原生扩展。旧版 DOM/CSS 和自定义 `configUi` 脚本需要原生适配；配置可回退到 schema 或 JSON 编辑器。接口使用每次启动生成的加密会话，普通启动不会开放控制端口；详见 [Zankyo SDK](ShinawaseLoader/SDK.md#zankyo--native-gpui-experimental) 与 [示例](ShinawaseLoader/zankyo-template)。
+
 | 能力 | 说明 |
 | --- | --- |
 | **全新注入 UI** · v1.6.0 | Mods 管理页、配置弹窗与 Loader 状态页（语言、调试、更新）。 |
 | **Shinawase 侧栏** · v1.8.0 | 侧栏「设置」上方常驻 **Shinawase** 一行。点右侧箭头（或按住向上拖）把整个侧栏切换成模组侧栏：Loader、Mod Market、Mods 和所有模组页面，页面多时可筛选；点标题栏、按住向下拖或按 Esc 即可收起（滚轮只滚动列表，不会收起侧栏）。直接点 Shinawase 会同时打开上次用过的页面。 |
-| **启动卡片** | 经隔离运行时启动 ECHO 时，先出现一张留白的长方形纸色卡片，用一笔线条写出 Shinawase。ECHO 主窗口若在动画播完前就绪，会等动画播完再出现；若还没就绪，卡片一直显示到 ECHO 出来。随后卡片收尾、清空，ECHO 窗口盖在它上面接管。可在 Loader 页「外观 → 启动动画」关闭，或用 `--no-startup-splash` / 环境变量 `SHINAWASE_STARTUP_SPLASH=0` 跳过；每次启动的时间线写在 `Logs/startup-splash.log`。 |
+| **启动窗口** | 已移除 Electron 和 Zankyo 的 Shinawase 启动卡片，不再等待动画后显示 ECHO。旧 `startupSplash: true` 配置也不生效；Zankyo 的实验性适配提示保留。 |
 | **Mod Market** · v1.7.0 | Shinawase 侧栏中的「Mod Market」。从官方目录浏览、搜索、安装和更新 `.echomod`，样式与 Mods 页同一套主题。 |
 | **自定义配置页** · v1.6.0 | 清单字段 `configUi` 指向自定义脚本；失败时回退到 `config.schema.json` 自动渲染。 |
 | 渲染进程注入 | 默认 `external-cdp`：经 Chrome DevTools Protocol 注入，不改 `ECHO.exe`。 |
@@ -54,6 +56,12 @@ ShinawaseLoader 是 ECHO Steam（当前对齐 echo-steam **26.10.26**，Electron
 Windows 安装程序会扫描 Steam 库定位 `ECHO.exe` / `ECHO Steam.exe`（优先 `D:\SteamLibrary\steamapps\common\ECHO\ECHO.exe`，不会因路径排序默默选中 Playtest），把 Loader 复制到游戏目录旁，并创建空的 `Mods`、`Plugins` 投放文件夹。若本机缺少 Node，会自动下载 **22.23.2** 到当前用户缓存。全程无需管理员权限。可用 `ECHO_ROOT`、`--echo` 或 `%LOCALAPPDATA%\ShinawaseLoader\selection.json` 覆盖目标。macOS 与 Linux 用下方的 shell 安装器，不走这套 PowerShell 菜单。
 
 ### ECHO GPUI 原生版
+
+这里的 `gpui.entry` 使用 ECHO 的标准插件接口，与上面的外部 Shinawase `zankyo.entry` 接口分别加载。包可以同时包含 Electron 和 GPUI 入口。加载优先级为 `zankyo.entry`、`gpui.entry`、旧 JavaScript 入口的 API 兼容运行；旧版 DOM/CSS/React 界面仍需要原生适配。外部面板将只有标准 GPUI 入口的已启用包标为 `gpui-plugin`，需要在 ECHO 插件页安装、授权和启用；该状态不代表外部 Loader 已加载它。Zankyo 原生 Mods 和市场页提供 Electron、标准 GPUI、外部 Zankyo 筛选；双端包会出现在各自支持的筛选中。筛选依赖目录声明，不代表对应功能已经实播验收。
+
+旧 JavaScript Mod 的 `echo` 播放控制、`player`、SDK 方法发现、独立设置、包内资源读取、网络代理及提示可通过 Loader 的兼容层运行。侧栏可在原有 `html` / `render` 旁增加 `native` 描述，分别用于 Electron 和 GPUI；卡片显示实际选中的运行方式。DOM、Electron 主进程和旧原生 ABI 依赖会明确标为 `incompatible`。兼容子集及限制见 [SDK](ShinawaseLoader/SDK.md#electron-api-compatibility-on-zankyo)。
+
+原生页面、视图覆盖、输出设备、DSP 和音频分析的业务逻辑均由独立 Mod / Loader 实现，GPUI 仅提供通用渲染和命令接口。修改解码器、设备后端或实时 PCM 链路仍需对应 Audio Host 的原生实现；UI 进程扩展不能直接替代音频宿主。标准 GPUI 的流媒体 / MV 包与外部 Mod 兼容层分别维护，不能以包存在代替真实播放验收。
 
 在 GPUI 的「插件 → 已安装 → 导入」中分别选择 [ECHO MV 安装包](examples/packages/ECHO-MV-GPUI.zip) 和 [ECHO Streaming 安装包](examples/packages/ECHO-Streaming-GPUI.zip)，然后打开对应插件的开关并授权。重启后如果侧栏没有 ECHO Streaming，可回到「已安装」重新启用。
 
@@ -238,7 +246,7 @@ Linux 安装器认包含 `ECHO` 可执行文件和 `resources/app.asar` 的目�
 
 `node ShinawaseLoader.mjs self-update [--force]` 从主菜单选定的下载源更新 Loader 与预装包。双击 `ECHO.modded.exe` 时默认自动执行；可在 `loader.config.json` 设 `"autoUpdate": false` 关闭。双击 `ECHO.modded.exe` 时的自动更新最多占用启动 45 秒，之后放弃并在下次继续（未完成的下载会断点续传）。
 
-`node ShinawaseLoader.mjs dev --source "<ECHOSTEAM_SOURCE>" [--full]` 在 ECHO 源码仓库里执行 `npm run dev`（electron-vite），自动附加 `--remoteDebuggingPort` / `--inspect`，并把 Mod 注入到开发版 ECHO。渲染进程来自本机 Vite 服务器；electron-vite 因主进程改动重启 Electron 后会重新执行主进程引导。dev 模式不同步隔离运行时、不修补 `app.asar`，所以没有启动卡片与 asar 桥接；ECHO 退出后 Loader 一并退出。也可设置 `ECHOSTEAM_ROOT`，或用 `dev-echo-source.bat "<ECHOSTEAM_SOURCE>"`。需要独立测试数据时设置 `ECHO_USER_DATA_PATH_OVERRIDE`。
+`node ShinawaseLoader.mjs dev --source "<ECHOSTEAM_SOURCE>" [--full]` 在 ECHO 源码仓库里执行 `npm run dev`（electron-vite），自动附加 `--remoteDebuggingPort` / `--inspect`，并把 Mod 注入到开发版 ECHO。渲染进程来自本机 Vite 服务器；electron-vite 因主进程改动重启 Electron 后会重新执行主进程引导。dev 模式不同步隔离运行时、不修补 `app.asar`，因此不加载 asar 桥接；ECHO 退出后 Loader 一并退出。也可设置 `ECHOSTEAM_ROOT`，或用 `dev-echo-source.bat "<ECHOSTEAM_SOURCE>"`。需要独立测试数据时设置 `ECHO_USER_DATA_PATH_OVERRIDE`。
 
 `--load-mode` 取值：`external-cdp`（默认）、`attach-only`、`disabled`。
 
@@ -377,7 +385,7 @@ flowchart TB
 
 - **CDP 注入**：HTML / CSS / JS / WASM、侧栏页面、`window.echo` 均在渲染进程可用。
 - **inspector bootstrap**：启动时带 `--inspect`，在主进程求值 `main-bootstrap.cjs`，注册 streaming / account IPC、`streaming-preload.cjs` 与 native host。
-- **启动卡片**：asar-bridge 在主入口最前面加载 `startup-splash.cjs`，在 app-ready 时打开 `startup-splash.html` 的卡片窗口，并暂存 ECHO 主窗口的 show / maximize，等动画播完后按原顺序重放。对话框、渲染崩溃、超时或退出都会让卡片立即让路。
+- **启动兼容**：补丁版本 11 不再注入启动卡片，并移除旧注入块。旧运行时引用的 `startup-splash.cjs` 保留为空操作入口，下一次隔离同步会重建运行时。
 - **单实例**：Loader 监听 `17862`；日志写入 `ShinawaseLoader/Logs/loader.log` 与 `errors.log`。asar-bridge 发现 Loader 意外退出时会记录退出码并最多重启 3 次，Loader 自身的 stderr 落在 `Logs/loader-stderr.log`。
 
 ## 📁 目录结构
@@ -395,8 +403,8 @@ flowchart TB
 │   ├── main-bootstrap.cjs
 │   ├── native-host.cjs
 │   ├── native-shell-host.cjs
-│   ├── startup-splash.cjs     # 启动卡片：主进程控制
-│   ├── startup-splash.html    # 启动卡片：页面与动画（?demo=1 可在浏览器预览）
+│   ├── startup-splash.cjs     # 旧运行时兼容入口：不创建窗口
+
 │   ├── streaming-bridge.ts
 │   ├── streaming-preload.cjs
 │   ├── workshop-bootstrap.mjs # 创意工坊版的安装与切换逻辑

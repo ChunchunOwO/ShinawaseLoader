@@ -93,7 +93,13 @@ namespace Shinawase.Manager
         public string HostScript { get { return Path.Combine(LoaderRoot, "echo-modded-host.mjs"); } }
 
         public string ModdedExe { get { return Path.Combine(Root, "ECHO.modded.exe"); } }
-        public string RuntimeExe { get { return Path.Combine(LoaderRoot, "modded-runtime", "ECHO.exe"); } }
+        public bool IsZankyo { get { return File.Exists(Path.Combine(Root, "EchoZankyo.exe"))
+            || File.Exists(Path.Combine(Root, "echo-gpui.exe")) || !File.Exists(Path.Combine(Root, "resources", "app.asar")); } }
+        public string RuntimeExe { get { return IsZankyo
+            ? (File.Exists(Path.Combine(Root, "EchoZankyo.exe"))
+                ? Path.Combine(Root, "EchoZankyo.exe")
+                : (File.Exists(Path.Combine(Root, "echo-gpui.exe")) ? Path.Combine(Root, "echo-gpui.exe") : ExePath))
+            : Path.Combine(LoaderRoot, "modded-runtime", "ECHO.exe"); } }
         public string LoaderVersion { get { return loaderVersion; } private set { Set(ref loaderVersion, value, "LoaderVersion"); } }
         public bool HasHost { get { return hasHost; } private set { Set(ref hasHost, value, "HasHost"); } }
         public bool HasRuntime { get { return hasRuntime; } private set { Set(ref hasRuntime, value, "HasRuntime"); } }
@@ -197,7 +203,7 @@ namespace Shinawase.Manager
     public static class Discovery
     {
         // Current Steam ships ECHO.exe; NEXT / Playtest / Steam are older names.
-        private static readonly Regex ExePattern = new Regex(@"^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$", RegexOptions.IgnoreCase);
+        private static readonly Regex ExePattern = new Regex(@"^(?:ECHO(?:\s+(?:NEXT|Playtest|Steam))?|EchoZankyo|echo-gpui)\.exe$", RegexOptions.IgnoreCase);
 
         public static bool IsEchoExe(string path)
         {
@@ -759,8 +765,8 @@ namespace Shinawase.Manager
                 await RunStep("deps", step => InstallDeps(target, step, result, token), token);
                 // Enable the asar bridge only once the bridge's dependencies had their chance.
                 var finalConfig = Json.TryReadObject(Path.Combine(target.LoaderRoot, "loader.config.json")) ?? new JObject();
-                finalConfig["autoStart"] = true;
-                finalConfig["autoStartMode"] = "app-asar-bridge";
+                finalConfig["autoStart"] = !target.IsZankyo;
+                finalConfig["autoStartMode"] = target.IsZankyo ? "manual" : "app-asar-bridge";
                 Json.WriteObject(Path.Combine(target.LoaderRoot, "loader.config.json"), finalConfig);
 
                 current = "runtime";
@@ -893,6 +899,7 @@ namespace Shinawase.Manager
                 await RunStep("prepare", async step =>
                 {
                     if (!File.Exists(target.ExePath)) throw new StepFailure("ECHO.exe not found: " + target.ExePath);
+                    if (target.IsZankyo) throw new StepFailure("Workshop edition is not supported for ECHO Zankyo (GPUI); use the external edition.");
                     if (!File.Exists(script)) throw new StepFailure("workshop-setup.mjs is missing from " + source);
                     await Task.Run(() =>
                     {
@@ -1545,7 +1552,9 @@ namespace Shinawase.Manager
     {
         public static List<Process> EchoProcesses(EchoTarget target)
         {
-            return Proc.FindByImage(new[] { Path.Combine(target.Root, "ECHO.exe"), target.ModdedExe, target.RuntimeExe }, "ECHO", "ECHO.modded");
+            return Proc.FindByImage(
+                new[] { Path.Combine(target.Root, "ECHO.exe"), Path.Combine(target.Root, "EchoZankyo.exe"), Path.Combine(target.Root, "echo-gpui.exe"), target.ModdedExe, target.RuntimeExe },
+                "ECHO", "ECHO.modded", "EchoZankyo", "echo-gpui");
         }
 
         public static void StopLoader(string loaderRoot)
@@ -1624,6 +1633,18 @@ namespace Shinawase.Manager
             catch { return false; }
         }
 
+        public static async Task<bool> ZankyoAsync(int port)
+        {
+            try
+            {
+                var text = await Net.GetStringAsync("http://127.0.0.1:" + port + "/api/status", 900, 4 * 1024 * 1024);
+                var status = Json.ParseObject(text);
+                var native = status.Obj("zankyo");
+                return status.Str("runtime") == "gpui" && native != null && native.Bool("connected") == true;
+            }
+            catch { return false; }
+        }
+
         public static async Task<RunStatus> StatusAsync(EchoTarget target)
         {
             var status = new RunStatus();
@@ -1647,7 +1668,7 @@ namespace Shinawase.Manager
             status.StockRunning = stock > 0 && !(status.ModdedRunning && target.IsWorkshop && windowlessStock == stock);
             if (status.ModdedRunning)
             {
-                var cdp = CdpAsync(target.DebugPort);
+                var cdp = target.IsZankyo ? ZankyoAsync(target.ApiPort) : CdpAsync(target.DebugPort);
                 var api = LoaderApiAsync(target.ApiPort);
                 status.Cdp = await cdp;
                 status.LoaderApi = await api;
@@ -1691,7 +1712,7 @@ namespace Shinawase.Manager
             while (DateTime.UtcNow < deadline)
             {
                 token.ThrowIfCancellationRequested();
-                if (await CdpAsync(outcome.Port)) { outcome.CdpReady = true; break; }
+                if (await (target.IsZankyo ? ZankyoAsync(target.ApiPort) : CdpAsync(outcome.Port))) { outcome.CdpReady = true; break; }
                 if (host != null && host.HasExited)
                 {
                     var code = host.ExitCode;

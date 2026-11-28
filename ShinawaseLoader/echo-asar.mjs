@@ -10,7 +10,6 @@ const nativeHostMarker = '/* shinawase-loader-native-host-v1 */';
 const preloadMarker = '/* shinawase-loader-preload-bridge-v1 */';
 const playbackMarker = '/* shinawase-loader-streaming-playback-v2 */';
 const playbackMarkerV1 = '/* shinawase-loader-streaming-playback-v1 */';
-const splashMarker = '/* shinawase-loader-startup-splash-v1 */';
 // Bump when main/preload/renderer patches change, so runtime-sync
 // rebuilds isolated runtimes that were patched by an older Loader.
 // 2: startup splash block.
@@ -19,7 +18,8 @@ const splashMarker = '/* shinawase-loader-startup-splash-v1 */';
 // 9: 26.10.22+ rolldown output (tabs, code-split main chunks, (0,x.useMemo)).
 // 10: 26.10.26 stub entry (blocks import Electron themselves, stay out of the
 //     Echo Link bridge process); multi-statement streaming branch.
-const PATCH_REVISION = 10;
+// 11: remove the startup window, including older injected splash blocks.
+const PATCH_REVISION = 11;
 const MAIN_ENTRY = 'out/main/index.js';
 // The entry's code-split siblings: out/main/chunks/ up to 26.10.21, flat next
 // to index.js from 26.10.22 (rolldown).
@@ -413,39 +413,6 @@ const nativeHostBridge = `${nativeHostMarker}
         console.warn('[ShinawaseLoader] native host unavailable', error);
       });
   }).catch(() => {});
-})(${blockElectronApp});
-`;
-
-// Runs first in the main entry, so startup-splash.cjs can watch for ECHO's
-// main window and be ready before ECHO's own app-ready work. The splash itself
-// lives in the Loader folder and updates with the Loader.
-const splashBridge = `${splashMarker}
-((app) => {
-  try {
-    const builtin = (name) => process.getBuiltinModule?.(name);
-    const fs = builtin('node:fs');
-    const path = builtin('node:path');
-    const nodeModule = builtin('node:module');
-    if (!fs || !path || !nodeModule || !app || process.argv?.includes('--echo-link-bridge')) return;
-    // Without the launcher's ECHO_MOD_ROOT (a runtime started directly), walk up
-    // from <root>/ShinawaseLoader/modded-runtime the same way on every platform.
-    const installRoot = process.env.ECHO_MOD_ROOT || (process.platform === 'darwin'
-      ? (() => {
-        const appBundle = path.dirname(path.dirname(process.resourcesPath));
-        const parent = path.dirname(appBundle);
-        return path.basename(parent) === 'modded-runtime' ? path.dirname(path.dirname(parent)) : path.dirname(appBundle);
-      })()
-      : (() => {
-        const runtimeRoot = path.dirname(process.resourcesPath);
-        return path.basename(runtimeRoot) === 'modded-runtime' ? path.dirname(path.dirname(runtimeRoot)) : runtimeRoot;
-      })());
-    const loaderRoot = process.env.ECHO_MOD_HOME || path.join(installRoot, 'ShinawaseLoader');
-    const script = path.join(loaderRoot, 'startup-splash.cjs');
-    if (!fs.existsSync(script)) return;
-    nodeModule.createRequire(script)(script).installShinawaseStartupSplash?.({ loaderRoot });
-  } catch (error) {
-    try { console.warn('[ShinawaseLoader] startup splash unavailable', error); } catch {}
-  }
 })(${blockElectronApp});
 `;
 
@@ -999,7 +966,8 @@ const applyRepeatOneIdentityFix = (text) => {
   return next;
 };
 
-const injectSplashBridge = (text) => (text.includes(splashMarker) ? text : `${splashBridge}\n${text}`);
+// Remove only the generated block; older runtimes may still carry it.
+const removeSplashBridge = (text) => text.replace(/\/\* shinawase-loader-startup-splash-v1 \*\/[\s\S]*?\n\}\)\([^\r\n]*\);(?:\r?\n)?/gu, '');
 // Only an ES module entry can take the import; a CommonJS one uses require().
 const ensureElectronImport = (text) => (text.includes(electronImportMarker) || !/^\s*(?:import|export)\b/mu.test(text) ? text : `${electronImport}\n${text}`);
 
@@ -1027,13 +995,13 @@ const patch = (root) => {
   }
   const mainWithBridge = currentText.includes(marker) || currentText.includes('external-mod-loader:start:requested') ? currentText : `${bridge}\n${currentText}`;
   const mainWithNative = mainWithBridge.includes(nativeHostMarker) ? mainWithBridge : `${nativeHostBridge}\n${mainWithBridge}`;
-  const mainWithSplash = ensureElectronImport(injectSplashBridge(mainWithNative));
+  const mainWithoutSplash = ensureElectronImport(removeSplashBridge(mainWithNative));
   // From 26.10.22 the main process is code-split: the media resolver stays in
   // the entry, while AudioSession and the auxiliary windows live in their own
   // chunks. Each fix is applied to the chunk that carries its anchor.
   const mainEntries = new Map([[MAIN_ENTRY, main], ...mainChunksIn(current.value).map((entry) => [entry.relativePath, entry])]);
   const originals = new Map([...mainEntries].map(([relativePath, entry]) => [relativePath, relativePath === MAIN_ENTRY ? currentText : entryBytes(current, entry).toString('utf8')]));
-  const chunkTexts = new Map(originals).set(MAIN_ENTRY, mainWithSplash);
+  const chunkTexts = new Map(originals).set(MAIN_ENTRY, mainWithoutSplash);
   // A streaming anchor that a new ECHO build moved must not cost the whole
   // runtime its Loader bridge: keep the other patches and report the miss.
   let playbackWarning = null;
@@ -1176,7 +1144,7 @@ const verifyAnchors = (root) => {
   };
 };
 
-export { patch, restore, syncIntegrity, verifyAnchors, ensureElectronImport, splashBridge as splashBridgeSource, patchSteamPlaylistsPage, patchLyricsPage, patchPlayback, applyRepeatOneIdentityFix, patchPreload, injectSplashBridge, applyAuxiliaryWindowCrashFix, PATCH_REVISION, bridge as mainBridgeSource };
+export { patch, restore, syncIntegrity, verifyAnchors, ensureElectronImport, patchSteamPlaylistsPage, patchLyricsPage, patchPlayback, applyRepeatOneIdentityFix, patchPreload, removeSplashBridge, applyAuxiliaryWindowCrashFix, PATCH_REVISION, bridge as mainBridgeSource };
 
 const isMain = process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
 if (isMain) {

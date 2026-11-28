@@ -1,11 +1,12 @@
 {
   "id": "echo.lyrics-match-whitebox",
   "name": "ECHO 歌词匹配白盒（鹤良修改版）",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "minEchoVersion": "26.8.15",
   "description": "鹤良修改版：ECHO 歌词匹配白盒，手动候选列表、翻译预览、记忆本曲选择并自动复用；内置繁简/日文/噪音标准化、直接匹配与流媒体快照歌词搜索；QQ 音乐候选会拉取完整歌词与翻译并清理标题/制作信息。",
   "icon": "icon.svg",
   "entry": "mod.js",
   "config": "config.json",
-  "configSchema": "config.schema.json"
+  "configSchema": "config.schema.json",
+  "zankyo": { "entry": "zankyo.js" }
 }

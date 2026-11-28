@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import {
   DEFAULT_CDP_PORT, DEFAULT_LOADER_PORT, DEFAULT_UI_SETTINGS, EXTEND_BLOCKED_SEGMENTS,
   ICON_EXTENSIONS, MANIFEST_NAMES, MAX_PACKAGE_BYTES, MAX_REQUEST_BYTES,
@@ -150,6 +151,18 @@ test('default UI settings keys and defaults are mirrored', () => {
   for (const [key, value] of Object.entries(DEFAULT_UI_SETTINGS)) {
     const literal = typeof value === 'string' ? `'${value}'` : String(value);
     assert.ok(block[1].includes(`${key}: ${literal}`), `defaultUiSettings.${key} default diverged`);
+  }
+});
+
+test('persisted native page uses the real settings sanitizer and bounds restored values', () => {
+  const start = loaderSource.indexOf('const defaultUiSettings =');
+  const end = loaderSource.indexOf('const loaderConfig =', start);
+  assert.ok(start > 0 && end > start);
+  const sanitize = runInNewContext(loaderSource.slice(start, end) + '\nsanitizeUiSettings;');
+  assert.equal(Object.hasOwn(sanitize({ startupSplash: true }), 'startupSplash'), false, 'removed startup settings cannot be restored');
+  assert.equal(sanitize({ lastShinawasePage: 'demo.native/tools' }).lastShinawasePage, 'demo.native/tools');
+  for (const value of [undefined, 2, {}, '', 'a'.repeat(161), 'mods\ninvalid']) {
+    assert.equal(sanitize({ lastShinawasePage: value }).lastShinawasePage, 'mods');
   }
 });
 

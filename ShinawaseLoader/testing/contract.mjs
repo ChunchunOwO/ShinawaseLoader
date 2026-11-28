@@ -173,9 +173,9 @@ export const DEFAULT_UI_SETTINGS = Object.freeze({
   rememberFilters: true,
   modSort: 'name',
   modFilter: 'all',
+  lastShinawasePage: 'mods',
   steamLaunchReminder: false,
   showTitlebarBrand: true,
-  startupSplash: true,
 });
 
 // SDK.md "echo-steam 26.10.18 alignment": window.echo namespaces observed on the

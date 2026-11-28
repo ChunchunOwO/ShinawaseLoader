@@ -17,6 +17,7 @@ import {
   rankEchoInstall,
 } from '../ShinawaseLoader/platform.mjs';
 import { copySkip, importBundledPackages, installStreamingBridgeDeps, option, streamingDepsWarning, writeCommand } from './setup-modloader-macos.mjs';
+import { detectEchoRuntime } from '../ShinawaseLoader/echo-runtime.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STEAM_LIBRARY_FOLDERS = ['ECHO', 'ECHO NEXT', 'ECHO Steam', 'ECHO Playtest'];
@@ -24,7 +25,7 @@ const inRuntimeCopy = (file) => file.split(sep).includes('modded-runtime');
 const byRank = (left, right) => rankEchoInstall(left, 'linux') - rankEchoInstall(right, 'linux') || left.localeCompare(right);
 
 // ECHO executables directly inside a directory (never the isolated runtime copy).
-const executablesIn = (directory) => LINUX_EXE_NAMES
+const executablesIn = (directory) => [...LINUX_EXE_NAMES, 'EchoZankyo', 'echo-gpui']
   .map((name) => join(directory, name))
   .filter((file) => !inRuntimeCopy(file) && existsSync(file) && statSync(file).isFile() && isEchoExecutablePath(file, 'linux'));
 
@@ -93,6 +94,7 @@ export const installLinuxLoader = ({
   if (!echoRoot) throw new Error('echo_root_missing');
   const executable = findLinuxExecutable(resolve(echoRoot));
   if (!executable) throw new Error(`echo_executable_not_found:${resolve(echoRoot)}`);
+  const runtime = detectEchoRuntime(executable, { platform: 'linux' });
   const contentRoot = dirname(executable);
   const loaderRoot = join(contentRoot, 'ShinawaseLoader');
   mkdirSync(join(loaderRoot, 'Logs'), { recursive: true });
@@ -122,8 +124,8 @@ export const installLinuxLoader = ({
     }
   }
   config.runtimePath = runtimePath;
-  config.autoStart = true;
-  config.autoStartMode = 'app-asar-bridge';
+  config.autoStart = runtime.runtime !== 'gpui';
+  config.autoStartMode = runtime.runtime === 'gpui' ? 'manual' : 'app-asar-bridge';
   config.loadMode = 'external-cdp';
   config.locale = config.locale || locale;
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');

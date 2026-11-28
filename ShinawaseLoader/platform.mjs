@@ -67,12 +67,14 @@ export const echoUserDataDirectory = ({
 
 export const isEchoExecutablePath = (filePath, platform = process.platform) => {
   const name = winBase(filePath);
-  if (platform === 'win32') return /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
+  if (platform === 'win32') return /^(?:ECHO(?:\s+(?:NEXT|Playtest|Steam))?|EchoZankyo|echo-gpui)\.exe$/iu.test(name);
   if (platform === 'darwin') return /\/Contents\/MacOS\/ECHO$/u.test(String(filePath || '').replaceAll('\\', '/'));
   if (platform === 'linux') {
     // "echo" is also a coreutils binary, so require the Electron layout beside it.
     const file = String(filePath || '');
-    return LINUX_EXE_NAMES.includes(basename(file)) && existsSync(join(dirname(file), 'resources', 'app.asar'));
+    return ['EchoZankyo', 'echo-gpui'].includes(basename(file))
+      || (LINUX_EXE_NAMES.includes(basename(file)) && (existsSync(join(dirname(file), 'resources', 'app.asar'))
+        || existsSync(join(dirname(file), 'EchoZankyo')) || existsSync(join(dirname(file), 'echo-gpui'))));
   }
   return /^ECHO(?:\s+(?:NEXT|Playtest|Steam))?\.exe$/iu.test(name);
 };
@@ -146,6 +148,10 @@ export const filterSteamCommandArgs = (args) => {
     'echo.modded.exe',
     'echo.modded.command',
     'echo.modded.sh',
+    'echozankyo.exe',
+    'echo-gpui.exe',
+    'echozankyo',
+    'echo-gpui',
     'echo steam',
     'echo next',
     'echo playtest',

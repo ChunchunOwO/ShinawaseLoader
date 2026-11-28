@@ -1,0 +1,9 @@
+{
+  "id": "example.zankyo-live",
+  "name": "Zankyo live view example",
+  "version": "1.0.0",
+  "entry": "mod.js",
+  "zankyo": {
+    "entry": "zankyo.js"
+  }
+}

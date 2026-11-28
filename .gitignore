@@ -8,6 +8,7 @@ build/
 dist/
 release/
 ShinawaseLoader/loader-state.json
+ShinawaseLoader/zankyo-settings/
 ShinawaseLoader/loader-debug.log
 ShinawaseLoader/native-host.json
 ShinawaseLoader/echo-native-host.node
