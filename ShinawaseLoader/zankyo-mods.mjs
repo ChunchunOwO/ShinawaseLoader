@@ -44,6 +44,7 @@ export class ZankyoMods {
     this.lastPanel = '';
     this.polling = false;
     this.providerPolling = false;
+    this.providersSupported = true;
     this.lifecycle = Promise.resolve();
     this.timer = setInterval(() => this.events().catch((error) => log('WARN', error.message)), 250);
     this.timer.unref();
@@ -51,10 +52,11 @@ export class ZankyoMods {
     this.providerTimer.unref();
   }
   async providerEvents() {
-    if (this.providerPolling || !this.session.connected || ![...this.running.values()].some(mod => mod.providers.handlers.size)) return;
+    if (this.providerPolling || !this.providersSupported || !this.session.connected || ![...this.running.values()].some(mod => mod.providers.handlers.size)) return;
     this.providerPolling = true;
     try {
       const requests = await this.session.call('providers.poll');
+      if (!Array.isArray(requests)) return;
       // Do not await a provider here: it may call back into Core itself.
       for (const request of requests) {
         const mod = this.running.get(request.owner);
@@ -64,6 +66,14 @@ export class ZankyoMods {
           error => this.session.call('providers.reply', { owner: request.owner, id: request.id, error: String(error.message).slice(0, 4096) }),
         ).catch(error => this.log('WARN', error.message));
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/unknown Shinawase UI method providers\.poll/iu.test(message)) {
+        this.providersSupported = false;
+        this.log('WARN', '当前 ECHO GPUI 客户端不支持 providers.poll，已停止轮询外部提供者请求。');
+        return;
+      }
+      throw error;
     } finally { this.providerPolling = false; }
   }
   async events() {
@@ -335,6 +345,7 @@ export class ZankyoMods {
         row.state = incompatible ? 'incompatible' : 'error';
         row.error = (incompatible && !message.startsWith('electron_mod_requires_port') ? unsupportedElectron(message).message : message).slice(0, 4096);
         if (signature) this.failures.set(id, { signature, dependencies, state: row.state, error: row.error });
+        this.log('WARN', `Zankyo ${row.state} ${id}: ${row.error}`);
       }
     }
     const panel = JSON.stringify(this.status);

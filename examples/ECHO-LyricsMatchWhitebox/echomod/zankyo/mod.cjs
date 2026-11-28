@@ -64,12 +64,14 @@ exports.activate = async function activate(ctx) {
     return results;
   }
   const enabledSources = () => (saved.sources || Object.keys(names)).filter(id => names[id]);
-  await z.providers.register('lyrics', 'whitebox', { title: '歌词匹配白盒 · 多源与记忆' }, {
-    lookup: ({ track, signal, automatic }) => lookup(track, signal, enabledSources(), automatic),
-  });
-  for (const id of Object.keys(names)) await z.providers.register('lyrics', id, { title: '白盒 · ' + names[id] }, {
-    lookup: ({ track, signal, automatic }) => lookup(track, signal, [id], automatic),
-  });
+  const registerProviders = () => Promise.all([
+    z.providers.register('lyrics', 'whitebox', { title: '歌词匹配白盒 · 多源与记忆' }, {
+      lookup: ({ track, signal, automatic }) => lookup(track, signal, enabledSources(), automatic),
+    }),
+    ...Object.keys(names).map(id => z.providers.register('lyrics', id, { title: '白盒 · ' + names[id] }, {
+      lookup: ({ track, signal, automatic }) => lookup(track, signal, [id], automatic),
+    })),
+  ]);
   async function search() {
     const current = revision, track = queryTrack();
     task?.abort(); task = new AbortController();
@@ -195,6 +197,12 @@ exports.activate = async function activate(ctx) {
       saved = settings.set({ sources });
     }
   } });
+  try {
+    await registerProviders();
+  } catch (error) {
+    closed = true; stop.abort(); task?.abort(); page.close();
+    throw error;
+  }
   let polling = false;
   const timer = timers.setInterval(() => {
     if (closed || polling) return; polling = true;

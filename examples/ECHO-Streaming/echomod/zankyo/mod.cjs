@@ -61,8 +61,8 @@ exports.activate = async function activate(ctx) {
     }
     return { tracks: [], collections: items.slice((page - 1) * pageSize, page * pageSize), hasMore: page * pageSize < items.length };
   }
-  for (const id of Object.keys(names)) {
-    await z.providers.register('sources', id, { title: `Streaming · ${names[id]}` }, {
+  const registerProviders = () => Promise.all(Object.keys(names).flatMap((id) => {
+    const pending = [z.providers.register('sources', id, { title: `Streaming · ${names[id]}` }, {
       async search({ query, page = 1, pageSize = 24, signal }) {
         const result = await invoke(id, 'search', { provider: id, query, page, pageSize, mediaTypes: ['track'] }, signal);
         return { tracks: result.tracks.slice(0, pageSize).map(sourceTrack), hasMore: Boolean(result.hasMore) };
@@ -79,9 +79,9 @@ exports.activate = async function activate(ctx) {
         return { ...sourceTrack(track), url: relay.publish(playback.url, playback.headers || {}),
           lyricsProvider: id, followStreamRate: true };
       },
-    });
+    })];
     if (typeof api.providers.get(id).getLyrics === 'function') {
-      await z.providers.register('lyrics', id, { title: `Streaming · ${names[id]}（精确曲目）` }, {
+      pending.push(z.providers.register('lyrics', id, { title: `Streaming · ${names[id]}（精确曲目）` }, {
         async lookup({ track, exact, signal }) {
           if (!exact || !track.trackId) return [];
           const result = await invoke(id, 'getLyrics', { providerTrackId: track.trackId }, signal);
@@ -89,9 +89,10 @@ exports.activate = async function activate(ctx) {
           return [{ ...result, provider: id, title: track.title, artist: track.artist || '', album: track.album || '',
             durationSeconds: track.durationSeconds || null }];
         },
-      });
+      }));
     }
-  }
+    return pending;
+  }));
   async function load() {
     task?.abort(); task = new AbortController();
     const current = task;
@@ -272,5 +273,11 @@ exports.activate = async function activate(ctx) {
       }
     }
   } });
+  try {
+    await registerProviders();
+  } catch (error) {
+    closed = true; stop.abort(); task?.abort(); timers.clearInterval(qrTimer); page.close(); relay.close();
+    throw error;
+  }
   return () => { closed = true; stop.abort(); task?.abort(); timers.clearInterval(qrTimer); page.close(); relay.close(); };
 };

@@ -239,3 +239,66 @@ test('MV quality changes work before playback starts and Lyrics survives loading
     } finally { lyricsDisposed?.(); lyrics.close(); }
   } finally { mvDisposed?.(); mv.close(); }
 });
+
+test('ZankyoProviders coalesces same-tick registrations and clarifies unsupported GPUI hosts', async () => {
+  const registerCalls = [];
+  const providers = new ZankyoProviders(async (method, params) => {
+    registerCalls.push({ method, params });
+    return null;
+  });
+  await Promise.all([
+    providers.register('sources', 'netease', { title: 'NetEase' }, { search: async () => ({ tracks: [] }) }),
+    providers.register('sources', 'qqmusic', { title: 'QQ Music' }, { search: async () => ({ tracks: [] }) }),
+    providers.register('lyrics', 'netease', { title: 'NetEase Lyrics' }, { lookup: async () => [] }),
+  ]);
+  assert.equal(registerCalls.length, 1);
+  assert.equal(registerCalls[0].method, 'providers.register');
+  assert.equal(registerCalls[0].params.contributions.sources.length, 2);
+  assert.equal(registerCalls[0].params.contributions.lyrics.length, 1);
+  providers.close();
+
+  const unsupported = new ZankyoProviders(async () => {
+    throw new Error('unknown Shinawase UI method providers.register');
+  });
+  await assert.rejects(
+    unsupported.register('sources', 'netease', { title: 'NetEase' }, { search: async () => ({ tracks: [] }) }),
+    /gpui_providers_unsupported/,
+  );
+  unsupported.close();
+});
+
+test('ZankyoMods logs load failures and stops polling unsupported providers.poll hosts', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'shinawase-poll-'));
+  const logs = [];
+  let pollCalls = 0;
+  const session = {
+    connected: true,
+    call: async (method) => {
+      if (method === 'providers.poll') {
+        pollCalls++;
+        throw new Error('unknown Shinawase UI method providers.poll');
+      }
+      return [];
+    },
+  };
+  const mods = new ZankyoMods(session, { log: (level, msg) => logs.push({ level, msg }) });
+  try {
+    writeFileSync(join(root, 'bad.js'), "throw new Error('boom');");
+    const status = await mods.sync([{ id: 'bad.mod', manifest: { zankyo: { entry: 'bad.js' } }, directory: root, config: {}, enabled: true }]);
+    assert.equal(status[0].state, 'error');
+    assert.ok(logs.some(entry => entry.level === 'WARN' && entry.msg.includes('bad.mod') && entry.msg.includes('boom')));
+
+    const provider = new ZankyoProviders(async () => null);
+    await provider.register('sources', 'demo', { title: 'Demo' }, { search: async () => ({ tracks: [] }) });
+    mods.running.set('demo', { providers: provider, handlers: new Set(), revoke() {} });
+    await mods.providerEvents();
+    await mods.providerEvents();
+    assert.equal(pollCalls, 1);
+    assert.equal(mods.providersSupported, false);
+    provider.close();
+    mods.running.delete('demo');
+  } finally {
+    await mods.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

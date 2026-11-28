@@ -2529,7 +2529,11 @@ const launchEchoNow = async () => {
       if (process.env.ECHO_MOD_HOST_OWNS_LIFETIME === '1') process.exit(0);
     });
     await active.ready;
-    await active.call('session.describe');
+    const description = await active.call('session.describe');
+    if (Array.isArray(description?.methods) && (!description.methods.includes('providers.register') || !description.methods.includes('providers.poll'))) {
+      zankyoMods.providersSupported = false;
+      log('WARN', '当前 ECHO GPUI 客户端未提供外部 providers 接口，流媒体/歌词/MV 等扩展来源可能无法加载，请更新 Zankyo GPUI 客户端。');
+    }
     zankyoUi = new ZankyoUi(active, {
       version: loaderVersion,
       packages: () => zankyoMods?.status || [],

@@ -6,6 +6,7 @@ export class ZankyoProviders {
     this.controllers = new Set();
     this.closed = false;
     this.tail = Promise.resolve();
+    this.pending = null;
   }
   register(kind, id, descriptor, handler) {
     if (this.closed) throw new Error('mod_disposed');
@@ -14,16 +15,34 @@ export class ZankyoProviders {
     const key = `${kind}/${id}`;
     if (this.handlers.has(key) || this.handlers.size >= 64) throw new Error('duplicate_or_excess_provider');
     this.handlers.set(key, { kind, id, descriptor, handler });
-    this.tail = this.tail.then(() => this.publish());
-    return this.tail;
+    // Coalesce same-tick registrations into one providers.register IPC and UI refresh.
+    if (!this.pending) {
+      this.pending = new Promise((resolve, reject) => {
+        queueMicrotask(() => {
+          this.pending = null;
+          const next = this.tail.then(() => this.publish());
+          this.tail = next.catch(() => {});
+          next.then(resolve, reject);
+        });
+      });
+    }
+    return this.pending;
   }
-  publish() {
+  async publish() {
     if (this.closed) throw new Error('mod_disposed');
     const contributions = { sources: [], lyrics: [], mv: [] };
     for (const { kind, id, descriptor, handler } of this.handlers.values()) {
       contributions[kind].push({ ...descriptor, id, browse: typeof handler.browse === 'function', session: kind === 'mv' });
     }
-    return this.call('providers.register', { contributions });
+    try {
+      return await this.call('providers.register', { contributions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/unknown Shinawase UI method providers\.register/iu.test(message)) {
+        throw new Error('gpui_providers_unsupported: 当前 ECHO GPUI 客户端不支持外部来源/歌词/MV 注册，请更新 Zankyo GPUI 客户端。');
+      }
+      throw error;
+    }
   }
   async dispatch(request) {
     if (this.closed) throw new Error('mod_disposed');
